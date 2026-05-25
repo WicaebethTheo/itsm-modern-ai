@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import contextmanager
 
 from fastapi import Request
 from sqlmodel import Session
@@ -21,6 +22,13 @@ def get_session() -> Iterator[Session]:
         yield session
 
 
-def get_config_service(request: Request) -> Iterator[RuntimeConfigService]:
+@contextmanager
+def config_service_from_request(request: Request) -> Iterator[RuntimeConfigService]:
+    """Service de config dans un context manager (usage hors dépendance FastAPI)."""
     with db.session_scope() as session:
         yield RuntimeConfigService(session, request.app.state.secrets_box, request.app.state.settings)
+
+
+def get_config_service(request: Request) -> Iterator[RuntimeConfigService]:
+    with config_service_from_request(request) as cfg:
+        yield cfg

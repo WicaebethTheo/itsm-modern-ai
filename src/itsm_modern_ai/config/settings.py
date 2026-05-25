@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     polling_enabled: bool = True
     polling_max_tickets: int = 200  # garde-fou de pagination par cycle
 
+    # Authentification locale (FR-24). Bootstrap : si défini et aucun hash stocké,
+    # le mot de passe est hashé (Argon2) et stocké au premier usage. Si AUCUN mot de
+    # passe n'est configuré → endpoints d'admin OUVERTS (pilote réseau interne) + warning.
+    admin_password: str = ""
+
 
 def get_settings() -> Settings:
     return Settings()

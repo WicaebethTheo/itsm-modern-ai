@@ -28,7 +28,13 @@ class FernetSecretsBox:
     """Implémente `SecretsPort` avec Fernet."""
 
     def __init__(self, master_key: str = "", key_file: str | Path = "data/master.key") -> None:
-        self._fernet = Fernet(_load_or_create_key(master_key, Path(key_file)))
+        self._key = _load_or_create_key(master_key, Path(key_file))
+        self._fernet = Fernet(self._key)
+
+    @property
+    def key(self) -> bytes:
+        """Clé brute — sert aussi de secret de signature des sessions (FR-24)."""
+        return self._key
 
     def encrypt(self, plaintext: str) -> str:
         return self._fernet.encrypt(plaintext.encode()).decode()

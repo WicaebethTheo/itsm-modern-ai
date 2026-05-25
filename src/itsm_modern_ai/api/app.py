@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import logging
+import secrets as _secrets
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from starlette.middleware.sessions import SessionMiddleware
 
 from ..config.settings import Settings, get_settings
 from ..persistence import db
 from ..scheduler.poller import TriagePoller
 from ..services.whitelist_cache import WhitelistCache
 from .runtime import build_connector, build_triage_service, make_secrets_box
+from .security import require_auth
 
 logger = logging.getLogger("itsm.app")
 
@@ -63,21 +66,40 @@ async def lifespan(app: FastAPI):
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    from .routes import auth as auth_routes
     from .routes import config as config_routes
+    from .routes import decisions as decisions_routes
+    from .routes import export as export_routes
     from .routes import health as health_routes
     from .routes import sandbox as sandbox_routes
     from .routes import status as status_routes
 
+    settings = settings or get_settings()
     app = FastAPI(
         title="ITSM Modern AI — moteur de triage (headless)",
         version="0.1.0",
         lifespan=lifespan,
     )
-    app.state.settings = settings or get_settings()
+    app.state.settings = settings
+
+    # Session signée pour l'auth locale (FR-24). Secret = master key si fournie,
+    # sinon éphémère (sessions réinitialisées au redémarrage — acceptable en pilote).
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.master_key or _secrets.token_urlsafe(32),
+        same_site="lax",
+        https_only=False,  # TLS terminé par le reverse proxy (FR-26)
+    )
+
+    # Public : health (FR-27), status, auth.
     app.include_router(health_routes.router)
     app.include_router(status_routes.router)
-    app.include_router(config_routes.router)
-    app.include_router(sandbox_routes.router)
+    app.include_router(auth_routes.router)
+    # Protégés par l'auth locale (FR-24) : config (secrets), sandbox, journal, export.
+    app.include_router(config_routes.router, dependencies=[Depends(require_auth)])
+    app.include_router(sandbox_routes.router, dependencies=[Depends(require_auth)])
+    app.include_router(decisions_routes.router)
+    app.include_router(export_routes.router)
     return app
 
 

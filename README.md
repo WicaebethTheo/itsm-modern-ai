@@ -9,14 +9,16 @@ Open-core, souverain (Mistral EU par défaut), français.
 > déterministe). Mode suggestion uniquement (jamais de modification d'un champ GLPI),
 > masquage PII avant tout appel LLM, fallback unique « à trier ».
 
-## État du projet
+## État du projet — pilote V1 complet (Epics 1→4)
 
 Séquençage : `Epic 1 (spike) → [GO humain] → Epic 2 → Epic 3 → Epic 4`.
 
 - ✅ **Epic 1 — Spike de validation** (`scripts/spike_routing.py`) : mesure routage prose + précision LLM. Voir [`docs/spike.md`](docs/spike.md).
-- ✅ **Epic 2 — Fondations & connexion GLPI** : daemon FastAPI headless, connecteur GLPI legacy (`apirest.php`), lecture des Tickets « New », référentiels/Whitelist, écriture de Suivi interne privé (mode suggestion), polling idempotent (APScheduler), healthcheck. Config & secrets poussés au runtime via l'API (pas `.env`).
-- ⏳ **Epic 3 — Moteur à garde-fous** (masquage→LLM→whitelist→seuil→Suivi) : le seam `ticket_handler` du poller est prêt à le recevoir.
-- ⏳ **Epic 4 — Audit, auth, packaging** (journal, export CSV, auth locale, HTTPS).
+- ✅ **Epic 2 — Fondations & connexion GLPI** : daemon FastAPI headless, connecteur GLPI legacy (`apirest.php`), lecture des Tickets « New », référentiels/Whitelist, écriture de Suivi interne privé (mode suggestion), polling idempotent (APScheduler), healthcheck.
+- ✅ **Epic 3 — Moteur à garde-fous** : pipeline à ordre immuable (étage 1 règles GLPI → cost cap → masquage → LLM JSON mode + retry → Pydantic → whitelist → seuil → Suivi / « à trier »). Mode suggestion, veto implicite. Endpoint `/api/sandbox` (triage à blanc).
+- ✅ **Epic 4 — Audit, conformité & packaging** : log exhaustif des appels LLM (masqué), journal de décision annotable, export CSV DPO, auth locale (Argon2 + session), secrets chiffrés (Fernet), healthcheck GLPI **et** LLM + compteurs, Docker + docs (install, DPO, SECURITY).
+
+Endpoints : `/health` · `/api/status` · `/api/auth/{login,logout,status}` · `/api/config` · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/export/{decisions,llm-calls}.csv`. OpenAPI sur `/docs`.
 
 ## Configuration : secrets poussés via l'API/UI (jamais `.env`)
 
@@ -82,9 +84,9 @@ Deps : uv. Docker + docker-compose (on-prem).
 
 ## Documentation
 
-- [`planning/`](planning/) — PRD, architecture, epics, addendum.
-- [`project-context.md`](project-context.md) — règles & invariants pour tout agent.
+- [`docs/install.md`](docs/install.md) — installation on-prem (½ page). [`docs/dpo.md`](docs/dpo.md) — fiche DPO. [`SECURITY.md`](SECURITY.md).
 - [`docs/spike.md`](docs/spike.md) — spike Epic 1. [`docs/handoff.md`](docs/handoff.md) — passation.
+- [`planning/`](planning/) — PRD, architecture, epics, addendum. [`project-context.md`](project-context.md) — règles & invariants.
 
 ## Licence
 

@@ -41,6 +41,20 @@ class OpenAiCompatibleLlm:
         self._temperature = temperature
         self._client = client
 
+    async def healthcheck(self) -> bool:
+        """Sonde légère (GET /models) — ne consomme pas de tokens. Best-effort."""
+        url = f"{self._base_url}/models"
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        try:
+            if self._client is not None:
+                resp = await self._client.get(url, headers=headers)
+            else:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                    resp = await client.get(url, headers=headers)
+            return resp.status_code < 400
+        except httpx.HTTPError:
+            return False
+
     async def complete(self, system_prompt: str, user_prompt: str) -> LlmResult:
         payload = {
             "model": self._model,

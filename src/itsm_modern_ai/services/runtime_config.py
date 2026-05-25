@@ -19,7 +19,9 @@ from ..persistence.tables import RuntimeConfig
 from ..ports.secrets import SecretsPort
 
 # Clés reconnues comme secrets (toujours chiffrées).
-SECRET_KEYS = frozenset({"glpi_user_token", "glpi_app_token", "llm_api_key"})
+SECRET_KEYS = frozenset(
+    {"glpi_user_token", "glpi_app_token", "llm_api_key", "admin_password_hash"}
+)
 # Clés non-secrètes surchargeables en base (sinon valeur d'env via Settings).
 PLAIN_KEYS = frozenset(
     {"glpi_base_url", "llm_base_url", "llm_model", "confidence_threshold", "cost_cap_eur_per_day"}
@@ -45,6 +47,10 @@ class RuntimeConfigService:
         self._session = session
         self._secrets = secrets
         self._settings = settings
+
+    @property
+    def settings(self) -> Settings:
+        return self._settings
 
     # ── lecture ───────────────────────────────────────────────────────────────
     def _row(self, key: str) -> RuntimeConfig | None:
