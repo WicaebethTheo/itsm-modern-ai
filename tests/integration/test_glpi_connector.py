@@ -63,11 +63,18 @@ async def test_get_referentials_builds_whitelist():
     respx.get(f"{BASE}/Entity").mock(
         return_value=httpx.Response(200, json=[{"id": 0, "completename": "Racine"}])
     )
+    respx.get(f"{BASE}/Profile").mock(
+        return_value=httpx.Response(200, json=[{"id": 6, "name": "Technician"}])
+    )
+    respx.get(f"{BASE}/Profile_User").mock(
+        return_value=httpx.Response(200, json=[{"users_id": 11, "profiles_id": 6}])
+    )
     refs = await (await _connector()).get_referentials()
     assert refs.categories == {1: "Compte"}
     assert refs.technicians == {11: "Syl Vain"}
     assert refs.groups == {5: "Support N2"}
     assert refs.entities == {0: "Racine"}
+    assert refs.technician_profiles == {11: "Technician"}
     assert refs.priorities[1] == "Très basse"  # encodage statique
 
 

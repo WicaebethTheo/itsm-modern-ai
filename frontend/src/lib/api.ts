@@ -176,6 +176,7 @@ export interface DecisionEntry {
 export interface RefItem {
   ext_id: number;
   name: string;
+  profile: string;
   selected: boolean;
   eligible: boolean;
   skills: string;

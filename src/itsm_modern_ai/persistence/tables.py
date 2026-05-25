@@ -91,6 +91,7 @@ class ReferentialCache(SQLModel, table=True):
     kind: str = Field(index=True)  # "category" | "entity" | "technician" | "group"
     ext_id: int  # id GLPI
     name: str = ""
+    profile: str = ""  # profil(s) GLPI (techniciens) — pour tri/filtre UI
     selected: bool = False  # catégories/entités dans le périmètre
     eligible: bool = False  # techniciens/groupes vers qui l'IA peut router
     skills: str = ""  # prose (techniciens/groupes)

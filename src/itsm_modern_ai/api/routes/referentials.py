@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api", tags=["referentials"], dependencies=[Depends(r
 class RefItem(BaseModel):
     ext_id: int
     name: str
+    profile: str = ""  # profil(s) GLPI (techniciens) — pour tri/filtre
     selected: bool
     eligible: bool
     skills: str
@@ -46,7 +47,7 @@ class Scope(BaseModel):
 
 def _item(row) -> RefItem:
     return RefItem(
-        ext_id=row.ext_id, name=row.name, selected=row.selected,
+        ext_id=row.ext_id, name=row.name, profile=row.profile, selected=row.selected,
         eligible=row.eligible, skills=row.skills,
     )
 

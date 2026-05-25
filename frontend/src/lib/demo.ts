@@ -145,10 +145,26 @@ export const demo: {
     anthropic_api_key_set: true,
   },
   technicians: [
-    ref(11, "Sylvain Martin", true, "AD, comptes, sécurité réseau (VPN, phishing)"),
-    ref(12, "Nadia Bouaziz", true, "SIRH, paie, ERP, applications métier"),
-    ref(13, "Marc Lefèvre", true, "Postes de travail, imprimantes, téléphonie"),
-    ref(14, "Léa Roche", false, ""),
+    ref(
+      11,
+      "Sylvain Martin",
+      true,
+      "AD, comptes, sécurité réseau (VPN, phishing)",
+      false,
+      "Technician",
+    ),
+    ref(12, "Nadia Bouaziz", true, "SIRH, paie, ERP, applications métier", false, "Technician"),
+    ref(
+      13,
+      "Marc Lefèvre",
+      true,
+      "Postes de travail, imprimantes, téléphonie",
+      false,
+      "Technician",
+    ),
+    ref(14, "Léa Roche", false, "", false, "Self-Service"),
+    ref(15, "Admin Système", false, "", false, "Super-Admin"),
+    ref(16, "Karim Idrissi", false, "", false, "Admin"),
   ],
   groups: [
     ref(5, "Support N1", true, "Premier niveau, demandes courantes"),
@@ -193,6 +209,13 @@ function d(
   };
 }
 
-function ref(ext_id: number, name: string, on: boolean, skills: string, selected = false): RefItem {
-  return { ext_id, name, selected: selected ? true : on, eligible: on, skills };
+function ref(
+  ext_id: number,
+  name: string,
+  on: boolean,
+  skills: string,
+  selected = false,
+  profile = "",
+): RefItem {
+  return { ext_id, name, profile, selected: selected ? true : on, eligible: on, skills };
 }

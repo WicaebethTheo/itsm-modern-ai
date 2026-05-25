@@ -99,6 +99,8 @@ class Referentials(BaseModel):
     technicians: dict[int, str] = Field(default_factory=dict)
     groups: dict[int, str] = Field(default_factory=dict)
     entities: dict[int, str] = Field(default_factory=dict)
+    # Profil(s) GLPI par technicien (id → libellés joints) — sert au tri/filtre UI.
+    technician_profiles: dict[int, str] = Field(default_factory=dict)
     priorities: dict[int, str] = Field(
         default_factory=lambda: {p.value: p.name for p in Priority}
     )

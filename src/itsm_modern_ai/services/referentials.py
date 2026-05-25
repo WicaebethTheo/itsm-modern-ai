@@ -41,14 +41,18 @@ def sync(session: Session, referentials: Referentials) -> dict[str, int]:
         KIND_TECHNICIAN: referentials.technicians,
         KIND_GROUP: referentials.groups,
     }
+    profiles = referentials.technician_profiles
     counts: dict[str, int] = {}
     for kind, items in mapping.items():
         for ext_id, name in items.items():
+            profile = profiles.get(ext_id, "") if kind == KIND_TECHNICIAN else ""
             row = _row(session, kind, ext_id)
             if row is None:
-                session.add(ReferentialCache(kind=kind, ext_id=ext_id, name=name))
+                session.add(ReferentialCache(kind=kind, ext_id=ext_id, name=name, profile=profile))
             else:
                 row.name = name
+                if kind == KIND_TECHNICIAN:
+                    row.profile = profile
                 session.add(row)
         counts[kind] = len(items)
     session.commit()

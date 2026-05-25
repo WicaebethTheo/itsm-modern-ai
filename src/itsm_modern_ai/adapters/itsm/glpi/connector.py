@@ -30,6 +30,20 @@ def _user_display(raw: dict) -> str:
     return full or str(raw.get("name") or f"user_{raw.get('id')}")
 
 
+def _build_user_profiles(profiles_raw: list[dict], profile_user_raw: list[dict]) -> dict[int, str]:
+    """Associe à chaque utilisateur ses profils GLPI (libellés joints, triés, dédupliqués)."""
+    profile_names = {int(p["id"]): str(p.get("name") or f"profil_{p['id']}") for p in profiles_raw}
+    by_user: dict[int, set[str]] = {}
+    for pu in profile_user_raw:
+        try:
+            uid = int(pu["users_id"])
+            pid = int(pu["profiles_id"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        by_user.setdefault(uid, set()).add(profile_names.get(pid, f"profil_{pid}"))
+    return {uid: ", ".join(sorted(names)) for uid, names in by_user.items()}
+
+
 class GlpiConnector:
     def __init__(
         self,
@@ -78,12 +92,23 @@ class GlpiConnector:
         return [s for s in stats if s.created is None or s.created >= since]
 
     async def get_referentials(self) -> Referentials:
-        """Scan complet des référentiels GLPI : catégories, techniciens, groupes, entités."""
+        """Scan complet des référentiels GLPI : catégories, techniciens, groupes, entités.
+
+        Récupère aussi le(s) profil(s) GLPI de chaque utilisateur (best-effort) pour le
+        tri/filtre par profil côté UI.
+        """
         async with self._client() as gc:
             categories_raw = _as_list((await gc.get("ITILCategory", params={"range": "0-999"})).json())
             users_raw = _as_list((await gc.get("User", params={"range": "0-999"})).json())
             groups_raw = _as_list((await gc.get("Group", params={"range": "0-999"})).json())
             entities_raw = _as_list((await gc.get("Entity", params={"range": "0-999"})).json())
+            try:  # profils : non bloquant si le token n'y a pas accès
+                profiles_raw = _as_list((await gc.get("Profile", params={"range": "0-999"})).json())
+                profile_user_raw = _as_list(
+                    (await gc.get("Profile_User", params={"range": "0-999"})).json()
+                )
+            except ItsmError:
+                profiles_raw, profile_user_raw = [], []
         categories = {
             int(c["id"]): str(c.get("completename") or c.get("name") or f"cat_{c['id']}")
             for c in categories_raw
@@ -97,12 +122,14 @@ class GlpiConnector:
             int(e["id"]): str(e.get("completename") or e.get("name") or f"entity_{e['id']}")
             for e in entities_raw
         }
+        technician_profiles = _build_user_profiles(profiles_raw, profile_user_raw)
         priorities = {int(p): label for p, label in PRIORITY_LABELS_FR.items()}
         return Referentials(
             categories=categories,
             technicians=technicians,
             groups=groups,
             entities=entities,
+            technician_profiles=technician_profiles,
             priorities=priorities,
         )
 
