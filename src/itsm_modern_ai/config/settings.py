@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     confidence_threshold: float = 0.7  # FR-8 — valeur de départ, à calibrer
     cost_cap_eur_per_day: float = 5.0  # FR-10
     llm_retries: int = 1  # FR-9
-    # Fiches techniciens en prose (FR-15) — montées dans le conteneur.
-    tech_profiles_path: str = "data/tech-profiles.yaml"
+
+    # UI web (Phase 2) : SPA React buildée servie en statique.
+    frontend_dist: str = "frontend/dist"
 
     # Connexion GLPI legacy apirest.php (FR-1) — base_url non-secret ; tokens via UI/API.
     glpi_base_url: str = ""  # ex. https://glpi.exemple.local/apirest.php

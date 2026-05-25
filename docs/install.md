@@ -29,34 +29,28 @@ Le `.env` ne contient **que des réglages non-secrets**, la `MASTER_KEY` de chif
 
 > Les **secrets** (clé API LLM, tokens GLPI) ne se mettent **jamais** dans `.env` : ils se poussent au runtime via l'API (étape 4).
 
-## 2. Monter le fichier des fiches techniciens
-
-Le `docker-compose.yml` monte déjà `docs/tech-profiles.example.yaml` en lecture seule vers `/app/data/tech-profiles.yaml` (FR-15). Copiez l'exemple et adaptez-le à votre équipe avant le démarrage :
-
-```bash
-cp docs/tech-profiles.example.yaml docs/tech-profiles.yaml
-```
-
-(et pointez le montage du `docker-compose.yml` vers `docs/tech-profiles.yaml` si vous renommez le fichier).
-
-## 3. Démarrer le service
+## 2. Démarrer le service
 
 ```bash
 docker compose up --build
 ```
 
-Le service écoute sur le port **8000**.
+L'image est construite en **multi-stage** (build de la SPA React avec Node, puis moteur
+Python qui la sert en statique). Le service écoute sur le port **8000**. Rien d'autre à
+monter : la base SQLite et la master key vivent dans le volume `./data`.
 
-## 4. Configuration RUNTIME (secrets) — via l'interface web
+## 3. Tout configurer dans l'interface web
 
-Ouvrez l'**interface** sur **`http://<vm>:8000/ui`** (derrière le reverse proxy en prod).
-Connectez-vous avec le mot de passe `ADMIN_PASSWORD` (si défini), puis dans **Configuration** :
+Ouvrez l'**interface** sur **`http://<vm>:8000/`** (derrière le reverse proxy HTTPS en prod).
+Connectez-vous avec le mot de passe `ADMIN_PASSWORD` (si défini). Toute la configuration se
+fait ici — **aucun fichier à éditer** :
 
-- **Fournisseur LLM** : Mistral EU (souverain, défaut) ou **Anthropic / Claude** (hors UE — à valider DPO) ; saisir la **clé API**.
 - **Connexion GLPI** : base URL `apirest.php`, **user token** (et app token si requis).
-- Seuil de confiance et cost cap.
+- **Fournisseur IA** : Mistral EU (souverain, défaut) ou **Anthropic / Claude** (hors UE — à valider DPO) ; saisir la **clé API**.
+- **Moteur** : seuil de confiance et cost cap.
+- **Techniciens** : créez/éditez les fiches en prose (routage) — stockées en base, pas de YAML.
 
-Les **secrets** (clé LLM, tokens GLPI) sont stockés **chiffrés au repos** (Fernet, FR-25) et ne sont **jamais** réaffichés ni mis dans `.env`.
+Les **secrets** (clé LLM/Anthropic, tokens GLPI) sont stockés **chiffrés au repos** (Fernet, FR-25) et ne sont **jamais** réaffichés ni mis dans `.env`.
 
 > Équivalent en ligne de commande (l'UI consomme ce même endpoint `POST /api/config`) :
 >
@@ -69,7 +63,7 @@ Les **secrets** (clé LLM, tokens GLPI) sont stockés **chiffrés au repos** (Fe
 > }'
 > ```
 
-## 5. Vérifier
+## 4. Vérifier
 
 ```bash
 curl http://localhost:8000/health
@@ -77,7 +71,7 @@ curl http://localhost:8000/health
 
 Le healthcheck est en **échec** si GLPI ou le LLM est injoignable au démarrage (FR-27, FR-1) — pas de démarrage silencieux dégradé.
 
-## 6. HTTPS via reverse proxy (FR-26)
+## 5. HTTPS via reverse proxy (FR-26)
 
 La terminaison **TLS est déléguée à un reverse proxy** (nginx, Caddy, …) placé devant le service sur le port `8000`. Le service ne sert pas TLS lui-même. Configurez le proxy pour **rediriger ou refuser le HTTP nu** et ne servir qu'en HTTPS.
 

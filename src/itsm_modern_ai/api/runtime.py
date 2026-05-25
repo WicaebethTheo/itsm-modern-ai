@@ -7,7 +7,6 @@ changement de tokens GLPI / clé LLM est pris en compte au cycle suivant sans re
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from ..adapters.itsm.glpi.connector import GlpiConnector
 from ..adapters.llm.registry import build_llm as _build_llm_adapter
@@ -17,8 +16,8 @@ from ..persistence import db
 from ..ports.itsm import ItsmPort
 from ..ports.llm import LlmPort
 from ..ports.secrets import SecretsPort
+from ..services import tech_profiles
 from ..services.runtime_config import RuntimeConfigService
-from ..services.tech_profiles import load_tech_profiles
 from ..services.triage import TriageService
 
 logger = logging.getLogger("itsm.runtime")
@@ -61,29 +60,22 @@ def build_llm(settings: Settings, secrets: SecretsPort) -> LlmPort | None:
     )
 
 
-def _load_profiles_prose(settings: Settings) -> str:
-    path = Path(settings.tech_profiles_path)
-    if not path.exists():
-        logger.info("fiches techniciens absentes (%s) — routage sans prose", path)
-        return ""
-    try:
-        return load_tech_profiles(path).as_prose()
-    except Exception as exc:  # fichier mal formé → ne pas bloquer le moteur
-        logger.warning("fiches techniciens illisibles (%s): %s", path, exc)
-        return ""
-
-
 def build_triage_service(
     settings: Settings, secrets: SecretsPort, itsm: ItsmPort | None = None
 ) -> TriageService | None:
-    """Service de triage complet, ou None si le LLM n'est pas configuré."""
+    """Service de triage complet, ou None si le LLM n'est pas configuré.
+
+    Les Fiches techniciens proviennent de la base (éditées via l'UI), pas d'un fichier.
+    """
     llm = build_llm(settings, secrets)
     if llm is None:
         return None
+    with db.session_scope() as session:
+        prose = tech_profiles.prose_from_db(session)
     return TriageService(
         itsm=itsm,
         llm=llm,
         settings=settings,
-        tech_profiles_prose=_load_profiles_prose(settings),
+        tech_profiles_prose=prose,
         session_factory=db.session_scope,
     )

@@ -21,6 +21,14 @@ run:
 migrate:
 	uv run alembic upgrade head
 
+# UI (SPA React) : build de production -> frontend/dist (servi par le moteur)
+ui:
+	cd frontend && npm install && npm run build
+
+# UI en dev (hot reload, proxy /api vers :8000)
+ui-dev:
+	cd frontend && npm run dev
+
 # Spike Epic 1 — vrai LLM (nécessite LLM_API_KEY, défaut Mistral EU)
 spike:
 	uv run python scripts/spike_routing.py --real

@@ -38,7 +38,7 @@ from itsm_modern_ai.services.tech_profiles import load_tech_profiles  # noqa: E4
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_FIXTURES = REPO / "tests" / "fixtures" / "tickets_fr.json"
-DEFAULT_PROFILES = REPO / "docs" / "tech-profiles.example.yaml"
+DEFAULT_PROFILES = REPO / "tests" / "fixtures" / "tech_profiles_fr.yaml"
 
 
 @dataclass

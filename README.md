@@ -17,9 +17,9 @@ Séquençage : `Epic 1 (spike) → [GO humain] → Epic 2 → Epic 3 → Epic 4`
 - ✅ **Epic 2 — Fondations & connexion GLPI** : daemon FastAPI headless, connecteur GLPI legacy (`apirest.php`), lecture des Tickets « New », référentiels/Whitelist, écriture de Suivi interne privé (mode suggestion), polling idempotent (APScheduler), healthcheck.
 - ✅ **Epic 3 — Moteur à garde-fous** : pipeline à ordre immuable (étage 1 règles GLPI → cost cap → masquage → LLM JSON mode + retry → Pydantic → whitelist → seuil → Suivi / « à trier »). Mode suggestion, veto implicite. Endpoint `/api/sandbox` (triage à blanc).
 - ✅ **Epic 4 — Audit, conformité & packaging** : log exhaustif des appels LLM (masqué), journal de décision annotable, export CSV DPO, auth locale (Argon2 + session), secrets chiffrés (Fernet), healthcheck GLPI **et** LLM + compteurs, Docker + docs (install, DPO, SECURITY).
-- ✅ **Phase 2 — UI web & connecteur Anthropic** : interface rendue côté serveur (Jinja2) sur **`/ui`** (login, dashboard inversé, configuration, journal annotable + sandbox, fiches techniciens en lecture seule) ; **connecteur Anthropic** (FR-12) sélectionnable depuis l'interface. Clé LLM et connexion GLPI configurées **dans l'UI** (jamais `.env`), stockées chiffrées.
+- ✅ **Phase 2 — UI web (SPA React) & connecteur Anthropic** : interface **React 19 + Vite + Tailwind v4** (façon shadcn/ui) servie en statique par le moteur à la racine **`/`** : login, dashboard, statut, journal annotable, sandbox, et **toute la configuration dans l'UI** — connexion GLPI, fournisseur IA (Mistral EU **ou Anthropic/Claude**, FR-12), seuils, et **fiches techniciens CRUD** (stockées en base, plus de YAML). Clé LLM et tokens GLPI saisis dans l'interface (jamais `.env`), chiffrés au repos.
 
-Interface : **`/ui`** (configuration de la clé LLM/Anthropic + GLPI, journal, dashboard). API : `/health` · `/api/status` · `/api/auth/*` · `/api/config` · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/export/{decisions,llm-calls}.csv`. OpenAPI sur `/docs`.
+UI : **`/`** (SPA). API : `/health` · `/api/status` · `/api/metrics` · `/api/auth/*` · `/api/config` · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/tech-profiles` (CRUD) · `/api/export/{decisions,llm-calls}.csv`. OpenAPI sur `/docs`.
 
 > **Souveraineté** : le défaut reste Mistral EU. Anthropic (Claude) est hors UE — son activation est un choix explicite de l'opérateur, à valider avec la DPO (cf. `docs/dpo.md`).
 
@@ -43,21 +43,26 @@ curl -X POST http://localhost:8000/api/config -H 'Content-Type: application/json
 ## Démarrage rapide
 
 ```bash
-make install          # venv (uv) + deps
+make install          # venv (uv) + deps Python
 make lint             # ruff
-make test             # pytest (53 tests : masquage, whitelist, GLPI mocké, idempotence, API…)
+make test             # pytest (87 tests : masquage, whitelist, GLPI mocké, idempotence, API…)
 make migrate          # alembic upgrade head
-make run              # uvicorn + scheduler de polling (http://localhost:8000)
+make ui               # build de la SPA (npm install + build -> frontend/dist) — requiert Node 22
+make run              # uvicorn + scheduler ; UI sur http://localhost:8000
 
-# Déploiement on-prem :
-cp .env.example .env  # renseigner MASTER_KEY (sinon auto-générée dans data/)
+# Dev UI (hot reload, proxy /api -> :8000) :
+make ui-dev           # http://localhost:5173
+
+# Déploiement on-prem (build UI inclus dans l'image multi-stage) :
+cp .env.example .env  # renseigner MASTER_KEY + ADMIN_PASSWORD
 docker compose up --build
 
 # Spike Epic 1 (homelab) :
 make spike-mock       # offline ; make spike → vraie mesure (LLM_API_KEY pour le CLI)
 ```
 
-API headless : `/health` (FR-27), `/api/status`, `/api/config`. OpenAPI sur `/docs`.
+Tout se configure ensuite **dans l'interface** (`/`) : connexion GLPI, fournisseur IA
+(clé Mistral/Anthropic), seuils, fiches techniciens. Rien dans `.env` côté secrets.
 
 ## Structure (hexagonale)
 
@@ -72,7 +77,8 @@ src/itsm_modern_ai/
 ├── services/      # tech_profiles, runtime_config (secrets/config), whitelist_cache
 ├── scheduler/     # poller APScheduler (idempotent, FR-2)
 ├── persistence/   # SQLModel/SQLite, idempotence, journal/audit, tables
-└── api/           # FastAPI : app+lifespan, routes REST, web.py (UI), templates/, static/
+└── api/           # FastAPI : app+lifespan, routes REST, spa.py (sert la SPA)
+frontend/          # SPA React 19 + Vite + Tailwind v4 (buildée -> frontend/dist)
 migrations/        # Alembic
 scripts/spike_routing.py        # Spike Epic 1
 tests/             # unit + integration (respx) ; fixtures/tickets_fr.json

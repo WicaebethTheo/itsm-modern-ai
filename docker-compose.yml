@@ -13,9 +13,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      # Persistance : base SQLite + master key. Les fiches techniciens, la clé LLM
+      # et la connexion GLPI se configurent dans l'interface web (rien à monter).
       - ./data:/app/data
-      # Fiches techniciens montées en lecture seule (FR-15).
-      - ./docs/tech-profiles.example.yaml:/app/data/tech-profiles.yaml:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
       interval: 30s

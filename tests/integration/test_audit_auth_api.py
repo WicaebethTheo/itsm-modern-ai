@@ -25,6 +25,7 @@ def _seed_decision():
 
 def _settings(tmp_path, **kw) -> Settings:
     return Settings(
+        _env_file=None,  # isole du .env ambiant
         database_url=f"sqlite:///{tmp_path / 'a.db'}",
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,

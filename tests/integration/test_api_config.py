@@ -13,6 +13,7 @@ from itsm_modern_ai.config.settings import Settings
 @pytest.fixture
 def client(tmp_path):
     settings = Settings(
+        _env_file=None,  # isole du .env ambiant
         database_url=f"sqlite:///{tmp_path / 'api.db'}",
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,

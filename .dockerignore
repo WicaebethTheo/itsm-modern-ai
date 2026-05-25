@@ -14,3 +14,5 @@ spike-report*
 tests
 planning
 docs/handoff.md
+frontend/node_modules
+frontend/dist

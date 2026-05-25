@@ -9,7 +9,7 @@ from itsm_modern_ai.services.tech_profiles import load_tech_profiles
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "fixtures" / "tickets_fr.json"
-PROFILES = REPO / "docs" / "tech-profiles.example.yaml"
+PROFILES = REPO / "tests" / "fixtures" / "tech_profiles_fr.yaml"
 
 
 def test_fixtures_are_coherent_with_referentials():

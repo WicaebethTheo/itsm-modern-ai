@@ -71,6 +71,21 @@ class DecisionLog(SQLModel, table=True):
     annotation: str = ""  # éditable a posteriori (revue manuelle pilote)
 
 
+class TechProfileRow(SQLModel, table=True):
+    """Fiche technicien en prose (FR-15) — gérée depuis l'UI, stockée en base.
+
+    Remplace l'ancien fichier YAML : toute la configuration se fait via l'interface.
+    `technician_id` doit exister dans la Whitelist GLPI (validé au triage, FR-7).
+    """
+
+    __tablename__ = "tech_profiles"
+
+    technician_id: int = Field(primary_key=True)
+    name: str = ""
+    profile: str = ""  # prose libre
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
 class RuntimeConfig(SQLModel, table=True):
     """Configuration poussée au runtime via l'API/UI (pas via .env).
 
