@@ -4,16 +4,16 @@ import { cn } from "@/lib/utils";
 import {
   Activity,
   Bot,
-  Bug,
+  Code2,
   Cpu,
   FlaskConical,
-  FolderTree,
   LayoutDashboard,
   LogOut,
   type LucideIcon,
   PlugZap,
   ScrollText,
   ShieldCheck,
+  SlidersHorizontal,
   Users,
   UsersRound,
 } from "lucide-react";
@@ -30,34 +30,29 @@ interface NavItem {
 // Les chemins `to` sont stables (liés au routeur) — ne pas les modifier.
 const SECTIONS: { label: string; items: NavItem[] }[] = [
   {
-    label: "Pilotage",
+    label: "Opération",
     items: [
       { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true },
       { to: "/status", label: "Statut", icon: Activity },
-      { to: "/journal", label: "Journal des décisions", icon: ScrollText },
+      { to: "/journal", label: "Journaux", icon: ScrollText },
+      { to: "/glpi", label: "Connexion GLPI", icon: PlugZap },
     ],
   },
   {
     label: "Configuration",
     items: [
-      { to: "/glpi", label: "Connexion GLPI", icon: PlugZap },
-      { to: "/ai-provider", label: "Fournisseur IA", icon: Bot },
-      { to: "/engine", label: "Moteur de triage", icon: Cpu },
-    ],
-  },
-  {
-    label: "Périmètre GLPI",
-    items: [
-      { to: "/scope", label: "Catégories", icon: FolderTree },
+      { to: "/scope", label: "Règles métier", icon: SlidersHorizontal },
       { to: "/technicians", label: "Techniciens", icon: Users },
       { to: "/groups", label: "Groupes", icon: UsersRound },
+      { to: "/ai-provider", label: "Fournisseur IA", icon: Bot },
+      { to: "/engine", label: "Moteur", icon: Cpu },
     ],
   },
   {
-    label: "Outils",
+    label: "Avancé",
     items: [
       { to: "/sandbox", label: "Bac à sable", icon: FlaskConical },
-      { to: "/debug", label: "Debug & tests", icon: Bug },
+      { to: "/debug", label: "Développement", icon: Code2 },
     ],
   },
 ];

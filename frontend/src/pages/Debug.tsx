@@ -45,7 +45,7 @@ export function Debug() {
   return (
     <>
       <PageHeader
-        title="Debug & tests"
+        title="Développement"
         description="Diagnostics et jeux de données de test. Réservé au labo — désactivé en production."
       />
 

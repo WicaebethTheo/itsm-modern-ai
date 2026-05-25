@@ -44,7 +44,7 @@ export function EngineSettings() {
   return (
     <>
       <PageHeader
-        title="Moteur & réglages"
+        title="Moteur"
         description="Garde-fous, qualité de la suggestion, polling et dashboard."
       />
       {msg && (

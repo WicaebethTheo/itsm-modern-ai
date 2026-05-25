@@ -43,7 +43,7 @@ export function Journal() {
   return (
     <>
       <PageHeader
-        title="Journal de décision"
+        title="Journaux"
         description="Décisions du moteur, annotables pour la revue qualité (mode suggestion)."
         actions={
           <>

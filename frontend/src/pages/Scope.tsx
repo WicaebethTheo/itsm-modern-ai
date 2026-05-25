@@ -75,8 +75,8 @@ export function Scope() {
   return (
     <>
       <PageHeader
-        title="Périmètre"
-        description="Catégories et entités que l'IA a le droit d'utiliser. Hors périmètre → « à trier »."
+        title="Règles métier"
+        description="Catégories et entités que l'IA a le droit d'utiliser (périmètre). Hors périmètre → « à trier »."
         actions={<SyncButton onSynced={reload} />}
       />
       {msg && (
