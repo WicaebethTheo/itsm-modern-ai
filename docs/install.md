@@ -47,17 +47,27 @@ docker compose up --build
 
 Le service écoute sur le port **8000**.
 
-## 4. Configuration RUNTIME via l'API (secrets)
+## 4. Configuration RUNTIME (secrets) — via l'interface web
 
-La **clé API LLM (Mistral EU)** et le **token GLPI** se poussent par `POST /api/config` et sont stockés **chiffrés au repos** (Fernet, FR-25). `GET /api/config` ne renvoie jamais la valeur d'un secret, seulement un booléen `*_set`.
+Ouvrez l'**interface** sur **`http://<vm>:8000/ui`** (derrière le reverse proxy en prod).
+Connectez-vous avec le mot de passe `ADMIN_PASSWORD` (si défini), puis dans **Configuration** :
 
-```bash
-curl -X POST http://localhost:8000/api/config -H 'Content-Type: application/json' -d '{
-  "glpi_base_url": "https://glpi.exemple.local/apirest.php",
-  "glpi_user_token": "xxxxx",
-  "llm_api_key": "yyyyy"
-}'
-```
+- **Fournisseur LLM** : Mistral EU (souverain, défaut) ou **Anthropic / Claude** (hors UE — à valider DPO) ; saisir la **clé API**.
+- **Connexion GLPI** : base URL `apirest.php`, **user token** (et app token si requis).
+- Seuil de confiance et cost cap.
+
+Les **secrets** (clé LLM, tokens GLPI) sont stockés **chiffrés au repos** (Fernet, FR-25) et ne sont **jamais** réaffichés ni mis dans `.env`.
+
+> Équivalent en ligne de commande (l'UI consomme ce même endpoint `POST /api/config`) :
+>
+> ```bash
+> curl -X POST http://localhost:8000/api/config -H 'Content-Type: application/json' -d '{
+>   "glpi_base_url": "https://glpi.exemple.local/apirest.php",
+>   "glpi_user_token": "xxxxx",
+>   "llm_provider": "anthropic",
+>   "anthropic_api_key": "sk-ant-…"
+> }'
+> ```
 
 ## 5. Vérifier
 

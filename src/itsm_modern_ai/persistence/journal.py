@@ -79,6 +79,28 @@ def count_llm_calls(session: Session) -> int:
     return int(session.exec(select(func.count()).select_from(LlmCall)).one())
 
 
+def decision_stats(session: Session) -> dict:
+    """Métriques d'équipe pour le dashboard (FR-23) — JAMAIS par technicien (anti-mouchard).
+
+    Volontairement orienté santé opérationnelle (taux « à trier », répartition des
+    raisons), pas une vanity-metric « X tickets traités par l'IA » (contre-métrique SM-C1).
+    """
+    rows = list(session.exec(select(DecisionLog)).all())
+    total = len(rows)
+    accepted = sum(1 for r in rows if r.accepted)
+    by_reason: dict[str, int] = {}
+    for r in rows:
+        by_reason[r.reason] = by_reason.get(r.reason, 0) + 1
+    a_trier = total - accepted
+    return {
+        "total": total,
+        "accepted": accepted,
+        "a_trier": a_trier,
+        "useful_coverage": round(accepted / total, 3) if total else 0.0,
+        "by_reason": dict(sorted(by_reason.items(), key=lambda kv: -kv[1])),
+    }
+
+
 def decisions_csv(session: Session) -> str:
     """Export CSV du Journal pour la DPO (FR-21). Aucune métrique nominative."""
     buf = io.StringIO()

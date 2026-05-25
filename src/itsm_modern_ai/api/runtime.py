@@ -38,15 +38,27 @@ def build_connector(settings: Settings, secrets: SecretsPort) -> GlpiConnector |
 
 
 def build_llm(settings: Settings, secrets: SecretsPort) -> LlmPort | None:
-    """Construit le connecteur LLM si la clé est configurée (poussée via l'UI)."""
+    """Construit le connecteur LLM selon le fournisseur configuré (clé poussée via l'UI)."""
     with db.session_scope() as session:
         cfg = RuntimeConfigService(session, secrets, settings)
-        api_key = cfg.get_secret("llm_api_key")
-        base_url = cfg.get("llm_base_url") or settings.llm_base_url
-        model = cfg.get("llm_model") or settings.llm_model
+        provider = cfg.get("llm_provider") or settings.llm_provider
+        if provider == "anthropic":
+            api_key = cfg.get_secret("anthropic_api_key")
+            base_url = cfg.get("anthropic_base_url") or settings.anthropic_base_url
+            model = cfg.get("anthropic_model") or settings.anthropic_model
+        else:
+            api_key = cfg.get_secret("llm_api_key")
+            base_url = cfg.get("llm_base_url") or settings.llm_base_url
+            model = cfg.get("llm_model") or settings.llm_model
     if not api_key:
         return None
-    return _build_llm_adapter(base_url=base_url, api_key=api_key, model=model)
+    return _build_llm_adapter(
+        provider=provider,
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        anthropic_version=settings.anthropic_version,
+    )
 
 
 def _load_profiles_prose(settings: Settings) -> str:

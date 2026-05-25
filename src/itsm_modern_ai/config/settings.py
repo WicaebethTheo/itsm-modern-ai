@@ -25,11 +25,17 @@ class Settings(BaseSettings):
     master_key: str = ""
 
     # Connecteur LLM — réglages NON-secrets (la clé se pousse via l'UI/API).
+    # Fournisseur : "openai_compatible" (défaut souverain Mistral EU) ou "anthropic" (FR-12).
+    llm_provider: str = "openai_compatible"
     llm_base_url: str = "https://api.mistral.ai/v1"
     llm_model: str = "mistral-large-latest"
     llm_price_input_per_mtok: float = 2.0
     llm_price_output_per_mtok: float = 6.0
     llm_api_key: str = ""  # SPIKE CLI uniquement — pas utilisé par le runtime
+    # Anthropic (Phase 2) — non-souverain, choix explicite de l'opérateur.
+    anthropic_base_url: str = "https://api.anthropic.com"
+    anthropic_model: str = "claude-sonnet-4-6"
+    anthropic_version: str = "2023-06-01"
 
     # Moteur à garde-fous
     confidence_threshold: float = 0.7  # FR-8 — valeur de départ, à calibrer

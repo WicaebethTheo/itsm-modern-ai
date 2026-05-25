@@ -5,10 +5,13 @@ from __future__ import annotations
 import logging
 import secrets as _secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import Depends, FastAPI
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from ..config.settings import Settings, get_settings
@@ -66,6 +69,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    from . import web as web_routes
     from .routes import auth as auth_routes
     from .routes import config as config_routes
     from .routes import decisions as decisions_routes
@@ -100,6 +104,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sandbox_routes.router, dependencies=[Depends(require_auth)])
     app.include_router(decisions_routes.router)
     app.include_router(export_routes.router)
+
+    # UI web (Phase 2) — pages rendues côté serveur + assets statiques.
+    app.mount("/ui/static", StaticFiles(directory=str(Path(web_routes.__file__).parent / "static")), name="static")
+    app.include_router(web_routes.router)
+
+    @app.get("/", include_in_schema=False)
+    def _root() -> RedirectResponse:
+        return RedirectResponse(url="/ui/")
+
     return app
 
 

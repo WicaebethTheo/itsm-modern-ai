@@ -27,6 +27,7 @@ La reconnaissance d'entités nommées (NER) qui couvrirait noms et adresses est 
 ## Résidence des données
 
 - Fournisseur LLM par défaut : **Mistral EU**, sous **DPA**, **pas de Cloud Act**. Aucun transfert hors UE par défaut.
+- ⚠️ Un connecteur **Anthropic (Claude)** est sélectionnable depuis l'interface (Phase 2). Anthropic est **hors UE / non-souverain** : s'il est activé, le contenu masqué des tickets est transmis hors UE. À **valider explicitement** avec la DPO avant activation ; le défaut souverain reste Mistral EU.
 - Toute l'application tourne **on-premise** sur l'infrastructure du client.
 - **Aucun appel sortant** hors du fournisseur LLM configuré. **Aucun phone-home.**
 

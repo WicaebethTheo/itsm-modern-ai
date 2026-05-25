@@ -17,8 +17,11 @@ Séquençage : `Epic 1 (spike) → [GO humain] → Epic 2 → Epic 3 → Epic 4`
 - ✅ **Epic 2 — Fondations & connexion GLPI** : daemon FastAPI headless, connecteur GLPI legacy (`apirest.php`), lecture des Tickets « New », référentiels/Whitelist, écriture de Suivi interne privé (mode suggestion), polling idempotent (APScheduler), healthcheck.
 - ✅ **Epic 3 — Moteur à garde-fous** : pipeline à ordre immuable (étage 1 règles GLPI → cost cap → masquage → LLM JSON mode + retry → Pydantic → whitelist → seuil → Suivi / « à trier »). Mode suggestion, veto implicite. Endpoint `/api/sandbox` (triage à blanc).
 - ✅ **Epic 4 — Audit, conformité & packaging** : log exhaustif des appels LLM (masqué), journal de décision annotable, export CSV DPO, auth locale (Argon2 + session), secrets chiffrés (Fernet), healthcheck GLPI **et** LLM + compteurs, Docker + docs (install, DPO, SECURITY).
+- ✅ **Phase 2 — UI web & connecteur Anthropic** : interface rendue côté serveur (Jinja2) sur **`/ui`** (login, dashboard inversé, configuration, journal annotable + sandbox, fiches techniciens en lecture seule) ; **connecteur Anthropic** (FR-12) sélectionnable depuis l'interface. Clé LLM et connexion GLPI configurées **dans l'UI** (jamais `.env`), stockées chiffrées.
 
-Endpoints : `/health` · `/api/status` · `/api/auth/{login,logout,status}` · `/api/config` · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/export/{decisions,llm-calls}.csv`. OpenAPI sur `/docs`.
+Interface : **`/ui`** (configuration de la clé LLM/Anthropic + GLPI, journal, dashboard). API : `/health` · `/api/status` · `/api/auth/*` · `/api/config` · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/export/{decisions,llm-calls}.csv`. OpenAPI sur `/docs`.
+
+> **Souveraineté** : le défaut reste Mistral EU. Anthropic (Claude) est hors UE — son activation est un choix explicite de l'opérateur, à valider avec la DPO (cf. `docs/dpo.md`).
 
 ## Configuration : secrets poussés via l'API/UI (jamais `.env`)
 
@@ -68,8 +71,8 @@ src/itsm_modern_ai/
 │   └── secrets/   # chiffrement Fernet (FR-25)
 ├── services/      # tech_profiles, runtime_config (secrets/config), whitelist_cache
 ├── scheduler/     # poller APScheduler (idempotent, FR-2)
-├── persistence/   # SQLModel/SQLite, idempotence, tables
-└── api/           # FastAPI : app+lifespan, routes health/status/config
+├── persistence/   # SQLModel/SQLite, idempotence, journal/audit, tables
+└── api/           # FastAPI : app+lifespan, routes REST, web.py (UI), templates/, static/
 migrations/        # Alembic
 scripts/spike_routing.py        # Spike Epic 1
 tests/             # unit + integration (respx) ; fixtures/tickets_fr.json
