@@ -28,6 +28,49 @@ class ProcessedTicket(SQLModel, table=True):
     processed_at: datetime = Field(default_factory=_utcnow)
 
 
+class LlmCall(SQLModel, table=True):
+    """Log exhaustif d'un appel LLM (FR-19).
+
+    ⚠️ `prompt_sent` reflète TOUJOURS le Masquage : aucun motif secret en clair
+    (invariant PII). Sert aussi au cost cap (FR-10) via `cost_eur`.
+    """
+
+    __tablename__ = "llm_calls"
+
+    id: int | None = Field(default=None, primary_key=True)
+    ticket_id: int = Field(index=True)
+    ts: datetime = Field(default_factory=_utcnow, index=True)
+    model: str = ""
+    prompt_sent: str = ""  # contenu masqué envoyé
+    response_received: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cost_eur: float = 0.0
+
+
+class DecisionLog(SQLModel, table=True):
+    """Journal de décision (FR-20) : table brute, triable, annotable.
+
+    Une ligne par Ticket traité par le moteur (accepté ou « à trier »). La colonne
+    `annotation` permet au technicien de qualifier la Décision (protocole SM, §7).
+    Aucune métrique nominative n'est produite (anti-mouchard, FR-21).
+    """
+
+    __tablename__ = "decisions"
+
+    id: int | None = Field(default=None, primary_key=True)
+    ticket_id: int = Field(index=True)
+    ts: datetime = Field(default_factory=_utcnow, index=True)
+    accepted: bool = False
+    reason: str = ""  # TriageReason
+    category: int | None = None
+    priority: int | None = None
+    technician_id: int | None = None
+    confidence: float | None = None
+    glpi_link: str = ""
+    annotation: str = ""  # éditable a posteriori (revue manuelle pilote)
+
+
 class RuntimeConfig(SQLModel, table=True):
     """Configuration poussée au runtime via l'API/UI (pas via .env).
 

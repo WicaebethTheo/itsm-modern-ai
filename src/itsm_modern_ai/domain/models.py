@@ -30,6 +30,11 @@ class Ticket(BaseModel):
     id: int
     title: str = ""
     content: str = ""
+    status: int = 1  # 1=New
+    # Champs servant au pipeline à deux étages (FR-5) : a-t-on déjà une catégorie
+    # et un technicien posés par une règle GLPI ?
+    category_id: int = 0
+    assignee_present: bool = False
 
 
 class Decision(BaseModel):

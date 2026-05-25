@@ -13,23 +13,24 @@ from ..config.settings import Settings, get_settings
 from ..persistence import db
 from ..scheduler.poller import TriagePoller
 from ..services.whitelist_cache import WhitelistCache
-from .runtime import build_connector, make_secrets_box
+from .runtime import build_connector, build_triage_service, make_secrets_box
 
 logger = logging.getLogger("itsm.app")
 
 
 async def _run_poll_cycle(app: FastAPI) -> None:
-    """Job planifié : (re)construit le connecteur depuis la config et poll une fois."""
+    """Job planifié : (re)construit connecteur + triage depuis la config et poll une fois."""
     settings: Settings = app.state.settings
     connector = build_connector(settings, app.state.secrets_box)
     if connector is None:
-        logger.info("poll: GLPI non configuré (clé/URL à pousser via /api/config) — cycle ignoré")
+        logger.info("poll: GLPI non configuré (URL/token à pousser via /api/config) — cycle ignoré")
         return
-    poller = TriagePoller(
-        connector,
-        app.state.whitelist_cache,
-        handler=app.state.ticket_handler,  # None en Epic 2 ; câblé en Epic 3
-    )
+    # Le moteur (Epic 3) n'est branché que si le LLM est configuré (clé poussée via l'UI).
+    triage = build_triage_service(settings, app.state.secrets_box, connector)
+    handler = triage.handle if triage is not None else None
+    if handler is None:
+        logger.info("poll: LLM non configuré — lecture seule (aucune suggestion déposée)")
+    poller = TriagePoller(connector, app.state.whitelist_cache, handler=handler)
     await poller.poll_once()
 
 
@@ -40,7 +41,6 @@ async def lifespan(app: FastAPI):
     db.create_all()  # Alembic reste la source de vérité pour les évolutions
     app.state.secrets_box = make_secrets_box(settings)
     app.state.whitelist_cache = WhitelistCache()
-    app.state.ticket_handler = None
 
     scheduler = AsyncIOScheduler()
     if settings.polling_enabled:
@@ -65,6 +65,7 @@ async def lifespan(app: FastAPI):
 def create_app(settings: Settings | None = None) -> FastAPI:
     from .routes import config as config_routes
     from .routes import health as health_routes
+    from .routes import sandbox as sandbox_routes
     from .routes import status as status_routes
 
     app = FastAPI(
@@ -76,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_routes.router)
     app.include_router(status_routes.router)
     app.include_router(config_routes.router)
+    app.include_router(sandbox_routes.router)
     return app
 
 

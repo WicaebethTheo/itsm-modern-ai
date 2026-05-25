@@ -7,12 +7,35 @@ from ....domain.models import Ticket
 STATUS_NEW = 1  # 1=New, 2=Assigned, 3=Planned, 4=Pending, 5=Solved, 6=Closed
 
 
+def _has_assignee(raw: dict) -> bool:
+    """Best-effort : un technicien/groupe assigné est-il déjà posé ?"""
+    for key in ("_users_id_assign", "users_id_assign", "_groups_id_assign", "groups_id_assign"):
+        val = raw.get(key)
+        if isinstance(val, list):
+            if any(v for v in val):
+                return True
+        elif val:
+            try:
+                if int(val) > 0:
+                    return True
+            except (TypeError, ValueError):
+                return True
+    return False
+
+
 def ticket_from_glpi(raw: dict) -> Ticket:
     """Construit un Ticket domaine depuis un objet Ticket GLPI (apirest.php)."""
+    try:
+        category_id = int(raw.get("itilcategories_id") or 0)
+    except (TypeError, ValueError):
+        category_id = 0
     return Ticket(
         id=int(raw["id"]),
         title=str(raw.get("name") or ""),
         content=str(raw.get("content") or ""),
+        status=int(raw.get("status") or STATUS_NEW),
+        category_id=category_id,
+        assignee_present=_has_assignee(raw),
     )
 
 
