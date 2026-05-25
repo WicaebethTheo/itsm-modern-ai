@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import UTC, datetime, timedelta
 
 from sqlmodel import Session, func, select
 
@@ -78,6 +79,36 @@ def set_annotation(session: Session, decision_id: int, annotation: str) -> Decis
 
 def count_llm_calls(session: Session) -> int:
     return int(session.exec(select(func.count()).select_from(LlmCall)).one())
+
+
+def avg_confidence(session: Session) -> float | None:
+    """Confiance moyenne des Décisions (confidence non nulle). None si aucune."""
+    val = session.exec(
+        select(func.avg(DecisionLog.confidence)).where(DecisionLog.confidence.is_not(None))
+    ).one()
+    return round(float(val), 3) if val is not None else None
+
+
+def daily_series(session: Session, days: int = 14) -> list[dict]:
+    """Série quotidienne (déposées vs « à trier ») sur les `days` derniers jours.
+
+    Renvoie une entrée par jour (zéros inclus), du plus ancien au plus récent.
+    """
+    now = datetime.now(UTC)
+    start_day = (now - timedelta(days=days - 1)).date()
+    buckets = {(start_day + timedelta(days=i)).isoformat(): [0, 0] for i in range(days)}
+    rows = session.exec(
+        select(DecisionLog.ts, DecisionLog.accepted).where(
+            DecisionLog.ts >= datetime.combine(start_day, datetime.min.time(), tzinfo=UTC)
+        )
+    ).all()
+    for ts, accepted in rows:
+        key = ts.date().isoformat()
+        if key in buckets:
+            buckets[key][0 if accepted else 1] += 1
+    return [
+        {"date": d, "accepted": v[0], "a_trier": v[1]} for d, v in sorted(buckets.items())
+    ]
 
 
 def decision_stats(session: Session) -> dict:

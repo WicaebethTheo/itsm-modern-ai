@@ -60,6 +60,27 @@ def test_decisions_csv_export(temp_db):
     assert "low_confidence" in csv_text
 
 
+def test_avg_confidence_and_daily_series(temp_db):
+    from itsm_modern_ai.domain.models import Decision
+
+    def acc(conf):
+        return TriageOutcome(
+            accepted=True, reason=TriageReason.ACCEPTED,
+            decision=Decision(category=1, priority=3, technician_id=11, draft="x", confidence=conf),
+        )
+
+    with db.session_scope() as s:
+        journal.record_decision(s, 1, acc(0.8))
+        journal.record_decision(s, 2, acc(1.0))
+        journal.record_decision(s, 3, TriageOutcome(accepted=False, reason=TriageReason.LOW_CONFIDENCE))
+    with db.session_scope() as s:
+        assert journal.avg_confidence(s) == 0.9  # moyenne de 0.8 et 1.0 (None ignoré)
+        series = journal.daily_series(s, days=14)
+        assert len(series) == 14
+        today = series[-1]
+        assert today["accepted"] == 2 and today["a_trier"] == 1
+
+
 def test_llm_calls_csv_and_count(temp_db):
     with db.session_scope() as s:
         journal.record_llm_call(

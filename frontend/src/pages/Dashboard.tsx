@@ -1,80 +1,159 @@
+import { ProgressBar, Sparkline, StackedBars } from "@/components/Charts";
 import { EmptyState } from "@/components/EmptyState";
-import { PageHeader } from "@/components/PageHeader";
 import { StatCard } from "@/components/StatCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
 import { Bot, ListChecks, PlugZap, Timer } from "lucide-react";
+import type { ReactNode } from "react";
 import { useCallback } from "react";
+
+/** Carte KPI avec sparkline / barre de progression (style mockup opérateur). */
+function Kpi({
+  label,
+  value,
+  delta,
+  children,
+}: {
+  label: string;
+  value: string;
+  delta?: { text: string; muted?: boolean };
+  children?: ReactNode;
+}) {
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3 p-5">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <div className="flex items-end justify-between gap-2">
+          <span className="text-3xl font-bold tracking-tight">{value}</span>
+          {delta && (
+            <span
+              className={delta.muted ? "text-sm text-muted-foreground" : "text-sm text-success"}
+            >
+              {delta.text}
+            </span>
+          )}
+        </div>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
 
 export function Dashboard() {
   const metrics = useResource(useCallback(() => Api.metrics(), []));
   const health = useResource(useCallback(() => Api.health(), []));
-  const status = useResource(useCallback(() => Api.status(), []));
   const ops = useResource(useCallback(() => Api.operationalMetrics(), []));
+  const decisions = useResource(useCallback(() => Api.decisions(), []));
 
   const m = metrics.data;
   const h = health.data;
-  const s = status.data;
   const op = ops.data?.metrics ?? null;
+  const series = m?.series ?? [];
+  const totals = series.map((d) => d.accepted + d.a_trier);
+  const aTrier = series.map((d) => d.a_trier);
+  const coverage = series.map((d) =>
+    d.accepted + d.a_trier ? Math.round((d.accepted / (d.accepted + d.a_trier)) * 100) : 0,
+  );
 
   return (
     <>
-      <PageHeader
-        title="Dashboard"
-        description="Vue d'équipe, orientée santé opérationnelle. Aucune métrique par technicien."
-      />
-
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard
-          label="Connexion GLPI"
-          icon={PlugZap}
-          tone={!h?.glpi.configured ? "warn" : h.glpi.reachable ? "success" : "destructive"}
-          value={
-            !h?.glpi.configured ? "non configurée" : h.glpi.reachable ? "joignable" : "injoignable"
-          }
-        />
-        <StatCard
-          label="Fournisseur IA"
-          icon={Bot}
-          tone={h?.llm.configured ? "success" : "warn"}
-          value={h?.llm.configured ? "configuré" : "clé absente"}
-        />
-        <StatCard
-          label="Whitelist"
-          icon={ListChecks}
-          tone="primary"
-          value={s ? `${s.categories_count} / ${s.technicians_count}` : "—"}
-          hint="catégories / techniciens"
-        />
-        <StatCard
-          label="Polling"
-          icon={Timer}
-          tone={s?.polling_enabled ? "success" : "warn"}
-          value={s?.polling_enabled ? "actif" : "inactif"}
-          hint={s ? `${s.polling_interval_seconds}s` : undefined}
-        />
+      {/* Top bar */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-5">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Tableau de bord{" "}
+          <span className="text-base font-normal text-muted-foreground">· 14 derniers jours</span>
+        </h1>
+        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+          {h && (
+            <span className="flex items-center gap-1.5">
+              <span
+                className={`h-2 w-2 rounded-full ${h.glpi.reachable ? "bg-success" : "bg-muted-foreground/50"}`}
+              />
+              {h.glpi.configured
+                ? h.glpi.reachable
+                  ? "GLPI connecté"
+                  : "GLPI injoignable"
+                : "GLPI non configuré"}
+            </span>
+          )}
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+            OP
+          </span>
+        </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <StatCard label="Décisions au total" value={m?.total ?? "—"} />
-        <StatCard
+      {/* 5 cartes KPI */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <Kpi label="Décisions" value={m ? m.total.toLocaleString("fr-FR") : "—"}>
+          <Sparkline values={totals} />
+        </Kpi>
+        <Kpi
           label="Couverture utile"
           value={m ? `${Math.round(m.useful_coverage * 100)}%` : "—"}
-          hint={m ? `${m.accepted} déposées · ${m.a_trier} « à trier »` : undefined}
-        />
-        <StatCard
+          delta={m ? { text: `${m.accepted} déposées` } : undefined}
+        >
+          <Sparkline values={coverage} />
+        </Kpi>
+        <Kpi
+          label="À trier"
+          value={m ? m.a_trier.toLocaleString("fr-FR") : "—"}
+          delta={
+            m
+              ? { text: `${Math.round((m.a_trier / Math.max(1, m.total)) * 100)}%`, muted: true }
+              : undefined
+          }
+        >
+          <Sparkline values={aTrier} />
+        </Kpi>
+        <Kpi
           label="Coût LLM (24 h)"
           value={m ? `${m.cost_eur_last_24h} €` : "—"}
-          hint={m ? `plafond ${m.cost_cap_eur_per_day} €/j · ${m.llm_calls} appels` : undefined}
-        />
+          delta={m ? { text: `cap ${m.cost_cap_eur_per_day} €`, muted: true } : undefined}
+        >
+          <Sparkline values={totals} />
+        </Kpi>
+        <Kpi
+          label="Confiance moy."
+          value={m?.avg_confidence != null ? m.avg_confidence.toFixed(2) : "—"}
+        >
+          <ProgressBar ratio={m?.avg_confidence ?? 0} />
+        </Kpi>
       </div>
 
-      <h2 className="mt-8 text-lg font-semibold">Dashboard inversé (GLPI)</h2>
+      {/* Tendance 14 jours */}
+      <Card className="mt-6">
+        <CardHeader className="flex-row items-center justify-between">
+          <div>
+            <CardTitle>Tendance sur 14 jours</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Décisions · déposées vs « à trier »
+            </p>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-primary" /> Déposées
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-primary/35" /> À trier
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {series.length ? (
+            <StackedBars data={series} />
+          ) : (
+            <EmptyState icon={ListChecks} title="Pas encore de données" />
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Opérationnel GLPI (FR-23) */}
+      <h2 className="mt-8 text-lg font-semibold">Opérationnel (GLPI)</h2>
       <p className="mb-3 text-sm text-muted-foreground">
-        Métriques d'équipe sur {op ? `${op.window_days} j` : "la fenêtre"} — jamais par personne. En
-        mode suggestion, elles mesurent l'activité de l'équipe, pas l'effet de l'outil.
+        Métriques d'équipe — jamais par personne. En mode suggestion, elles mesurent l'activité de
+        l'équipe, pas l'effet de l'outil.
       </p>
       {ops.data && !ops.data.available ? (
         <Card>
@@ -83,78 +162,90 @@ export function Dashboard() {
           </CardContent>
         </Card>
       ) : (
-        <>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <StatCard
-              label="Temps 1ʳᵉ réponse (médian)"
-              value={
-                op?.first_response_median_minutes != null
-                  ? `${op.first_response_median_minutes} min`
-                  : "—"
-              }
-            />
-            <StatCard
-              label="Respect SLA"
-              value={
-                op?.sla_compliance_rate != null
-                  ? `${Math.round(op.sla_compliance_rate * 100)}%`
-                  : "—"
-              }
-              hint={op ? `${op.sla_evaluated} ticket(s) évalué(s)` : undefined}
-            />
-            <StatCard
-              label="Taux de réaffectation"
-              value="n/d"
-              hint="nécessite l'historique GLPI"
-            />
-            <StatCard label="Anomalies" value={op?.anomalies.length ?? "—"} />
-          </div>
-          {op && op.anomalies.length > 0 && (
-            <Card className="mt-4">
-              <CardHeader>
-                <CardTitle>Anomalies</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col gap-1.5">
-                  {op.anomalies.slice(0, 20).map((a) => (
-                    <div
-                      key={`${a.ticket_id}-${a.kind}`}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <Badge variant="warn">#{a.ticket_id}</Badge>
-                      <span className="text-muted-foreground">{a.detail}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <StatCard
+            label="Temps 1ʳᵉ réponse"
+            icon={Timer}
+            tone="primary"
+            value={
+              op?.first_response_median_minutes != null
+                ? `${op.first_response_median_minutes} min`
+                : "—"
+            }
+            hint="médian"
+          />
+          <StatCard
+            label="Respect SLA"
+            icon={ListChecks}
+            tone="success"
+            value={
+              op?.sla_compliance_rate != null ? `${Math.round(op.sla_compliance_rate * 100)}%` : "—"
+            }
+            hint={op ? `${op.sla_evaluated} évalués` : undefined}
+          />
+          <StatCard
+            label="Réaffectation"
+            icon={PlugZap}
+            value="n/d"
+            hint="historique GLPI requis"
+          />
+          <StatCard
+            label="Anomalies"
+            icon={Bot}
+            tone={op && op.anomalies.length > 0 ? "warn" : "default"}
+            value={op ? String(op.anomalies.length) : "—"}
+          />
+        </div>
       )}
 
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Répartition des résultats</CardTitle>
+      {/* Journal des décisions (aperçu) */}
+      <Card className="mt-6 overflow-hidden">
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle>Journal des décisions</CardTitle>
+          <span className="flex items-center gap-1.5 text-xs italic text-muted-foreground">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" /> live
+          </span>
         </CardHeader>
-        <CardContent>
-          {metrics.error && <p className="text-sm text-destructive">{metrics.error}</p>}
-          {m && Object.keys(m.by_reason).length === 0 && (
-            <EmptyState
-              icon={ListChecks}
-              title="Aucune décision enregistrée"
-              description="Les décisions du moteur apparaîtront ici une fois le triage lancé."
-            />
-          )}
-          <div className="flex flex-col gap-1.5">
-            {m &&
-              Object.entries(m.by_reason).map(([reason, n]) => (
-                <div key={reason} className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{reason}</span>
-                  <span className="font-medium">{n}</span>
-                </div>
-              ))}
-          </div>
-        </CardContent>
+        <table className="w-full text-sm">
+          <thead className="border-y border-border/60 bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+            <tr>
+              <th className="px-5 py-2 text-left font-medium">Ticket</th>
+              <th className="px-5 py-2 text-left font-medium">Sujet</th>
+              <th className="px-5 py-2 text-left font-medium">Routage</th>
+              <th className="px-5 py-2 text-right font-medium">Conf.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {decisions.data?.slice(0, 8).map((d) => (
+              <tr key={d.id} className="border-b border-border/40 last:border-0 hover:bg-accent/40">
+                <td className="px-5 py-2.5 font-mono text-xs text-muted-foreground">
+                  #{d.ticket_id}
+                </td>
+                <td className="px-5 py-2.5">{d.annotation || "—"}</td>
+                <td className="px-5 py-2.5">
+                  {d.accepted ? (
+                    <Badge variant={d.group_id ? "default" : "success"}>
+                      →{" "}
+                      {d.technician_id != null
+                        ? `Tech #${d.technician_id}`
+                        : d.group_id != null
+                          ? `Groupe #${d.group_id}`
+                          : "déposée"}
+                    </Badge>
+                  ) : (
+                    <Badge variant="warn">⚠ {d.reason}</Badge>
+                  )}
+                </td>
+                <td className="px-5 py-2.5 text-right font-mono text-xs">
+                  {d.confidence != null ? d.confidence.toFixed(2) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {decisions.data?.length === 0 && (
+          <EmptyState icon={ListChecks} title="Aucune décision pour le moment" />
+        )}
       </Card>
     </>
   );

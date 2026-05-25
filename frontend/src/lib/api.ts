@@ -5,6 +5,8 @@
  * l'UI facile à étendre : les pages n'appellent jamais `fetch` directement.
  */
 
+import { demo } from "./demo";
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -69,6 +71,12 @@ export interface EngineStatus {
   cost_cap_eur_per_day: number;
 }
 
+export interface DayPoint {
+  date: string;
+  accepted: number;
+  a_trier: number;
+}
+
 export interface Metrics {
   total: number;
   accepted: number;
@@ -78,6 +86,8 @@ export interface Metrics {
   llm_calls: number;
   cost_eur_last_24h: number;
   cost_cap_eur_per_day: number;
+  avg_confidence: number | null;
+  series: DayPoint[];
 }
 
 export interface ConfigView {
@@ -222,32 +232,73 @@ export interface SandboxResult {
   draft: string | null;
 }
 
+/** Mode démo : l'app est servie sous /demo → toutes les données sont simulées. */
+export const DEMO =
+  typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "").startsWith("/demo");
+
+const ok = <T>(v: T): Promise<T> => Promise.resolve(v);
+
 // ── Endpoints regroupés par domaine ──────────────────────────────────────────
 export const Api = {
-  authStatus: () => api.get<AuthStatus>("/api/auth/status"),
+  authStatus: () => (DEMO ? ok(demo.authStatus) : api.get<AuthStatus>("/api/auth/status")),
   login: (password: string) => api.post<AuthStatus>("/api/auth/login", { password }),
-  logout: () => api.post<AuthStatus>("/api/auth/logout"),
+  logout: () => (DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/logout")),
 
-  health: () => api.get<Health>("/health"),
-  status: () => api.get<EngineStatus>("/api/status"),
-  metrics: () => api.get<Metrics>("/api/metrics"),
-  operationalMetrics: () => api.get<OperationalView>("/api/operational-metrics"),
+  health: () => (DEMO ? ok(demo.health) : api.get<Health>("/health")),
+  status: () => (DEMO ? ok(demo.status) : api.get<EngineStatus>("/api/status")),
+  metrics: () => (DEMO ? ok(demo.metrics) : api.get<Metrics>("/api/metrics")),
+  operationalMetrics: () =>
+    DEMO ? ok(demo.operational) : api.get<OperationalView>("/api/operational-metrics"),
 
-  getConfig: () => api.get<ConfigView>("/api/config"),
-  updateConfig: (body: ConfigUpdate) => api.post<ConfigView>("/api/config", body),
+  getConfig: () => (DEMO ? ok(demo.config) : api.get<ConfigView>("/api/config")),
+  updateConfig: (body: ConfigUpdate) =>
+    DEMO ? ok(demo.config) : api.post<ConfigView>("/api/config", body),
 
   // Référentiels GLPI : scan + découverte + sélection du périmètre.
-  syncGlpi: () => api.post<SyncResult>("/api/glpi/sync"),
-  discovery: (kind: RefKind) => api.get<RefItem[]>(`/api/discovery/${kind}`),
-  saveTechnicians: (items: EligibilityItem[]) => api.put<RefItem[]>("/api/technicians", items),
-  saveGroups: (items: EligibilityItem[]) => api.put<RefItem[]>("/api/groups", items),
-  getScope: () => api.get<Scope>("/api/scope"),
-  setScope: (scope: Scope) => api.put<Scope>("/api/scope", scope),
+  syncGlpi: () =>
+    DEMO
+      ? ok({
+          ok: true,
+          detail: "Démo : référentiels simulés.",
+          counts: { category: 5, technician: 4, group: 2, entity: 2 },
+        })
+      : api.post<SyncResult>("/api/glpi/sync"),
+  discovery: (kind: RefKind) =>
+    DEMO
+      ? ok(
+          kind === "technician"
+            ? demo.technicians
+            : kind === "group"
+              ? demo.groups
+              : kind === "entity"
+                ? demo.entities
+                : demo.categories,
+        )
+      : api.get<RefItem[]>(`/api/discovery/${kind}`),
+  saveTechnicians: (items: EligibilityItem[]) =>
+    DEMO ? ok(demo.technicians) : api.put<RefItem[]>("/api/technicians", items),
+  saveGroups: (items: EligibilityItem[]) =>
+    DEMO ? ok(demo.groups) : api.put<RefItem[]>("/api/groups", items),
+  getScope: () => (DEMO ? ok(demo.scope) : api.get<Scope>("/api/scope")),
+  setScope: (scope: Scope) => (DEMO ? ok(scope) : api.put<Scope>("/api/scope", scope)),
 
-  decisions: () => api.get<DecisionEntry[]>("/api/decisions"),
+  decisions: () => (DEMO ? ok(demo.decisions) : api.get<DecisionEntry[]>("/api/decisions")),
   annotate: (id: number, annotation: string) =>
-    api.patch<DecisionEntry>(`/api/decisions/${id}/annotation`, { annotation }),
+    DEMO
+      ? ok({ ...demo.decisions[0], id, annotation })
+      : api.patch<DecisionEntry>(`/api/decisions/${id}/annotation`, { annotation }),
 
   sandbox: (content: string, title = "") =>
-    api.post<SandboxResult>("/api/sandbox", { title, content }),
+    DEMO
+      ? ok({
+          accepted: true,
+          reason: "accepted",
+          category: 1,
+          priority: 3,
+          technician_id: 11,
+          group_id: null,
+          confidence: 0.9,
+          draft: "Bonjour, nous avons bien reçu votre demande et la prenons en charge.",
+        } satisfies SandboxResult)
+      : api.post<SandboxResult>("/api/sandbox", { title, content }),
 };

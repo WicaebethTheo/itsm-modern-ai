@@ -1,3 +1,4 @@
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
@@ -121,6 +122,9 @@ export function Layout() {
         </nav>
 
         <div className="border-t border-border/60 px-2 py-3 sm:px-3">
+          <div className="hidden sm:block">
+            <ThemeToggle />
+          </div>
           <button
             type="button"
             onClick={logout}
@@ -130,9 +134,15 @@ export function Layout() {
             <LogOut className="h-4 w-4 shrink-0" />
             <span className="hidden sm:inline">Déconnexion</span>
           </button>
-          <p className="mt-2 hidden px-3 text-[11px] leading-snug text-muted-foreground/70 sm:block">
-            Mode suggestion — le LLM propose, le code décide.
-          </p>
+          <div className="mt-2 hidden items-center gap-2 px-3 sm:flex">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/70" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+            </span>
+            <span className="text-[11px] leading-snug text-muted-foreground/70">
+              Moteur en marche · mode suggestion
+            </span>
+          </div>
         </div>
       </aside>
 

@@ -18,6 +18,12 @@ from ..security import require_auth
 router = APIRouter(prefix="/api", tags=["insights"], dependencies=[Depends(require_auth)])
 
 
+class DayPoint(BaseModel):
+    date: str
+    accepted: int
+    a_trier: int
+
+
 class Metrics(BaseModel):
     total: int
     accepted: int
@@ -27,17 +33,21 @@ class Metrics(BaseModel):
     llm_calls: int
     cost_eur_last_24h: float
     cost_cap_eur_per_day: float
+    avg_confidence: float | None = None
+    series: list[DayPoint] = []
 
 
 @router.get("/metrics", response_model=Metrics)
 def metrics(request: Request, session: Session = Depends(get_session)) -> Metrics:
-    """Métriques issues du Journal (volume, couverture utile, coût) — niveau équipe."""
+    """Métriques du Journal (volume, couverture utile, coût, confiance, série 14 j) — niveau équipe."""
     stats = journal.decision_stats(session)
     return Metrics(
         **stats,
         llm_calls=journal.count_llm_calls(session),
         cost_eur_last_24h=round(cost_cap.spent_last_24h(session), 4),
         cost_cap_eur_per_day=request.app.state.settings.cost_cap_eur_per_day,
+        avg_confidence=journal.avg_confidence(session),
+        series=[DayPoint(**d) for d in journal.daily_series(session, days=14)],
     )
 
 

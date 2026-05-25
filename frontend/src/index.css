@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
-/* Thème clair unique (façon shadcn/ui). Tokens HSL -> utilitaires Tailwind v4. */
+/* Variante sombre activée par la classe `.dark` sur <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tokens HSL -> utilitaires Tailwind v4. */
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -27,12 +30,13 @@
   --radius-lg: 0.5rem;
 }
 
+/* Thème CLAIR (mode « white »). Accent indigo. */
 :root {
   --background: 210 20% 98%;
   --foreground: 222 47% 11%;
   --card: 0 0% 100%;
   --card-foreground: 222 47% 11%;
-  --primary: 221 64% 38%;
+  --primary: 239 84% 60%;
   --primary-foreground: 0 0% 100%;
   --muted: 210 16% 95%;
   --muted-foreground: 215 16% 42%;
@@ -42,18 +46,44 @@
   --destructive-foreground: 0 0% 100%;
   --success: 152 55% 33%;
   --success-foreground: 0 0% 100%;
-  --warning: 38 92% 45%;
+  --warning: 38 92% 42%;
   --warning-foreground: 0 0% 100%;
   --border: 214 20% 88%;
   --input: 214 20% 84%;
-  --ring: 221 64% 38%;
-  /* Fond légèrement teinté pour la barre latérale, distinct des cartes blanches. */
+  --ring: 239 84% 60%;
   --sidebar: 210 22% 97%;
+}
+
+/* Thème SOMBRE (mode « black », défaut) — proche noir teinté bleu-violet, accent indigo. */
+.dark {
+  --background: 240 16% 6%;
+  --foreground: 220 22% 92%;
+  --card: 240 14% 10%;
+  --card-foreground: 220 22% 92%;
+  --primary: 239 84% 67%;
+  --primary-foreground: 0 0% 100%;
+  --muted: 240 10% 15%;
+  --muted-foreground: 240 9% 62%;
+  --accent: 240 12% 17%;
+  --accent-foreground: 220 22% 92%;
+  --destructive: 0 72% 62%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 52% 52%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 58%;
+  --warning-foreground: 240 16% 8%;
+  --border: 240 13% 18%;
+  --input: 240 13% 22%;
+  --ring: 239 84% 67%;
+  --sidebar: 240 18% 4.5%;
 }
 
 @layer base {
   * {
     border-color: hsl(var(--border));
+  }
+  html {
+    color-scheme: light dark;
   }
   body {
     background-color: hsl(var(--background));
@@ -64,13 +94,11 @@
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
-  /* Anneau de focus visible et homogène, décollé de l'élément (accessibilité). */
   :focus-visible {
     outline: none;
     box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring) / 0.6);
     border-radius: var(--radius-md);
   }
-  /* Barre de défilement discrète, cohérente avec le thème clair. */
   * {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;

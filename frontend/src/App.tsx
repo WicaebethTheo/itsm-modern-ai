@@ -1,4 +1,5 @@
 import { RequireAuth } from "@/components/RequireAuth";
+import { DEMO } from "@/lib/api";
 import { AiProvider } from "@/pages/AiProvider";
 import { Dashboard } from "@/pages/Dashboard";
 import { EngineSettings } from "@/pages/EngineSettings";
@@ -14,7 +15,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={DEMO ? "/demo" : undefined}>
       <Routes>
         <Route path="/login" element={<Login />} />
         {/* Routes protégées (Layout rendu par RequireAuth) */}
