@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from itsm_modern_ai.domain import engine
-from itsm_modern_ai.domain.models import Decision, TriageReason
+from itsm_modern_ai.domain.models import Decision, Referentials, TriageReason
 
 
 def _decision(**kw) -> Decision:
@@ -63,3 +63,21 @@ def test_threshold_boundary_inclusive(refs):
 def test_confidence_out_of_range_rejected_by_schema():
     with pytest.raises(ValidationError):
         Decision(category=1, priority=3, technician_id=11, draft="x", confidence=1.5)
+
+
+def test_group_routing_accepted_when_group_eligible():
+    refs = Referentials(categories={1: "C"}, technicians={11: "T"}, groups={5: "G"})
+    out = engine.evaluate(_decision(technician_id=None, group_id=5), refs, 0.7)
+    assert out.accepted is True
+
+
+def test_no_assignee_goes_a_trier():
+    refs = Referentials(categories={1: "C"}, technicians={11: "T"}, groups={5: "G"})
+    out = engine.evaluate(_decision(technician_id=None, group_id=None), refs, 0.7)
+    assert out.is_a_trier and out.reason is TriageReason.NO_ELIGIBLE_ASSIGNEE
+
+
+def test_group_not_eligible_with_no_tech_is_a_trier():
+    refs = Referentials(categories={1: "C"}, technicians={11: "T"}, groups={5: "G"})
+    out = engine.evaluate(_decision(technician_id=None, group_id=999), refs, 0.7)
+    assert out.is_a_trier and out.reason is TriageReason.NO_ELIGIBLE_ASSIGNEE

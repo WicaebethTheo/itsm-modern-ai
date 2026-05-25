@@ -36,7 +36,16 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export type LlmProvider = "openai_compatible" | "anthropic";
+export type LlmProvider = "mistral" | "openai" | "ollama" | "anthropic";
+
+export const PROVIDER_LABELS: Record<LlmProvider, string> = {
+  mistral: "Mistral EU (souverain)",
+  openai: "OpenAI",
+  ollama: "Ollama (local)",
+  anthropic: "Anthropic (Claude)",
+};
+
+export type RefKind = "category" | "entity" | "technician" | "group";
 
 export interface AuthStatus {
   authenticated: boolean;
@@ -76,6 +85,10 @@ export interface ConfigView {
   llm_provider: LlmProvider | null;
   llm_base_url: string | null;
   llm_model: string | null;
+  openai_base_url: string | null;
+  openai_model: string | null;
+  ollama_base_url: string | null;
+  ollama_model: string | null;
   anthropic_base_url: string | null;
   anthropic_model: string | null;
   confidence_threshold: string | null;
@@ -83,6 +96,7 @@ export interface ConfigView {
   glpi_user_token_set: boolean;
   glpi_app_token_set: boolean;
   llm_api_key_set: boolean;
+  openai_api_key_set: boolean;
   anthropic_api_key_set: boolean;
 }
 
@@ -91,6 +105,10 @@ export interface ConfigUpdate {
   llm_provider?: LlmProvider;
   llm_base_url?: string;
   llm_model?: string;
+  openai_base_url?: string;
+  openai_model?: string;
+  ollama_base_url?: string;
+  ollama_model?: string;
   anthropic_base_url?: string;
   anthropic_model?: string;
   confidence_threshold?: number;
@@ -98,6 +116,7 @@ export interface ConfigUpdate {
   glpi_user_token?: string;
   glpi_app_token?: string;
   llm_api_key?: string;
+  openai_api_key?: string;
   anthropic_api_key?: string;
 }
 
@@ -110,15 +129,35 @@ export interface DecisionEntry {
   category: number | null;
   priority: number | null;
   technician_id: number | null;
+  group_id: number | null;
   confidence: number | null;
   glpi_link: string;
   annotation: string;
 }
 
-export interface TechProfile {
-  technician_id: number;
+export interface RefItem {
+  ext_id: number;
   name: string;
-  profile: string;
+  selected: boolean;
+  eligible: boolean;
+  skills: string;
+}
+
+export interface SyncResult {
+  ok: boolean;
+  detail: string;
+  counts: Record<string, number>;
+}
+
+export interface Scope {
+  category_ids: number[];
+  entity_ids: number[];
+}
+
+export interface EligibilityItem {
+  ext_id: number;
+  eligible: boolean;
+  skills: string;
 }
 
 export interface SandboxResult {
@@ -127,6 +166,7 @@ export interface SandboxResult {
   category: number | null;
   priority: number | null;
   technician_id: number | null;
+  group_id: number | null;
   confidence: number | null;
   draft: string | null;
 }
@@ -144,14 +184,18 @@ export const Api = {
   getConfig: () => api.get<ConfigView>("/api/config"),
   updateConfig: (body: ConfigUpdate) => api.post<ConfigView>("/api/config", body),
 
+  // Référentiels GLPI : scan + découverte + sélection du périmètre.
+  syncGlpi: () => api.post<SyncResult>("/api/glpi/sync"),
+  discovery: (kind: RefKind) => api.get<RefItem[]>(`/api/discovery/${kind}`),
+  saveTechnicians: (items: EligibilityItem[]) => api.put<RefItem[]>("/api/technicians", items),
+  saveGroups: (items: EligibilityItem[]) => api.put<RefItem[]>("/api/groups", items),
+  getScope: () => api.get<Scope>("/api/scope"),
+  setScope: (scope: Scope) => api.put<Scope>("/api/scope", scope),
+
   decisions: () => api.get<DecisionEntry[]>("/api/decisions"),
   annotate: (id: number, annotation: string) =>
     api.patch<DecisionEntry>(`/api/decisions/${id}/annotation`, { annotation }),
 
-  techProfiles: () => api.get<TechProfile[]>("/api/tech-profiles"),
-  saveTechProfile: (id: number, name: string, profile: string) =>
-    api.put<TechProfile>(`/api/tech-profiles/${id}`, { name, profile }),
-  deleteTechProfile: (id: number) => api.del<void>(`/api/tech-profiles/${id}`),
-
-  sandbox: (content: string, title = "") => api.post<SandboxResult>("/api/sandbox", { title, content }),
+  sandbox: (content: string, title = "") =>
+    api.post<SandboxResult>("/api/sandbox", { title, content }),
 };

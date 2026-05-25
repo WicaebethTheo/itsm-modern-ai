@@ -62,7 +62,7 @@ export function Journal() {
               <th className="px-4 py-2.5 text-left font-semibold">Date</th>
               <th className="px-4 py-2.5 text-left font-semibold">Ticket</th>
               <th className="px-4 py-2.5 text-left font-semibold">Issue</th>
-              <th className="px-4 py-2.5 text-left font-semibold">Cat/Prio/Tech</th>
+              <th className="px-4 py-2.5 text-left font-semibold">Cat/Prio/Affect.</th>
               <th className="px-4 py-2.5 text-left font-semibold">Conf.</th>
               <th className="px-4 py-2.5 text-left font-semibold">Annotation</th>
             </tr>
@@ -90,7 +90,12 @@ export function Journal() {
                   )}
                 </td>
                 <td className="px-4 py-2.5 text-muted-foreground">
-                  {d.category ?? "—"} / {d.priority ?? "—"} / {d.technician_id ?? "—"}
+                  {d.category ?? "—"} / {d.priority ?? "—"} /{" "}
+                  {d.technician_id != null
+                    ? `T#${d.technician_id}`
+                    : d.group_id != null
+                      ? `G#${d.group_id}`
+                      : "—"}
                 </td>
                 <td className="px-4 py-2.5">
                   {d.confidence != null ? `${Math.round(d.confidence * 100)}%` : "—"}

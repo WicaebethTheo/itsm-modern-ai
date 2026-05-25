@@ -17,11 +17,13 @@ Séquençage : `Epic 1 (spike) → [GO humain] → Epic 2 → Epic 3 → Epic 4`
 - ✅ **Epic 2 — Fondations & connexion GLPI** : daemon FastAPI headless, connecteur GLPI legacy (`apirest.php`), lecture des Tickets « New », référentiels/Whitelist, écriture de Suivi interne privé (mode suggestion), polling idempotent (APScheduler), healthcheck.
 - ✅ **Epic 3 — Moteur à garde-fous** : pipeline à ordre immuable (étage 1 règles GLPI → cost cap → masquage → LLM JSON mode + retry → Pydantic → whitelist → seuil → Suivi / « à trier »). Mode suggestion, veto implicite. Endpoint `/api/sandbox` (triage à blanc).
 - ✅ **Epic 4 — Audit, conformité & packaging** : log exhaustif des appels LLM (masqué), journal de décision annotable, export CSV DPO, auth locale (Argon2 + session), secrets chiffrés (Fernet), healthcheck GLPI **et** LLM + compteurs, Docker + docs (install, DPO, SECURITY).
-- ✅ **Phase 2 — UI web (SPA React) & connecteur Anthropic** : interface **React 19 + Vite + Tailwind v4** (façon shadcn/ui) servie en statique par le moteur à la racine **`/`** : login, dashboard, statut, journal annotable, sandbox, et **toute la configuration dans l'UI** — connexion GLPI, fournisseur IA (Mistral EU **ou Anthropic/Claude**, FR-12), seuils, et **fiches techniciens CRUD** (stockées en base, plus de YAML). Clé LLM et tokens GLPI saisis dans l'interface (jamais `.env`), chiffrés au repos.
+- ✅ **Phase 2 — UI web (SPA React) & connecteurs LLM multiples** : interface **React 19 + Vite + Tailwind v4** (façon shadcn/ui) servie en statique par le moteur à la racine **`/`** : login, dashboard, statut, journal annotable, sandbox, et **toute la configuration dans l'UI** — connexion GLPI, fournisseur IA, seuils, et **gestion du périmètre** (scan GLPI puis sélection des catégories/entités/techniciens/groupes). Clé LLM et tokens GLPI saisis dans l'interface (jamais `.env`), chiffrés au repos.
+  - **Whitelist curée depuis un scan GLPI.** La console scanne GLPI (`POST /api/glpi/sync` → cache des catégories, entités, techniciens, groupes), puis l'admin **sélectionne** ce que l'IA a le droit d'utiliser : catégories autorisées + entités du périmètre (`PUT /api/scope`), techniciens/groupes **éligibles** + leur **fiche en prose** éditée dans l'UI (`PUT /api/technicians`, `PUT /api/groups`). Le moteur n'agit que dans ce **périmètre effectif** (= GLPI ∩ sélections admin) ; le routage vise un **technicien** (préféré) ou, en fallback, un **groupe** éligible. **Les fiches techniciens ne sont plus un YAML** : elles sont stockées en base.
+  - **4 fournisseurs LLM** configurables (clés chiffrées au repos) : **Mistral EU** (défaut souverain) · **OpenAI** (distinct, non-souverain) · **Ollama** (modèle **local**, pas de clé) · **Anthropic / Claude** (non-souverain, FR-12).
 
-UI : **`/`** (SPA). API : `/health` · `/api/status` · `/api/metrics` · `/api/auth/*` · `/api/config` · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/tech-profiles` (CRUD) · `/api/export/{decisions,llm-calls}.csv`. OpenAPI sur `/docs`.
+UI : **`/`** (SPA). API : `/health` · `/api/status` · `/api/metrics` · `/api/auth/*` · `/api/config` · `/api/glpi/sync` · `/api/discovery/{category|entity|technician|group}` · `/api/scope` (`GET`/`PUT`) · `/api/technicians` (`PUT`) · `/api/groups` (`PUT`) · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/export/{decisions,llm-calls}.csv`. OpenAPI sur `/docs`.
 
-> **Souveraineté** : le défaut reste Mistral EU. Anthropic (Claude) est hors UE — son activation est un choix explicite de l'opérateur, à valider avec la DPO (cf. `docs/dpo.md`).
+> **Souveraineté** : le défaut reste Mistral EU. **OpenAI et Anthropic (Claude) sont hors UE** — leur activation est un choix explicite de l'opérateur, à valider avec la DPO (cf. `docs/dpo.md`). **Ollama** tourne en local (aucune donnée ne sort).
 
 ## Configuration : secrets poussés via l'API/UI (jamais `.env`)
 
@@ -62,7 +64,9 @@ make spike-mock       # offline ; make spike → vraie mesure (LLM_API_KEY pour 
 ```
 
 Tout se configure ensuite **dans l'interface** (`/`) : connexion GLPI, fournisseur IA
-(clé Mistral/Anthropic), seuils, fiches techniciens. Rien dans `.env` côté secrets.
+(Mistral EU / OpenAI / Ollama / Anthropic), seuils, puis **scan GLPI** et sélection du
+périmètre (catégories/entités/techniciens/groupes + fiches en prose). Rien dans `.env`
+côté secrets.
 
 ## Structure (hexagonale)
 
@@ -72,9 +76,9 @@ src/itsm_modern_ai/
 ├── ports/         # interfaces (Protocol) : ItsmPort, LlmPort, SecretsPort
 ├── adapters/
 │   ├── itsm/glpi/ # client apirest.php, mapper (ITILFollowup), connector (ItsmPort)
-│   ├── llm/       # OpenAI-compatible (défaut Mistral) + mock offline
+│   ├── llm/       # Mistral EU (défaut) / OpenAI / Ollama (local) / Anthropic + mock offline
 │   └── secrets/   # chiffrement Fernet (FR-25)
-├── services/      # tech_profiles, runtime_config (secrets/config), whitelist_cache
+├── services/      # referentials (scan GLPI + périmètre/fiches en base), runtime_config, whitelist_cache
 ├── scheduler/     # poller APScheduler (idempotent, FR-2)
 ├── persistence/   # SQLModel/SQLite, idempotence, journal/audit, tables
 └── api/           # FastAPI : app+lifespan, routes REST, spa.py (sert la SPA)

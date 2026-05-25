@@ -51,18 +51,26 @@ class TriagePoller:
         *,
         handler: TicketHandler | None = None,
         session_factory: SessionFactory = _default_session,
+        referentials_loader: Callable[[], Referentials] | None = None,
     ) -> None:
         self._itsm = itsm
         self._cache = whitelist_cache
         self._handler = handler
         self._session_factory = session_factory
+        # En prod : périmètre EFFECTIF (sélections admin en base). Défaut (tests) : GLPI.
+        self._referentials_loader = referentials_loader
+
+    async def _load_referentials(self) -> Referentials:
+        if self._referentials_loader is not None:
+            return self._referentials_loader()
+        return await self._itsm.get_referentials()
 
     async def poll_once(self) -> PollStats:
         stats = PollStats()
 
-        # 1) Rafraîchir la Whitelist (FR-3). Si échec, on saute ce cycle proprement.
+        # 1) Charger la Whitelist effective (FR-3/FR-7). Échec → cycle sauté proprement.
         try:
-            self._cache.refresh(await self._itsm.get_referentials())
+            self._cache.refresh(await self._load_referentials())
         except ItsmError as exc:
             logger.warning("poll: référentiels indisponibles, cycle sauté: %s", exc)
             return stats

@@ -49,6 +49,7 @@ def record_decision(
         category=d.category if d else None,
         priority=d.priority if d else None,
         technician_id=d.technician_id if d else None,
+        group_id=d.group_id if d else None,
         confidence=d.confidence if d else None,
         glpi_link=glpi_link,
     )
@@ -107,12 +108,12 @@ def decisions_csv(session: Session) -> str:
     writer = csv.writer(buf)
     writer.writerow(
         ["id", "ticket_id", "ts", "accepted", "reason", "category", "priority",
-         "technician_id", "confidence", "glpi_link", "annotation"]
+         "technician_id", "group_id", "confidence", "glpi_link", "annotation"]
     )
     for d in list_decisions(session, limit=100_000):
         writer.writerow(
             [d.id, d.ticket_id, d.ts.isoformat(), d.accepted, d.reason, d.category,
-             d.priority, d.technician_id, d.confidence, d.glpi_link, d.annotation]
+             d.priority, d.technician_id, d.group_id, d.confidence, d.glpi_link, d.annotation]
         )
     return buf.getvalue()
 

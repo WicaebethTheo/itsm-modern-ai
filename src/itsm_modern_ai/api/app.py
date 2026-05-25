@@ -34,7 +34,21 @@ async def _run_poll_cycle(app: FastAPI) -> None:
     handler = triage.handle if triage is not None else None
     if handler is None:
         logger.info("poll: LLM non configuré — lecture seule (aucune suggestion déposée)")
-    poller = TriagePoller(connector, app.state.whitelist_cache, handler=handler)
+    # Whitelist = périmètre EFFECTIF (catégories/techniciens/groupes sélectionnés en base),
+    # pas tout GLPI. Le scan GLPI alimente ce périmètre via /api/glpi/sync.
+    def _effective_refs():
+        from ..persistence import db as _db
+        from ..services import referentials as _refs
+
+        with _db.session_scope() as session:
+            return _refs.effective_referentials(session)
+
+    poller = TriagePoller(
+        connector,
+        app.state.whitelist_cache,
+        handler=handler,
+        referentials_loader=_effective_refs,
+    )
     await poller.poll_once()
 
 
@@ -73,9 +87,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .routes import export as export_routes
     from .routes import health as health_routes
     from .routes import insights as insights_routes
+    from .routes import referentials as referentials_routes
     from .routes import sandbox as sandbox_routes
     from .routes import status as status_routes
-    from .routes import technicians as technicians_routes
     from .spa import mount_spa
 
     settings = settings or get_settings()
@@ -105,7 +119,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(decisions_routes.router)
     app.include_router(export_routes.router)
     app.include_router(insights_routes.router)
-    app.include_router(technicians_routes.router)
+    app.include_router(referentials_routes.router)
 
     # UI web (Phase 2) — SPA React buildée, servie en statique (catch-all en dernier).
     mount_spa(app, Path(settings.frontend_dist))

@@ -49,8 +49,11 @@ class Decision(BaseModel):
 
     category: int = Field(description="ID de catégorie GLPI (itilcategories_id) proposé.")
     priority: int = Field(description="Priorité GLPI proposée (1-6).")
-    technician_id: int = Field(
-        description="ID GLPI du technicien/groupe proposé pour le routage."
+    technician_id: int | None = Field(
+        default=None, description="ID GLPI du technicien (utilisateur) proposé, sinon null."
+    )
+    group_id: int | None = Field(
+        default=None, description="ID GLPI du groupe proposé (fallback si aucun technicien), sinon null."
     )
     draft: str = Field(description="Brouillon de première réponse, en français. Jamais envoyé.")
     confidence: float = Field(
@@ -59,12 +62,19 @@ class Decision(BaseModel):
 
 
 class Referentials(BaseModel):
-    """Listes fermées lues depuis GLPI → constituent la Whitelist (FR-3)."""
+    """Périmètre fermé sur lequel l'IA a le droit d'agir (Whitelist effective, FR-3/FR-7).
+
+    Construit depuis GLPI (scan) PUIS restreint par les sélections de l'admin dans
+    la console : seules les catégories autorisées et les techniciens/groupes éligibles
+    y figurent. `entities` documente le périmètre organisationnel sélectionné.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     categories: dict[int, str] = Field(default_factory=dict)
     technicians: dict[int, str] = Field(default_factory=dict)
+    groups: dict[int, str] = Field(default_factory=dict)
+    entities: dict[int, str] = Field(default_factory=dict)
     priorities: dict[int, str] = Field(
         default_factory=lambda: {p.value: p.name for p in Priority}
     )
@@ -78,6 +88,7 @@ class TriageReason(StrEnum):
     CATEGORY_NOT_IN_WHITELIST = "category_not_in_whitelist"  # FR-7
     PRIORITY_NOT_IN_WHITELIST = "priority_not_in_whitelist"  # FR-7
     TECHNICIAN_NOT_IN_WHITELIST = "technician_not_in_whitelist"  # FR-7
+    NO_ELIGIBLE_ASSIGNEE = "no_eligible_assignee"  # ni technicien ni groupe éligible
     LOW_CONFIDENCE = "low_confidence"  # FR-8
     LLM_ERROR = "llm_error"  # erreur réseau/LLM après retry (FR-9)
     COST_CAP_REACHED = "cost_cap_reached"  # FR-10

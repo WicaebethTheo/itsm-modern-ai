@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -66,23 +67,33 @@ class DecisionLog(SQLModel, table=True):
     category: int | None = None
     priority: int | None = None
     technician_id: int | None = None
+    group_id: int | None = None
     confidence: float | None = None
     glpi_link: str = ""
     annotation: str = ""  # éditable a posteriori (revue manuelle pilote)
 
 
-class TechProfileRow(SQLModel, table=True):
-    """Fiche technicien en prose (FR-15) — gérée depuis l'UI, stockée en base.
+class ReferentialCache(SQLModel, table=True):
+    """Référentiels GLPI scannés + sélections de l'admin (cœur du périmètre).
 
-    Remplace l'ancien fichier YAML : toute la configuration se fait via l'interface.
-    `technician_id` doit exister dans la Whitelist GLPI (validé au triage, FR-7).
+    Un enregistrement par objet GLPI (catégorie, entité, technicien, groupe), rafraîchi
+    par un scan GLPI. L'admin choisit ensuite, dans la console, le périmètre que l'IA a
+    le droit d'utiliser :
+    - `selected` : pour les catégories/entités → autorisée / dans le périmètre.
+    - `eligible` : pour les techniciens/groupes → l'IA peut router vers eux.
+    - `skills`   : prose libre décrivant le technicien/groupe (routage, FR-15).
     """
 
-    __tablename__ = "tech_profiles"
+    __tablename__ = "referential_cache"
+    __table_args__ = (UniqueConstraint("kind", "ext_id", name="uq_referential_kind_ext"),)
 
-    technician_id: int = Field(primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
+    kind: str = Field(index=True)  # "category" | "entity" | "technician" | "group"
+    ext_id: int  # id GLPI
     name: str = ""
-    profile: str = ""  # prose libre
+    selected: bool = False  # catégories/entités dans le périmètre
+    eligible: bool = False  # techniciens/groupes vers qui l'IA peut router
+    skills: str = ""  # prose (techniciens/groupes)
     updated_at: datetime = Field(default_factory=_utcnow)
 
 

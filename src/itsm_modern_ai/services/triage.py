@@ -62,16 +62,22 @@ def render_followup(outcome: TriageOutcome, refs: Referentials) -> str:
     d = outcome.decision
     assert d is not None
     cat = refs.categories.get(d.category, str(d.category))
-    tech = refs.technicians.get(d.technician_id, str(d.technician_id))
     try:
         prio = f"{Priority(d.priority).name} (#{d.priority})"
     except ValueError:
         prio = str(d.priority)
+    # Routage : technicien si éligible, sinon groupe (fallback).
+    if d.technician_id is not None and d.technician_id in refs.technicians:
+        assignee = f"Technicien {refs.technicians[d.technician_id]} (#{d.technician_id})"
+    elif d.group_id is not None:
+        assignee = f"Groupe {refs.groups.get(d.group_id, str(d.group_id))} (#{d.group_id})"
+    else:
+        assignee = "—"
     return (
         "🤖 Suggestion de triage — ITSM Modern AI (proposition, non appliquée)\n"
         f"• Catégorie proposée : {cat} (#{d.category})\n"
         f"• Priorité proposée : {prio}\n"
-        f"• Technicien suggéré : {tech} (#{d.technician_id})\n"
+        f"• Affectation suggérée : {assignee}\n"
         f"• Confiance : {d.confidence:.0%}\n\n"
         "Brouillon de réponse (à valider, jamais envoyé automatiquement) :\n"
         f"{d.draft}\n\n"

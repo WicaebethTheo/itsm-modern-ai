@@ -3,12 +3,14 @@ import {
   Bot,
   Cpu,
   FlaskConical,
+  FolderTree,
   LayoutDashboard,
   type LucideIcon,
   PlugZap,
   ScrollText,
   ShieldCheck,
   Users,
+  UsersRound,
 } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Api } from "@/lib/api";
@@ -37,7 +39,14 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
       { to: "/glpi", label: "Connexion GLPI", icon: PlugZap },
       { to: "/ai-provider", label: "Fournisseur IA", icon: Bot },
       { to: "/engine", label: "Moteur", icon: Cpu },
+    ],
+  },
+  {
+    label: "Périmètre (scan GLPI)",
+    items: [
+      { to: "/scope", label: "Périmètre", icon: FolderTree },
       { to: "/technicians", label: "Techniciens", icon: Users },
+      { to: "/groups", label: "Groupes", icon: UsersRound },
     ],
   },
   {

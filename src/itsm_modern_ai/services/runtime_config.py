@@ -21,15 +21,20 @@ from ..ports.secrets import SecretsPort
 # Clés reconnues comme secrets (toujours chiffrées).
 SECRET_KEYS = frozenset(
     {
-        "glpi_user_token", "glpi_app_token", "llm_api_key", "anthropic_api_key",
+        "glpi_user_token", "glpi_app_token",
+        "llm_api_key", "openai_api_key", "anthropic_api_key",
         "admin_password_hash",
     }
 )
 # Clés non-secrètes surchargeables en base (sinon valeur d'env via Settings).
 PLAIN_KEYS = frozenset(
     {
-        "glpi_base_url", "llm_provider", "llm_base_url", "llm_model",
-        "anthropic_base_url", "anthropic_model", "confidence_threshold", "cost_cap_eur_per_day",
+        "glpi_base_url", "llm_provider",
+        "llm_base_url", "llm_model",
+        "openai_base_url", "openai_model",
+        "ollama_base_url", "ollama_model",
+        "anthropic_base_url", "anthropic_model",
+        "confidence_threshold", "cost_cap_eur_per_day",
     }
 )
 
@@ -88,6 +93,10 @@ class RuntimeConfigService:
             "llm_provider": self._settings.llm_provider,
             "llm_base_url": self._settings.llm_base_url,
             "llm_model": self._settings.llm_model,
+            "openai_base_url": self._settings.openai_base_url,
+            "openai_model": self._settings.openai_model,
+            "ollama_base_url": self._settings.ollama_base_url,
+            "ollama_model": self._settings.ollama_model,
             "anthropic_base_url": self._settings.anthropic_base_url,
             "anthropic_model": self._settings.anthropic_model,
             "confidence_threshold": str(self._settings.confidence_threshold),

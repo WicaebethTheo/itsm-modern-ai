@@ -61,18 +61,33 @@ class GlpiConnector:
         return [mapper.ticket_from_glpi(t) for t in data if mapper.is_new(t)]
 
     async def get_referentials(self) -> Referentials:
+        """Scan complet des référentiels GLPI : catégories, techniciens, groupes, entités."""
         async with self._client() as gc:
-            cat_resp = await gc.get("ITILCategory", params={"range": "0-999"})
-            usr_resp = await gc.get("User", params={"range": "0-999"})
-            categories_raw = _as_list(cat_resp.json())
-            users_raw = _as_list(usr_resp.json())
+            categories_raw = _as_list((await gc.get("ITILCategory", params={"range": "0-999"})).json())
+            users_raw = _as_list((await gc.get("User", params={"range": "0-999"})).json())
+            groups_raw = _as_list((await gc.get("Group", params={"range": "0-999"})).json())
+            entities_raw = _as_list((await gc.get("Entity", params={"range": "0-999"})).json())
         categories = {
             int(c["id"]): str(c.get("completename") or c.get("name") or f"cat_{c['id']}")
             for c in categories_raw
         }
         technicians = {int(u["id"]): _user_display(u) for u in users_raw}
+        groups = {
+            int(g["id"]): str(g.get("completename") or g.get("name") or f"group_{g['id']}")
+            for g in groups_raw
+        }
+        entities = {
+            int(e["id"]): str(e.get("completename") or e.get("name") or f"entity_{e['id']}")
+            for e in entities_raw
+        }
         priorities = {int(p): label for p, label in PRIORITY_LABELS_FR.items()}
-        return Referentials(categories=categories, technicians=technicians, priorities=priorities)
+        return Referentials(
+            categories=categories,
+            technicians=technicians,
+            groups=groups,
+            entities=entities,
+            priorities=priorities,
+        )
 
     async def write_followup(self, ticket_id: int, content: str, *, private: bool = True) -> int:
         itemtype = mapper.followup_itemtype(self._creds.followup_legacy_9x)

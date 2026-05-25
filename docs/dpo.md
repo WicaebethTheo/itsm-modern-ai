@@ -27,9 +27,15 @@ La reconnaissance d'entités nommées (NER) qui couvrirait noms et adresses est 
 ## Résidence des données
 
 - Fournisseur LLM par défaut : **Mistral EU**, sous **DPA**, **pas de Cloud Act**. Aucun transfert hors UE par défaut.
-- ⚠️ Un connecteur **Anthropic (Claude)** est sélectionnable depuis l'interface (Phase 2). Anthropic est **hors UE / non-souverain** : s'il est activé, le contenu masqué des tickets est transmis hors UE. À **valider explicitement** avec la DPO avant activation ; le défaut souverain reste Mistral EU.
+- Quatre fournisseurs sont sélectionnables depuis l'interface :
+  - **Mistral EU** — souverain (UE), défaut recommandé.
+  - ⚠️ **OpenAI** — **hors UE / non-souverain**.
+  - ⚠️ **Anthropic (Claude)** — **hors UE / non-souverain**.
+  - **Ollama** — modèle **100 % local** sur l'infra du client : **aucune donnée ne sort** (pas de clé API, pas de transfert).
+- ⚠️ **OpenAI et Anthropic sont hors UE** : s'ils sont activés, le contenu masqué des tickets est transmis hors UE. À **valider explicitement** avec la DPO avant activation ; le défaut souverain reste Mistral EU.
 - Toute l'application tourne **on-premise** sur l'infrastructure du client.
 - **Aucun appel sortant** hors du fournisseur LLM configuré. **Aucun phone-home.**
+- **Périmètre d'action restreint par l'admin** : l'IA n'utilise que les **catégories, techniciens, groupes et entités explicitement sélectionnés** par l'admin (Whitelist curée depuis un scan GLPI). Tout objet hors de ce périmètre est ignoré (Ticket « à trier »).
 
 ## Minimisation
 

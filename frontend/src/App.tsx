@@ -4,9 +4,11 @@ import { AiProvider } from "@/pages/AiProvider";
 import { Dashboard } from "@/pages/Dashboard";
 import { EngineSettings } from "@/pages/EngineSettings";
 import { GlpiConnection } from "@/pages/GlpiConnection";
+import { Groups } from "@/pages/Groups";
 import { Journal } from "@/pages/Journal";
 import { Login } from "@/pages/Login";
 import { Sandbox } from "@/pages/Sandbox";
+import { Scope } from "@/pages/Scope";
 import { Status } from "@/pages/Status";
 import { Technicians } from "@/pages/Technicians";
 
@@ -23,7 +25,9 @@ export default function App() {
           <Route path="glpi" element={<GlpiConnection />} />
           <Route path="ai-provider" element={<AiProvider />} />
           <Route path="engine" element={<EngineSettings />} />
+          <Route path="scope" element={<Scope />} />
           <Route path="technicians" element={<Technicians />} />
+          <Route path="groups" element={<Groups />} />
           <Route path="sandbox" element={<Sandbox />} />
         </Route>
       </Routes>

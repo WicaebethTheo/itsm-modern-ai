@@ -6,7 +6,7 @@ Déploiement **pilote** prévu pour un **réseau interne non exposé**. La base 
 
 ## Secrets
 
-- La **clé API LLM** et les **tokens GLPI** se poussent via l'API/UI de configuration (`POST /api/config`), jamais via `.env`.
+- La **clé API du fournisseur LLM** (**Mistral EU**, **OpenAI** ou **Anthropic** ; **Ollama** étant local n'utilise **aucune clé**) et les **tokens GLPI** se poussent via l'API/UI de configuration (`POST /api/config`), jamais via `.env`.
 - Ils sont **chiffrés au repos** avec **Fernet** (bibliothèque `cryptography`), FR-25.
 - La **master key** de chiffrement provient de `data/master.key` ou de la variable d'environnement `MASTER_KEY`.
 - **Aucun secret en clair** : ni en base de données, ni dans `.env`, ni dans les logs.
@@ -24,8 +24,9 @@ Déploiement **pilote** prévu pour un **réseau interne non exposé**. La base 
 ## Souveraineté
 
 - **Aucun phone-home.**
-- **Aucun appel sortant** hors du fournisseur LLM configuré (Mistral EU par défaut).
+- **Aucun appel sortant** hors du fournisseur LLM configuré (Mistral EU par défaut ; **Ollama** ne sort pas du tout, modèle local).
 - Application 100 % on-premise sur l'infrastructure du client.
+- **Périmètre d'action restreint par sélection admin** : l'IA n'agit que sur les **catégories, techniciens, groupes et entités** explicitement autorisés par l'admin (Whitelist curée depuis un scan GLPI). Tout ID hors de ce périmètre effectif est rejeté → Ticket « à trier », aucune écriture (FR-7).
 
 ## Signaler une vulnérabilité
 

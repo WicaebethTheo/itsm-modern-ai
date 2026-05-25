@@ -24,6 +24,7 @@ class DecisionEntry(BaseModel):
     category: int | None
     priority: int | None
     technician_id: int | None
+    group_id: int | None
     confidence: float | None
     glpi_link: str
     annotation: str

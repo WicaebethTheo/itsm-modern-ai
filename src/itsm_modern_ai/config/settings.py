@@ -24,15 +24,23 @@ class Settings(BaseSettings):
     # persistée dans data/master.key (durci en Epic 4 : secret monté).
     master_key: str = ""
 
-    # Connecteur LLM — réglages NON-secrets (la clé se pousse via l'UI/API).
-    # Fournisseur : "openai_compatible" (défaut souverain Mistral EU) ou "anthropic" (FR-12).
-    llm_provider: str = "openai_compatible"
-    llm_base_url: str = "https://api.mistral.ai/v1"
-    llm_model: str = "mistral-large-latest"
+    # Connecteur LLM — réglages NON-secrets (les clés se poussent via l'UI/API).
+    # Fournisseur : "mistral" (souverain, défaut) | "openai" | "ollama" (local) | "anthropic".
+    llm_provider: str = "mistral"
     llm_price_input_per_mtok: float = 2.0
     llm_price_output_per_mtok: float = 6.0
     llm_api_key: str = ""  # SPIKE CLI uniquement — pas utilisé par le runtime
-    # Anthropic (Phase 2) — non-souverain, choix explicite de l'opérateur.
+
+    # Mistral EU (souverain, défaut)
+    llm_base_url: str = "https://api.mistral.ai/v1"
+    llm_model: str = "mistral-large-latest"
+    # OpenAI (distinct, non-souverain)
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-4o-mini"
+    # Ollama (local, pas de clé)
+    ollama_base_url: str = "http://localhost:11434/v1"
+    ollama_model: str = "llama3.1"
+    # Anthropic (non-souverain, choix explicite de l'opérateur)
     anthropic_base_url: str = "https://api.anthropic.com"
     anthropic_model: str = "claude-sonnet-4-6"
     anthropic_version: str = "2023-06-01"
