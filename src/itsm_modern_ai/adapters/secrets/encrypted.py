@@ -7,9 +7,12 @@ clé (secret monté, rotation) ; l'interface SecretsPort ne changera pas.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from cryptography.fernet import Fernet
+
+logger = logging.getLogger("itsm.secrets")
 
 
 def _load_or_create_key(master_key: str, key_file: Path) -> bytes:
@@ -21,6 +24,14 @@ def _load_or_create_key(master_key: str, key_file: Path) -> bytes:
     key_file.parent.mkdir(parents=True, exist_ok=True)
     key_file.write_bytes(key)
     key_file.chmod(0o600)
+    # ⚠️ Une NOUVELLE clé a été générée : tout secret chiffré avec une ancienne clé
+    # devient illisible (à re-saisir). Pour éviter ça, FIXER MASTER_KEY dans .env.
+    logger.warning(
+        "MASTER_KEY non fournie : nouvelle clé de chiffrement générée dans %s. "
+        "Si une ancienne clé existait, les secrets précédents sont désormais illisibles. "
+        "Fixez MASTER_KEY dans .env pour une persistance fiable des secrets.",
+        key_file,
+    )
     return key
 
 

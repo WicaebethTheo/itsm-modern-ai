@@ -1,8 +1,16 @@
 # Déploiement on-prem : un seul service + volume SQLite (pilote, pas de HA).
+#
+# PERSISTANCE DE LA CONFIG : toute la configuration (connexion GLPI, clés LLM,
+# périmètre, etc.) vit dans ./data (base SQLite + master.key). Elle survit à
+# `docker compose up`/`restart`/`build`. Elle n'est PERDUE que si :
+#   - vous lancez `docker compose down -v` (le -v supprime le volume), ou
+#   - le dossier ./data est supprimé/non persistant, ou
+#   - MASTER_KEY change (les secrets chiffrés deviennent illisibles).
+# → FIXEZ MASTER_KEY dans .env et ne faites jamais `down -v` en prod.
 services:
   itsm:
     build: .
-    image: itsm-modern-ai:0.1.0
+    image: itsm-modern-ai:latest
     container_name: itsm-modern-ai
     restart: unless-stopped
     env_file:
