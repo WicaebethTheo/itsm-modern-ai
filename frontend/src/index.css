@@ -22,6 +22,7 @@
   --color-warning: hsl(var(--warning));
   --color-warning-foreground: hsl(var(--warning-foreground));
   --color-sidebar: hsl(var(--sidebar));
+  --color-page: hsl(var(--page));
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
@@ -52,6 +53,7 @@
   --input: 214 20% 84%;
   --ring: 239 84% 60%;
   --sidebar: 210 22% 97%;
+  --page: 214 22% 91%; /* fond derrière le panneau flottant */
 }
 
 /* Thème SOMBRE (mode « black », défaut) — proche noir teinté bleu-violet, accent indigo. */
@@ -75,7 +77,8 @@
   --border: 240 13% 18%;
   --input: 240 13% 22%;
   --ring: 239 84% 67%;
-  --sidebar: 240 18% 4.5%;
+  --sidebar: 240 16% 8%;
+  --page: 240 24% 3%; /* fond (très sombre) derrière le panneau flottant */
 }
 
 @layer base {
