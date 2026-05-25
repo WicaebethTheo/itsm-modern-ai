@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/EmptyState";
 import { Banner, PageHeader } from "@/components/PageHeader";
 import { SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
@@ -5,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { useResource } from "@/hooks/useResource";
 import { Api, type EligibilityItem, type RefItem, type RefKind } from "@/lib/api";
+import { Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 /**
@@ -67,10 +69,11 @@ export function RefEligibilityEditor({
 
       {res.data?.length === 0 && (
         <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">
-            Aucun élément. Cliquez sur « Scanner GLPI » pour récupérer la liste depuis votre
-            instance.
-          </CardContent>
+          <EmptyState
+            icon={Users}
+            title="Aucun élément"
+            description="Cliquez sur « Scanner GLPI » pour récupérer la liste depuis votre instance."
+          />
         </Card>
       )}
 

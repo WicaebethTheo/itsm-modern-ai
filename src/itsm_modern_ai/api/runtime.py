@@ -97,6 +97,7 @@ def build_triage_service(
             routing_rules=cfg.get("routing_rules") or "",
         )
         retries = cfg.get_int("llm_retries", settings.llm_retries)
+        system_prompt = cfg.get("system_prompt") or ""
     return TriageService(
         itsm=itsm,
         llm=llm,
@@ -105,4 +106,5 @@ def build_triage_service(
         session_factory=db.session_scope,
         guidance=guidance,
         retries=retries,
+        system_prompt=system_prompt,
     )

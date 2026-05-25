@@ -39,7 +39,7 @@ PLAIN_KEYS = frozenset(
         # Moteur
         "confidence_threshold", "cost_cap_eur_per_day", "llm_retries",
         # Qualité de la suggestion
-        "response_tone", "assistant_name", "routing_rules",
+        "response_tone", "assistant_name", "routing_rules", "system_prompt",
         # Polling
         "polling_enabled", "polling_interval_seconds",
         # Dashboard
@@ -129,6 +129,7 @@ class RuntimeConfigService:
             "response_tone": s.response_tone,
             "assistant_name": s.assistant_name,
             "routing_rules": s.routing_rules,
+            "system_prompt": s.system_prompt,
             "polling_enabled": str(s.polling_enabled).lower(),
             "polling_interval_seconds": str(s.polling_interval_seconds),
             "dashboard_window_days": str(s.dashboard_window_days),

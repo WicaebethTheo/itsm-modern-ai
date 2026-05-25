@@ -1,11 +1,17 @@
 import { cn } from "@/lib/utils";
 import type * as React from "react";
 
-export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  /** Ajoute un retour visuel au survol (utile pour les cartes cliquables). */
+  interactive?: boolean;
+}
+
+export function Card({ className, interactive, ...props }: CardProps) {
   return (
     <div
       className={cn(
         "rounded-lg border border-border bg-card text-card-foreground shadow-sm",
+        interactive && "cursor-pointer transition-shadow hover:border-border/80 hover:shadow-md",
         className,
       )}
       {...props}

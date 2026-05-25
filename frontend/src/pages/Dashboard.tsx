@@ -1,9 +1,11 @@
+import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { StatCard } from "@/components/StatCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
+import { Bot, ListChecks, PlugZap, Timer } from "lucide-react";
 import { useCallback } from "react";
 
 export function Dashboard() {
@@ -27,33 +29,29 @@ export function Dashboard() {
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
           label="Connexion GLPI"
+          icon={PlugZap}
+          tone={!h?.glpi.configured ? "warn" : h.glpi.reachable ? "success" : "destructive"}
           value={
-            !h?.glpi.configured ? (
-              <Badge variant="warn">non configurée</Badge>
-            ) : h.glpi.reachable ? (
-              <Badge variant="success">joignable</Badge>
-            ) : (
-              <Badge variant="destructive">injoignable</Badge>
-            )
+            !h?.glpi.configured ? "non configurée" : h.glpi.reachable ? "joignable" : "injoignable"
           }
         />
         <StatCard
           label="Fournisseur IA"
-          value={
-            h?.llm.configured ? (
-              <Badge variant="success">configuré</Badge>
-            ) : (
-              <Badge variant="warn">clé absente</Badge>
-            )
-          }
+          icon={Bot}
+          tone={h?.llm.configured ? "success" : "warn"}
+          value={h?.llm.configured ? "configuré" : "clé absente"}
         />
         <StatCard
           label="Whitelist"
+          icon={ListChecks}
+          tone="primary"
           value={s ? `${s.categories_count} / ${s.technicians_count}` : "—"}
           hint="catégories / techniciens"
         />
         <StatCard
           label="Polling"
+          icon={Timer}
+          tone={s?.polling_enabled ? "success" : "warn"}
           value={s?.polling_enabled ? "actif" : "inactif"}
           hint={s ? `${s.polling_interval_seconds}s` : undefined}
         />
@@ -141,9 +139,11 @@ export function Dashboard() {
         <CardContent>
           {metrics.error && <p className="text-sm text-destructive">{metrics.error}</p>}
           {m && Object.keys(m.by_reason).length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Aucune décision enregistrée pour le moment.
-            </p>
+            <EmptyState
+              icon={ListChecks}
+              title="Aucune décision enregistrée"
+              description="Les décisions du moteur apparaîtront ici une fois le triage lancé."
+            />
           )}
           <div className="flex flex-col gap-1.5">
             {m &&

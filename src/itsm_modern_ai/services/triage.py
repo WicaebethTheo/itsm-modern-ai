@@ -96,6 +96,7 @@ class TriageService:
         session_factory: SessionFactory,
         guidance: str = "",
         retries: int | None = None,
+        system_prompt: str = "",
     ) -> None:
         self._itsm = itsm
         self._llm = llm
@@ -104,6 +105,8 @@ class TriageService:
         self._session_factory = session_factory
         self._guidance = guidance
         self._retries = settings.llm_retries if retries is None else retries
+        # Vide → prompt système par défaut intégré.
+        self._system_prompt = system_prompt.strip() or prompting.SYSTEM_PROMPT
 
     async def _call_llm(self, system: str, user: str) -> LlmResult:
         """Appel LLM avec retry borné (FR-9) sur erreur transport."""
@@ -120,7 +123,7 @@ class TriageService:
     ) -> tuple[TriageOutcome, LlmResult | None]:
         """Masquage → LLM → Pydantic → Whitelist → seuil. N'écrit RIEN (sandbox-safe)."""
         masked = masking.mask(raw_text)
-        system = prompting.SYSTEM_PROMPT
+        system = self._system_prompt
         user = prompting.build_user_prompt(masked.text, refs, self._profiles, self._guidance)
         try:
             result = await self._call_llm(system, user)

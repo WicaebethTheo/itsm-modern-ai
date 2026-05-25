@@ -12,11 +12,16 @@ export function EngineSettings() {
   const cfg = useResource(useCallback(() => Api.getConfig(), []));
   const [form, setForm] = useState<ConfigUpdate>({});
   const [pollingOn, setPollingOn] = useState(true);
+  const [sysPrompt, setSysPrompt] = useState("");
   const [msg, setMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const c = cfg.data;
+  const SYS_MAX = 8000;
 
   useEffect(() => {
-    if (c) setPollingOn(asBool(c.polling_enabled));
+    if (c) {
+      setPollingOn(asBool(c.polling_enabled));
+      setSysPrompt(c.system_prompt ?? "");
+    }
   }, [c]);
 
   function set<K extends keyof ConfigUpdate>(k: K, v: ConfigUpdate[K]) {
@@ -27,7 +32,7 @@ export function EngineSettings() {
   async function save() {
     setMsg(null);
     try {
-      await Api.updateConfig({ ...form, polling_enabled: pollingOn });
+      await Api.updateConfig({ ...form, polling_enabled: pollingOn, system_prompt: sysPrompt });
       setForm({});
       cfg.reload();
       setMsg({ kind: "success", text: "Réglages enregistrés." });
@@ -177,6 +182,35 @@ export function EngineSettings() {
                 onChange={(e) => set("anomaly_new_age_hours", num(e.target.value))}
               />
             </Field>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Prompt système (avancé)</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Surcharge les instructions données au LLM. Laisser vide = prompt par défaut intégré.
+              Le code valide toujours la Décision (whitelist, seuil) — modifier le prompt n'enlève
+              aucun garde-fou.
+            </p>
+            <Textarea
+              className="min-h-48 font-mono text-xs"
+              value={sysPrompt}
+              maxLength={SYS_MAX}
+              placeholder={c?.system_prompt_default ?? "Prompt par défaut…"}
+              onChange={(e) => setSysPrompt(e.target.value)}
+            />
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                {sysPrompt.length} / {SYS_MAX} caractères
+                {sysPrompt.trim() === "" ? " — (défaut utilisé)" : ""}
+              </span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setSysPrompt("")}>
+                Réinitialiser au défaut
+              </Button>
+            </div>
           </CardContent>
         </Card>
 

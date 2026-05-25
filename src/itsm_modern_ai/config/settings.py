@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     response_tone: str = "professionnel, courtois et concis"
     assistant_name: str = ""  # signature éventuelle du brouillon
     routing_rules: str = ""  # consignes de routage en langage naturel (données, pas ordres)
+    # Prompt système — vide = prompt par défaut intégré. Surcharge avancée (UI).
+    system_prompt: str = ""
+    system_prompt_max_chars: int = 8000  # garde-fou de longueur
 
     # UI web (Phase 2) : SPA React buildée servie en statique.
     frontend_dist: str = "frontend/dist"

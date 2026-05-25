@@ -72,3 +72,27 @@ def test_config_roundtrip_new_options(client):
 
 def test_interval_out_of_bounds_rejected(client):
     assert client.post("/api/config", json={"polling_interval_seconds": 5}).status_code == 422
+
+
+def test_system_prompt_default_exposed_and_overridable(client):
+    v = client.get("/api/config").json()
+    assert v["system_prompt_default"] and "JSON" in v["system_prompt_default"]
+    assert (v["system_prompt"] or "") == ""  # vide = défaut
+    r = client.post("/api/config", json={"system_prompt": "Tu es un trieur strict. Réponds en JSON."})
+    assert r.status_code == 200 and "trieur strict" in r.json()["system_prompt"]
+
+
+def test_system_prompt_length_guard(client):
+    assert client.post("/api/config", json={"system_prompt": "x" * 9000}).status_code == 422
+
+
+def test_triage_uses_system_prompt_override():
+    from itsm_modern_ai.domain import prompting
+    from itsm_modern_ai.services.triage import TriageService
+
+    base = dict(
+        itsm=None, llm=None, settings=Settings(_env_file=None),
+        tech_profiles_prose="", session_factory=lambda: None,
+    )
+    assert TriageService(**base)._system_prompt == prompting.SYSTEM_PROMPT  # défaut
+    assert TriageService(**base, system_prompt="MON PROMPT")._system_prompt == "MON PROMPT"

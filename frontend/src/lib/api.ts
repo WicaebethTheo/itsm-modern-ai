@@ -97,6 +97,8 @@ export interface ConfigView {
   response_tone: string | null;
   assistant_name: string | null;
   routing_rules: string | null;
+  system_prompt: string | null;
+  system_prompt_default: string | null;
   polling_enabled: string | null;
   polling_interval_seconds: string | null;
   dashboard_window_days: string | null;
@@ -129,6 +131,7 @@ export interface ConfigUpdate {
   response_tone?: string;
   assistant_name?: string;
   routing_rules?: string;
+  system_prompt?: string;
   polling_enabled?: boolean;
   polling_interval_seconds?: number;
   dashboard_window_days?: number;

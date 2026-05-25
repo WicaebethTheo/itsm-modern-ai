@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -5,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useResource } from "@/hooks/useResource";
 import { Api, type DecisionEntry } from "@/lib/api";
+import { ScrollText } from "lucide-react";
 import { useCallback, useState } from "react";
 
 function AnnotationCell({ d }: { d: DecisionEntry }) {
@@ -116,7 +118,11 @@ export function Journal() {
           </tbody>
         </table>
         {decisions.data?.length === 0 && (
-          <p className="p-6 text-sm text-muted-foreground">Aucune décision pour le moment.</p>
+          <EmptyState
+            icon={ScrollText}
+            title="Aucune décision pour le moment"
+            description="Les suggestions déposées et les « à trier » s'afficheront ici."
+          />
         )}
         {decisions.error && <p className="p-6 text-sm text-destructive">{decisions.error}</p>}
       </Card>

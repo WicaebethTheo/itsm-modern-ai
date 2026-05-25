@@ -14,17 +14,20 @@ export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLab
 export function Field({
   label,
   hint,
+  htmlFor,
   children,
 }: {
   label: string;
   hint?: React.ReactNode;
+  /** Associe le label au contrôle (accessibilité) — optionnel, rétro-compatible. */
+  htmlFor?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label>{label}</Label>
+      <Label htmlFor={htmlFor}>{label}</Label>
       {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-xs leading-snug text-muted-foreground">{hint}</p>}
     </div>
   );
 }
