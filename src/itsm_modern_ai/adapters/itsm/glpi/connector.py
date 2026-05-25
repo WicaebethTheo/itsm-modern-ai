@@ -113,7 +113,12 @@ class GlpiConnector:
             int(c["id"]): str(c.get("completename") or c.get("name") or f"cat_{c['id']}")
             for c in categories_raw
         }
-        technicians = {int(u["id"]): _user_display(u) for u in users_raw}
+        # On exclut les comptes supprimés (GLPI renvoie tous les utilisateurs).
+        technicians = {
+            int(u["id"]): _user_display(u)
+            for u in users_raw
+            if str(u.get("is_deleted") or "0") in ("0", "False", "false", "")
+        }
         groups = {
             int(g["id"]): str(g.get("completename") or g.get("name") or f"group_{g['id']}")
             for g in groups_raw

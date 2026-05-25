@@ -71,6 +71,22 @@ curl http://localhost:8000/health
 
 Le healthcheck est en **échec** si GLPI ou le LLM est injoignable au démarrage (FR-27, FR-1) — pas de démarrage silencieux dégradé.
 
+**Diagnostic GLPI dédié** (recommandé à l'install — valide auth, référentiels, lecture
+des tickets, et optionnellement l'écriture d'un Suivi privé) — identifiants via
+l'environnement, **jamais en dur** :
+
+```bash
+GLPI_BASE_URL="https://glpi.exemple.local/apirest.php" \
+GLPI_USER_TOKEN="…" GLPI_APP_TOKEN="…" \
+  make glpi-diagnose        # lecture seule
+# test d'écriture d'un Suivi privé sur un ticket de test :
+#   uv run python scripts/glpi_diagnose.py --write-test <ticket_id>
+```
+
+> ✅ Intégration validée sur GLPI 10/11 (apirest.php) : `initSession`, `ITILCategory`,
+> `User`/`Profile`/`Profile_User`, `Group`, `Entity`, lecture des Tickets et écriture d'un
+> `ITILFollowup` **privé** sans mutation de champ (mode suggestion).
+
 ## 5. HTTPS via reverse proxy (FR-26)
 
 La terminaison **TLS est déléguée à un reverse proxy** (nginx, Caddy, …) placé devant le service sur le port `8000`. Le service ne sert pas TLS lui-même. Configurez le proxy pour **rediriger ou refuser le HTTP nu** et ne servir qu'en HTTPS.

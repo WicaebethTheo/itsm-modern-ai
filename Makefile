@@ -1,4 +1,4 @@
-.PHONY: install lint test fmt run migrate ui ui-dev ui-lint spike spike-mock
+.PHONY: install lint test fmt run migrate ui ui-dev ui-lint spike spike-mock glpi-diagnose
 
 install:
 	uv venv --python 3.13
@@ -40,3 +40,7 @@ spike:
 # Spike Epic 1 — mock offline (plomberie seulement, NON représentatif)
 spike-mock:
 	uv run python scripts/spike_routing.py --mock
+
+# Diagnostic de connexion GLPI (identifiants via l'environnement, jamais en dur)
+glpi-diagnose:
+	uv run python scripts/glpi_diagnose.py
