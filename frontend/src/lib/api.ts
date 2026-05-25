@@ -222,6 +222,18 @@ export interface OperationalView {
   metrics: OperationalMetrics | null;
 }
 
+export interface DebugDiagnostics {
+  glpi: {
+    configured: boolean;
+    reachable?: boolean;
+    referentials?: Record<string, number>;
+    new_tickets?: number;
+    recent_tickets_14d?: number;
+    error?: string;
+  };
+  llm: { configured: boolean; reachable?: boolean; error?: string };
+}
+
 export interface SandboxResult {
   accepted: boolean;
   reason: string;
@@ -288,6 +300,23 @@ export const Api = {
     DEMO
       ? ok({ ...demo.decisions[0], id, annotation })
       : api.patch<DecisionEntry>(`/api/decisions/${id}/annotation`, { annotation }),
+
+  // Outils de debug (labo/test).
+  debugStatus: () =>
+    DEMO ? ok({ enabled: true }) : api.get<{ enabled: boolean }>("/api/debug/status"),
+  debugDiagnostics: () =>
+    DEMO ? ok(demo.diagnostics) : api.get<DebugDiagnostics>("/api/debug/diagnostics"),
+  debugSeed: (technicians: number, groups: number) =>
+    DEMO
+      ? ok({ users: [65, 66], groups: [3] })
+      : api.post<{ users: number[]; groups: number[] }>("/api/debug/seed", { technicians, groups }),
+  debugPurgeUsers: (confirm: string) =>
+    DEMO
+      ? ok({ deleted: 0, kept: 64, protected_user_id: 2 })
+      : api.post<{ deleted: number; kept: number; protected_user_id: number }>(
+          "/api/debug/purge-users",
+          { confirm },
+        ),
 
   sandbox: (content: string, title = "") =>
     DEMO

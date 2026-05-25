@@ -106,6 +106,7 @@ async def lifespan(app: FastAPI):
 def create_app(settings: Settings | None = None) -> FastAPI:
     from .routes import auth as auth_routes
     from .routes import config as config_routes
+    from .routes import debug as debug_routes
     from .routes import decisions as decisions_routes
     from .routes import export as export_routes
     from .routes import health as health_routes
@@ -143,6 +144,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(export_routes.router)
     app.include_router(insights_routes.router)
     app.include_router(referentials_routes.router)
+    app.include_router(debug_routes.router)
 
     # UI web (Phase 2) — SPA React buildée, servie en statique (catch-all en dernier).
     mount_spa(app, Path(settings.frontend_dist))

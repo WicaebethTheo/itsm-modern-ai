@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import {
   Activity,
   Bot,
+  Bug,
   Cpu,
   FlaskConical,
   FolderTree,
@@ -54,7 +55,10 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
   },
   {
     label: "Outils",
-    items: [{ to: "/sandbox", label: "Bac à sable", icon: FlaskConical }],
+    items: [
+      { to: "/sandbox", label: "Bac à sable", icon: FlaskConical },
+      { to: "/debug", label: "Debug & tests", icon: Bug },
+    ],
   },
 ];
 

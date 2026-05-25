@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # UI web (Phase 2) : SPA React buildée servie en statique.
     frontend_dist: str = "frontend/dist"
 
+    # Outils de DEBUG (diagnostics + jeux de test GLPI, dont actions destructives).
+    # DÉSACTIVÉ par défaut → inerte en production. À n'activer qu'en labo/test.
+    debug_tools_enabled: bool = False
+
     # Dashboard inversé (FR-23) — fenêtre glissante et plafond de lecture GLPI.
     dashboard_window_days: int = 7
     dashboard_max_tickets: int = 500

@@ -2,6 +2,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { DEMO } from "@/lib/api";
 import { AiProvider } from "@/pages/AiProvider";
 import { Dashboard } from "@/pages/Dashboard";
+import { Debug } from "@/pages/Debug";
 import { EngineSettings } from "@/pages/EngineSettings";
 import { GlpiConnection } from "@/pages/GlpiConnection";
 import { Groups } from "@/pages/Groups";
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="technicians" element={<Technicians />} />
           <Route path="groups" element={<Groups />} />
           <Route path="sandbox" element={<Sandbox />} />
+          <Route path="debug" element={<Debug />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -5,6 +5,7 @@
 import type {
   AuthStatus,
   ConfigView,
+  DebugDiagnostics,
   DecisionEntry,
   EngineStatus,
   Health,
@@ -39,8 +40,19 @@ export const demo: {
   categories: RefItem[];
   entities: RefItem[];
   scope: Scope;
+  diagnostics: DebugDiagnostics;
 } = {
   authStatus: { authenticated: true, auth_configured: false },
+  diagnostics: {
+    glpi: {
+      configured: true,
+      reachable: true,
+      referentials: { categories: 8, technicians: 63, groups: 2, entities: 1, profiles: 62 },
+      new_tickets: 2,
+      recent_tickets_14d: 14,
+    },
+    llm: { configured: true, reachable: true },
+  },
   health: {
     status: "ok",
     glpi: { configured: true, reachable: true },
