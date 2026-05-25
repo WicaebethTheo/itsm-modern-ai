@@ -1,0 +1,94 @@
+"""Modèles du domaine.
+
+Clés JSON en `snake_case` ANGLAIS (convention project-context.md). Le français
+est réservé au texte utilisateur (libellés, brouillon de réponse).
+"""
+
+from __future__ import annotations
+
+from enum import IntEnum, StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class Priority(IntEnum):
+    """Encodage GLPI des priorités (addendum §A, stable toutes versions)."""
+
+    VERY_LOW = 1
+    LOW = 2
+    MEDIUM = 3
+    HIGH = 4
+    VERY_HIGH = 5
+    MAJOR = 6
+
+
+class Ticket(BaseModel):
+    """Snapshot minimal d'un Ticket GLPI tel que vu par le moteur."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    title: str = ""
+    content: str = ""
+
+
+class Decision(BaseModel):
+    """Sortie structurée du LLM (FR-6).
+
+    Le LLM **propose** ces valeurs ; le code les **valide** ensuite contre la
+    Whitelist (FR-7) puis le seuil de confiance (FR-8). Schéma versionné : toute
+    évolution = nouveau champ optionnel (jamais de breaking silencieux).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    category: int = Field(description="ID de catégorie GLPI (itilcategories_id) proposé.")
+    priority: int = Field(description="Priorité GLPI proposée (1-6).")
+    technician_id: int = Field(
+        description="ID GLPI du technicien/groupe proposé pour le routage."
+    )
+    draft: str = Field(description="Brouillon de première réponse, en français. Jamais envoyé.")
+    confidence: float = Field(
+        ge=0.0, le=1.0, description="Confiance auto-déclarée par le LLM (NON calibrée)."
+    )
+
+
+class Referentials(BaseModel):
+    """Listes fermées lues depuis GLPI → constituent la Whitelist (FR-3)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    categories: dict[int, str] = Field(default_factory=dict)
+    technicians: dict[int, str] = Field(default_factory=dict)
+    priorities: dict[int, str] = Field(
+        default_factory=lambda: {p.value: p.name for p in Priority}
+    )
+
+
+class TriageReason(StrEnum):
+    """Pourquoi une Décision a été acceptée ou renvoyée « à trier »."""
+
+    ACCEPTED = "accepted"
+    INVALID_OUTPUT = "invalid_output"  # JSON non parsable / champ manquant (FR-6/FR-9)
+    CATEGORY_NOT_IN_WHITELIST = "category_not_in_whitelist"  # FR-7
+    PRIORITY_NOT_IN_WHITELIST = "priority_not_in_whitelist"  # FR-7
+    TECHNICIAN_NOT_IN_WHITELIST = "technician_not_in_whitelist"  # FR-7
+    LOW_CONFIDENCE = "low_confidence"  # FR-8
+    LLM_ERROR = "llm_error"  # erreur réseau/LLM après retry (FR-9)
+    COST_CAP_REACHED = "cost_cap_reached"  # FR-10
+
+
+class TriageOutcome(BaseModel):
+    """Résultat du moteur à garde-fous pour un Ticket.
+
+    `accepted=True` → Décision déposable en Suivi (FR-4). Sinon → « à trier »
+    (FR-5/7/8/9/10), seule échappatoire du pipeline.
+    """
+
+    accepted: bool
+    reason: TriageReason
+    decision: Decision | None = None
+
+    @property
+    def is_a_trier(self) -> bool:
+        return not self.accepted

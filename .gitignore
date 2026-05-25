@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Env & secrets — JAMAIS committer (invariant souveraineté / secrets chiffrés)
+.env
+*.key
+master.key
+
+# Données locales
+*.db
+*.sqlite3
+data/
+
+# Sorties du spike
+spike-report*.json
+spike-report*.md
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
