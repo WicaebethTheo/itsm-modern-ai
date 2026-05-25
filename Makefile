@@ -1,4 +1,4 @@
-.PHONY: install lint test spike spike-mock fmt
+.PHONY: install lint test fmt run migrate spike spike-mock
 
 install:
 	uv venv --python 3.13
@@ -12,6 +12,14 @@ fmt:
 
 test:
 	uv run pytest -q
+
+# Lance le moteur headless en local (API + scheduler de polling)
+run:
+	uv run uvicorn itsm_modern_ai.main:app --reload --port 8000
+
+# Applique les migrations Alembic
+migrate:
+	uv run alembic upgrade head
 
 # Spike Epic 1 — vrai LLM (nécessite LLM_API_KEY, défaut Mistral EU)
 spike:

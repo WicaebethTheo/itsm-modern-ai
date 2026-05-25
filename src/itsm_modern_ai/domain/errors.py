@@ -17,3 +17,19 @@ class LlmResponseError(DomainError):
 
 class LlmTransportError(DomainError):
     """Échec réseau/transport vers le fournisseur LLM (FR-9)."""
+
+
+class ItsmError(DomainError):
+    """Erreur de l'ITSM (GLPI) : réponse inattendue, opération refusée."""
+
+
+class ItsmUnavailableError(ItsmError):
+    """GLPI injoignable / mal configuré (FR-1).
+
+    Levée explicitement (pas de démarrage silencieux dégradé). Le polling
+    reprend au cycle suivant sans perte de Ticket (FR-2, NFR3).
+    """
+
+
+class ItsmAuthError(ItsmError):
+    """Échec d'authentification GLPI (initSession)."""

@@ -9,63 +9,82 @@ Open-core, souverain (Mistral EU par défaut), français.
 > déterministe). Mode suggestion uniquement (jamais de modification d'un champ GLPI),
 > masquage PII avant tout appel LLM, fallback unique « à trier ».
 
-## État du projet : Epic 1 (spike de validation, gate Phase 0)
+## État du projet
 
-Le développement suit une **discipline de séquençage** stricte :
+Séquençage : `Epic 1 (spike) → [GO humain] → Epic 2 → Epic 3 → Epic 4`.
 
+- ✅ **Epic 1 — Spike de validation** (`scripts/spike_routing.py`) : mesure routage prose + précision LLM. Voir [`docs/spike.md`](docs/spike.md).
+- ✅ **Epic 2 — Fondations & connexion GLPI** : daemon FastAPI headless, connecteur GLPI legacy (`apirest.php`), lecture des Tickets « New », référentiels/Whitelist, écriture de Suivi interne privé (mode suggestion), polling idempotent (APScheduler), healthcheck. Config & secrets poussés au runtime via l'API (pas `.env`).
+- ⏳ **Epic 3 — Moteur à garde-fous** (masquage→LLM→whitelist→seuil→Suivi) : le seam `ticket_handler` du poller est prêt à le recevoir.
+- ⏳ **Epic 4 — Audit, auth, packaging** (journal, export CSV, auth locale, HTTPS).
+
+## Configuration : secrets poussés via l'API/UI (jamais `.env`)
+
+La **clé API LLM** et les **tokens GLPI** ne se mettent **pas** dans `.env` : ils sont
+poussés au runtime via `POST /api/config` (que l'UI Phase 2 consommera) et stockés
+**chiffrés au repos** (Fernet, FR-25). Le `GET /api/config` ne renvoie jamais la valeur
+d'un secret, seulement un booléen `*_set`. `.env` ne porte que les réglages non-secrets,
+la `MASTER_KEY` de chiffrement et l'URL de base de données.
+
+```bash
+# Pousser la clé LLM + la connexion GLPI (équivalent de ce que fera l'UI) :
+curl -X POST http://localhost:8000/api/config -H 'Content-Type: application/json' -d '{
+  "glpi_base_url": "https://glpi.exemple.local/apirest.php",
+  "glpi_user_token": "xxxxx",
+  "llm_api_key": "yyyyy"
+}'
 ```
-Epic 1 (spike) → [GO/NO-GO humain] → Epic 2 → Epic 3 → Epic 4
-```
-
-Ce dépôt contient **l'Epic 1** (`planning/epics.md`) : le spike technique qui mesure si le
-**routage par fiches en prose** + la **précision LLM sur tickets FR mal formulés** tiennent.
-Le GO dépend aussi d'un travail terrain (interviews DSI) **hors code**. Les Epics 2→4 ne
-sont **pas** implémentés tant que le GO n'est pas confirmé.
-
-Le code du spike est **réutilisable, pas jetable** : il est déjà rangé aux emplacements
-hexagonaux définitifs (`domain/`, `ports/`, `adapters/`, `services/`), que l'Epic 2+ étendra.
 
 ## Démarrage rapide
 
 ```bash
-make install          # crée le venv (uv) + installe les deps
+make install          # venv (uv) + deps
 make lint             # ruff
-make test             # pytest (chemins critiques : masquage, whitelist, parsing JSON)
-make spike-mock       # exécute le spike OFFLINE (mock déterministe, plomberie seulement)
+make test             # pytest (53 tests : masquage, whitelist, GLPI mocké, idempotence, API…)
+make migrate          # alembic upgrade head
+make run              # uvicorn + scheduler de polling (http://localhost:8000)
 
-# Exécution réelle du spike (vraie mesure) — nécessite une clé Mistral EU :
-cp .env.example .env  # puis renseigner LLM_API_KEY
-make spike
+# Déploiement on-prem :
+cp .env.example .env  # renseigner MASTER_KEY (sinon auto-générée dans data/)
+docker compose up --build
+
+# Spike Epic 1 (homelab) :
+make spike-mock       # offline ; make spike → vraie mesure (LLM_API_KEY pour le CLI)
 ```
 
-Le spike écrit `spike-report.md` + `spike-report.json` (justesse, couverture utile, seuil
-de confiance suggéré, cas d'échec, verdict go/no-go). Voir [`docs/spike.md`](docs/spike.md).
+API headless : `/health` (FR-27), `/api/status`, `/api/config`. OpenAPI sur `/docs`.
 
 ## Structure (hexagonale)
 
 ```
 src/itsm_modern_ai/
-├── domain/      # cœur : models, engine (whitelist+seuil), masking, prompting — AUCUN adaptateur
-├── ports/       # interfaces (Protocol) : LlmPort
-├── adapters/    # llm/ (OpenAI-compatible défaut Mistral, + mock offline)
-├── services/    # tech_profiles (fiches en prose)
-└── config/      # pydantic-settings (.env)
-scripts/spike_routing.py        # SPIKE Epic 1
-tests/                          # unit + integration (respx), fixtures/tickets_fr.json
-planning/                       # PRD, architecture, epics, addendum (specs)
+├── domain/        # cœur : models, engine (whitelist+seuil), masking, prompting — AUCUN adaptateur
+├── ports/         # interfaces (Protocol) : ItsmPort, LlmPort, SecretsPort
+├── adapters/
+│   ├── itsm/glpi/ # client apirest.php, mapper (ITILFollowup), connector (ItsmPort)
+│   ├── llm/       # OpenAI-compatible (défaut Mistral) + mock offline
+│   └── secrets/   # chiffrement Fernet (FR-25)
+├── services/      # tech_profiles, runtime_config (secrets/config), whitelist_cache
+├── scheduler/     # poller APScheduler (idempotent, FR-2)
+├── persistence/   # SQLModel/SQLite, idempotence, tables
+└── api/           # FastAPI : app+lifespan, routes health/status/config
+migrations/        # Alembic
+scripts/spike_routing.py        # Spike Epic 1
+tests/             # unit + integration (respx) ; fixtures/tickets_fr.json
+planning/          # PRD, architecture, epics, addendum (specs)
 ```
-
-## Documentation
-
-- [`planning/`](planning/) — PRD, architecture, epics, addendum (les specs).
-- [`project-context.md`](project-context.md) — règles & invariants pour tout agent.
-- [`docs/spike.md`](docs/spike.md) — comment lire/exécuter le spike.
-- [`docs/handoff.md`](docs/handoff.md) — note de passation d'origine.
 
 ## Stack
 
-Python 3.12+, Pydantic v2 + pydantic-settings, httpx, PyYAML. Tests : pytest + respx.
-Lint : ruff. Gestion deps : uv. (FastAPI/SQLModel/APScheduler/Docker arrivent à l'Epic 2+.)
+Python 3.12+, FastAPI/uvicorn, SQLModel (SQLite, Postgres-ready) + Alembic, Pydantic v2 +
+pydantic-settings, APScheduler, cryptography, httpx. Tests : pytest + respx. Lint : ruff.
+Deps : uv. Docker + docker-compose (on-prem).
+
+## Documentation
+
+- [`planning/`](planning/) — PRD, architecture, epics, addendum.
+- [`project-context.md`](project-context.md) — règles & invariants pour tout agent.
+- [`docs/spike.md`](docs/spike.md) — spike Epic 1. [`docs/handoff.md`](docs/handoff.md) — passation.
 
 ## Licence
 

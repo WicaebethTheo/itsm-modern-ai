@@ -1,0 +1,24 @@
+# Déploiement on-prem : un seul service + volume SQLite (pilote, pas de HA).
+services:
+  itsm:
+    build: .
+    image: itsm-modern-ai:0.1.0
+    container_name: itsm-modern-ai
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # La DB et la master key vivent dans le volume monté.
+      DATABASE_URL: sqlite:////app/data/itsm.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      # Fiches techniciens montées en lecture seule (FR-15).
+      - ./docs/tech-profiles.example.yaml:/app/data/tech-profiles.yaml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
