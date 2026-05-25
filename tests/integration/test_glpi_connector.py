@@ -84,6 +84,27 @@ async def test_write_followup_private_no_field_mutation():
 
 
 @respx.mock
+async def test_get_recent_tickets_parses_stats_and_window():
+    import datetime as _dt
+
+    _session_routes()
+    respx.get(f"{BASE}/Ticket").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"id": 1, "status": 5, "date": "2026-05-30 09:00:00", "solvedate": "2026-05-30 10:00:00",
+                 "time_to_resolve": "2026-05-30 12:00:00", "takeintoaccount_delay_stat": 300, "entities_id": 0},
+                {"id": 2, "status": 1, "date": "2020-01-01 09:00:00"},  # hors fenêtre
+            ],
+        )
+    )
+    since = _dt.datetime(2026, 5, 1)
+    stats = await (await _connector()).get_recent_tickets(since)
+    assert [s.id for s in stats] == [1]  # le vieux ticket est filtré
+    assert stats[0].first_response_seconds == 300 and stats[0].is_closed
+
+
+@respx.mock
 async def test_healthcheck_true_when_session_ok():
     _session_routes()
     assert await (await _connector()).healthcheck() is True

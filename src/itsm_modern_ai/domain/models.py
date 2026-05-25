@@ -6,6 +6,7 @@ est réservé au texte utilisateur (libellés, brouillon de réponse).
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import IntEnum, StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -36,6 +37,28 @@ class Ticket(BaseModel):
     # et un technicien posés par une règle GLPI ?
     category_id: int = 0
     assignee_present: bool = False
+
+
+class TicketStat(BaseModel):
+    """Données d'un Ticket utiles au Dashboard inversé (FR-23), lues depuis GLPI.
+
+    Métriques d'ÉQUIPE uniquement (jamais par technicien — anti-mouchard, SM-C2).
+    `first_response_seconds` = `takeintoaccount_delay_stat` GLPI (proxy temps de 1ʳᵉ réponse).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    status: int = 1
+    entity_id: int = 0
+    created: datetime | None = None
+    solved: datetime | None = None
+    time_to_resolve: datetime | None = None  # échéance SLA TTR (nullable)
+    first_response_seconds: int | None = None
+
+    @property
+    def is_closed(self) -> bool:
+        return self.status in (5, 6)  # Solved / Closed
 
 
 class Decision(BaseModel):

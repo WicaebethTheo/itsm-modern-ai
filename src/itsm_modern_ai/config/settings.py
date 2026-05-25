@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     # UI web (Phase 2) : SPA React buildée servie en statique.
     frontend_dist: str = "frontend/dist"
 
+    # Dashboard inversé (FR-23) — fenêtre glissante et plafond de lecture GLPI.
+    dashboard_window_days: int = 7
+    dashboard_max_tickets: int = 500
+    anomaly_new_age_hours: int = 24  # un Ticket « New » plus vieux que ça = anomalie
+
     # Connexion GLPI legacy apirest.php (FR-1) — base_url non-secret ; tokens via UI/API.
     glpi_base_url: str = ""  # ex. https://glpi.exemple.local/apirest.php
     glpi_verify_tls: bool = True

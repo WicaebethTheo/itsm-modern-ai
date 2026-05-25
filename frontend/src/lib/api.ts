@@ -160,6 +160,29 @@ export interface EligibilityItem {
   skills: string;
 }
 
+export interface Anomaly {
+  ticket_id: number;
+  kind: string;
+  detail: string;
+}
+
+export interface OperationalMetrics {
+  window_days: number;
+  tickets_in_window: number;
+  first_response_median_minutes: number | null;
+  sla_compliance_rate: number | null;
+  sla_evaluated: number;
+  reassignment_rate: number | null;
+  reassignment_available: boolean;
+  anomalies: Anomaly[];
+}
+
+export interface OperationalView {
+  available: boolean;
+  detail: string;
+  metrics: OperationalMetrics | null;
+}
+
 export interface SandboxResult {
   accepted: boolean;
   reason: string;
@@ -180,6 +203,7 @@ export const Api = {
   health: () => api.get<Health>("/health"),
   status: () => api.get<EngineStatus>("/api/status"),
   metrics: () => api.get<Metrics>("/api/metrics"),
+  operationalMetrics: () => api.get<OperationalView>("/api/operational-metrics"),
 
   getConfig: () => api.get<ConfigView>("/api/config"),
   updateConfig: (body: ConfigUpdate) => api.post<ConfigView>("/api/config", body),

@@ -6,14 +6,19 @@ toucher au domaine. Lève les erreurs typées de `domain.errors` (jamais de cras
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
-from ..domain.models import Referentials, Ticket
+from ..domain.models import Referentials, Ticket, TicketStat
 
 
 class ItsmPort(Protocol):
     async def get_new_tickets(self) -> list[Ticket]:
         """Tickets à l'état « New » (FR-2). Idempotence gérée en amont (poller)."""
+        ...
+
+    async def get_recent_tickets(self, since: datetime) -> list[TicketStat]:
+        """Tickets créés/modifiés depuis `since` pour le Dashboard inversé (FR-23)."""
         ...
 
     async def get_referentials(self) -> Referentials:

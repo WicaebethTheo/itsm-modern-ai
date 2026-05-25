@@ -78,6 +78,11 @@ def test_metrics_endpoint(client):
     assert body["total"] == 0 and body["cost_cap_eur_per_day"] == 5.0
 
 
+def test_operational_metrics_unavailable_without_glpi(client):
+    body = client.get("/api/operational-metrics").json()
+    assert body["available"] is False and body["metrics"] is None
+
+
 def test_root_reports_ui_not_built_when_no_dist(tmp_path):
     settings = _settings(tmp_path, frontend_dist=str(tmp_path / "nodist"))
     with TestClient(create_app(settings)) as c:

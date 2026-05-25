@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import httpx
 
 from ....domain.errors import ItsmError, ItsmUnavailableError
 from ....domain.models import Priority as _Priority
-from ....domain.models import Referentials, Ticket
+from ....domain.models import Referentials, Ticket, TicketStat
 from ....services.runtime_config import GlpiCredentials
 from . import mapper
 from .client import GlpiClient
@@ -34,10 +36,12 @@ class GlpiConnector:
         creds: GlpiCredentials,
         *,
         max_tickets: int = 200,
+        stats_max: int = 500,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._creds = creds
         self._max_tickets = max_tickets
+        self._stats_max = stats_max
         self._http_client = http_client
 
     def _client(self) -> GlpiClient:
@@ -59,6 +63,19 @@ class GlpiConnector:
         if isinstance(data, dict):  # GLPI peut renvoyer un objet unique
             data = [data]
         return [mapper.ticket_from_glpi(t) for t in data if mapper.is_new(t)]
+
+    async def get_recent_tickets(self, since: datetime) -> list[TicketStat]:
+        """Tickets récents (créés ≥ since) pour le Dashboard inversé (FR-23)."""
+        async with self._client() as gc:
+            resp = await gc.get(
+                "Ticket",
+                params={"range": f"0-{self._stats_max - 1}", "sort": "date", "order": "DESC"},
+            )
+            data = resp.json()
+        if isinstance(data, dict):
+            data = [data]
+        stats = [mapper.ticketstat_from_glpi(t) for t in data]
+        return [s for s in stats if s.created is None or s.created >= since]
 
     async def get_referentials(self) -> Referentials:
         """Scan complet des référentiels GLPI : catégories, techniciens, groupes, entités."""

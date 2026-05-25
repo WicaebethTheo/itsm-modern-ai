@@ -2,9 +2,41 @@
 
 from __future__ import annotations
 
-from ....domain.models import Ticket
+from datetime import datetime
+
+from ....domain.models import Ticket, TicketStat
 
 STATUS_NEW = 1  # 1=New, 2=Assigned, 3=Planned, 4=Pending, 5=Solved, 6=Closed
+
+
+def _parse_dt(value: object) -> datetime | None:
+    """Parse une date GLPI ('YYYY-MM-DD HH:MM:SS'). None si absente/invalide."""
+    if not value or value in ("0000-00-00 00:00:00", "0000-00-00"):
+        return None
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def _to_int(value: object) -> int | None:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def ticketstat_from_glpi(raw: dict) -> TicketStat:
+    """Mappe un Ticket GLPI vers les stats du Dashboard inversé (FR-23)."""
+    return TicketStat(
+        id=int(raw["id"]),
+        status=int(raw.get("status") or STATUS_NEW),
+        entity_id=int(raw.get("entities_id") or 0),
+        created=_parse_dt(raw.get("date")),
+        solved=_parse_dt(raw.get("solvedate")),
+        time_to_resolve=_parse_dt(raw.get("time_to_resolve")),
+        first_response_seconds=_to_int(raw.get("takeintoaccount_delay_stat")),
+    )
 
 
 def _has_assignee(raw: dict) -> bool:
