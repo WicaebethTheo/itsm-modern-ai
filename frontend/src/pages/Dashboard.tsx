@@ -1,10 +1,10 @@
-import { useCallback } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { StatCard } from "@/components/StatCard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
+import { useCallback } from "react";
 
 export function Dashboard() {
   const metrics = useResource(useCallback(() => Api.metrics(), []));
@@ -78,7 +78,9 @@ export function Dashboard() {
         <CardContent>
           {metrics.error && <p className="text-sm text-destructive">{metrics.error}</p>}
           {m && Object.keys(m.by_reason).length === 0 && (
-            <p className="text-sm text-muted-foreground">Aucune décision enregistrée pour le moment.</p>
+            <p className="text-sm text-muted-foreground">
+              Aucune décision enregistrée pour le moment.
+            </p>
           )}
           <div className="flex flex-col gap-1.5">
             {m &&

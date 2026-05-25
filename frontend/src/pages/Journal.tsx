@@ -1,4 +1,3 @@
-import { useCallback, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useResource } from "@/hooks/useResource";
 import { Api, type DecisionEntry } from "@/lib/api";
+import { useCallback, useState } from "react";
 
 function AnnotationCell({ d }: { d: DecisionEntry }) {
   const [value, setValue] = useState(d.annotation);
@@ -71,11 +71,19 @@ export function Journal() {
             {decisions.data?.map((d) => (
               <tr key={d.id} className="border-t border-border">
                 <td className="px-4 py-2.5 text-muted-foreground">
-                  {new Date(d.ts).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}
+                  {new Date(d.ts).toLocaleString("fr-FR", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })}
                 </td>
                 <td className="px-4 py-2.5">
                   {d.glpi_link ? (
-                    <a className="text-primary hover:underline" href={d.glpi_link} target="_blank" rel="noreferrer">
+                    <a
+                      className="text-primary hover:underline"
+                      href={d.glpi_link}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       #{d.ticket_id}
                     </a>
                   ) : (

@@ -1,4 +1,3 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "@/components/RequireAuth";
 import { AiProvider } from "@/pages/AiProvider";
 import { Dashboard } from "@/pages/Dashboard";
@@ -11,6 +10,7 @@ import { Sandbox } from "@/pages/Sandbox";
 import { Scope } from "@/pages/Scope";
 import { Status } from "@/pages/Status";
 import { Technicians } from "@/pages/Technicians";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 export default function App() {
   return (

@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useState } from "react";
 import { Banner, PageHeader } from "@/components/PageHeader";
 import { SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
@@ -6,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { useResource } from "@/hooks/useResource";
 import { Api, type EligibilityItem, type RefItem, type RefKind } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
 
 /**
  * Éditeur générique d'éligibilité (techniciens / groupes) : on scanne GLPI, puis on
@@ -30,7 +30,9 @@ export function RefEligibilityEditor({
   useEffect(() => {
     if (res.data) {
       setDraft(
-        Object.fromEntries(res.data.map((r) => [r.ext_id, { eligible: r.eligible, skills: r.skills }])),
+        Object.fromEntries(
+          res.data.map((r) => [r.ext_id, { eligible: r.eligible, skills: r.skills }]),
+        ),
       );
     }
   }, [res.data]);
@@ -66,7 +68,8 @@ export function RefEligibilityEditor({
       {res.data?.length === 0 && (
         <Card>
           <CardContent className="p-6 text-sm text-muted-foreground">
-            Aucun élément. Cliquez sur « Scanner GLPI » pour récupérer la liste depuis votre instance.
+            Aucun élément. Cliquez sur « Scanner GLPI » pour récupérer la liste depuis votre
+            instance.
           </CardContent>
         </Card>
       )}

@@ -1,13 +1,13 @@
-import { AlertTriangle } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
 import { Banner, PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Field } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Api, type ConfigUpdate, type LlmProvider, PROVIDER_LABELS } from "@/lib/api";
+import { Field } from "@/components/ui/label";
 import { useResource } from "@/hooks/useResource";
+import { Api, type ConfigUpdate, type LlmProvider, PROVIDER_LABELS } from "@/lib/api";
+import { AlertTriangle } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 const PROVIDERS: LlmProvider[] = ["mistral", "openai", "ollama", "anthropic"];
 const NON_SOVEREIGN: LlmProvider[] = ["openai", "anthropic"];
@@ -42,12 +42,47 @@ export function AiProvider() {
   // Champs par fournisseur : [base_url key, model key, secret key | null, défauts]
   const fields: Record<
     LlmProvider,
-    { baseKey: keyof ConfigUpdate; modelKey: keyof ConfigUpdate; secretKey: keyof ConfigUpdate | null; keySet: boolean; basePh: string; modelPh: string }
+    {
+      baseKey: keyof ConfigUpdate;
+      modelKey: keyof ConfigUpdate;
+      secretKey: keyof ConfigUpdate | null;
+      keySet: boolean;
+      basePh: string;
+      modelPh: string;
+    }
   > = {
-    mistral: { baseKey: "llm_base_url", modelKey: "llm_model", secretKey: "llm_api_key", keySet: !!c?.llm_api_key_set, basePh: "https://api.mistral.ai/v1", modelPh: "mistral-large-latest" },
-    openai: { baseKey: "openai_base_url", modelKey: "openai_model", secretKey: "openai_api_key", keySet: !!c?.openai_api_key_set, basePh: "https://api.openai.com/v1", modelPh: "gpt-4o-mini" },
-    ollama: { baseKey: "ollama_base_url", modelKey: "ollama_model", secretKey: null, keySet: false, basePh: "http://localhost:11434/v1", modelPh: "llama3.1" },
-    anthropic: { baseKey: "anthropic_base_url", modelKey: "anthropic_model", secretKey: "anthropic_api_key", keySet: !!c?.anthropic_api_key_set, basePh: "https://api.anthropic.com", modelPh: "claude-sonnet-4-6" },
+    mistral: {
+      baseKey: "llm_base_url",
+      modelKey: "llm_model",
+      secretKey: "llm_api_key",
+      keySet: !!c?.llm_api_key_set,
+      basePh: "https://api.mistral.ai/v1",
+      modelPh: "mistral-large-latest",
+    },
+    openai: {
+      baseKey: "openai_base_url",
+      modelKey: "openai_model",
+      secretKey: "openai_api_key",
+      keySet: !!c?.openai_api_key_set,
+      basePh: "https://api.openai.com/v1",
+      modelPh: "gpt-4o-mini",
+    },
+    ollama: {
+      baseKey: "ollama_base_url",
+      modelKey: "ollama_model",
+      secretKey: null,
+      keySet: false,
+      basePh: "http://localhost:11434/v1",
+      modelPh: "llama3.1",
+    },
+    anthropic: {
+      baseKey: "anthropic_base_url",
+      modelKey: "anthropic_model",
+      secretKey: "anthropic_api_key",
+      keySet: !!c?.anthropic_api_key_set,
+      basePh: "https://api.anthropic.com",
+      modelPh: "claude-sonnet-4-6",
+    },
   };
   const f = fields[provider];
   const currentBase = (c?.[f.baseKey as keyof typeof c] as string) ?? "";

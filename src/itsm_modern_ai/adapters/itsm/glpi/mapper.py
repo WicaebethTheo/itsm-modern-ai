@@ -29,11 +29,16 @@ def ticket_from_glpi(raw: dict) -> Ticket:
         category_id = int(raw.get("itilcategories_id") or 0)
     except (TypeError, ValueError):
         category_id = 0
+    try:
+        entity_id = int(raw.get("entities_id") or 0)
+    except (TypeError, ValueError):
+        entity_id = 0
     return Ticket(
         id=int(raw["id"]),
         title=str(raw.get("name") or ""),
         content=str(raw.get("content") or ""),
         status=int(raw.get("status") or STATUS_NEW),
+        entity_id=entity_id,
         category_id=category_id,
         assignee_present=_has_assignee(raw),
     )

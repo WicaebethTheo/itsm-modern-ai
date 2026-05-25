@@ -1,4 +1,4 @@
-.PHONY: install lint test fmt run migrate spike spike-mock
+.PHONY: install lint test fmt run migrate ui ui-dev ui-lint spike spike-mock
 
 install:
 	uv venv --python 3.13
@@ -28,6 +28,10 @@ ui:
 # UI en dev (hot reload, proxy /api vers :8000)
 ui-dev:
 	cd frontend && npm run dev
+
+# UI : lint (Biome) + typecheck
+ui-lint:
+	cd frontend && npm run lint && npm run typecheck
 
 # Spike Epic 1 — vrai LLM (nécessite LLM_API_KEY, défaut Mistral EU)
 spike:

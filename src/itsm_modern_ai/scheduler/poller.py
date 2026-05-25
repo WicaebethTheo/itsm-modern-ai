@@ -34,6 +34,7 @@ class PollStats:
     fetched: int = 0
     processed_new: int = 0
     skipped_already_done: int = 0
+    skipped_out_of_scope: int = 0  # entité hors périmètre sélectionné (Story 5.4)
     errors: int = 0
 
 
@@ -83,8 +84,15 @@ class TriagePoller:
             return stats
 
         stats.fetched = len(tickets)
+        scope_entities = self._cache.referentials.entities  # vide = toutes (défaut sûr)
         for ticket in tickets:
             try:
+                # Filtrage par périmètre d'entité (Story 5.4) : on ne marque PAS « traité »
+                # pour qu'un Ticket soit repris si l'admin élargit le périmètre ensuite.
+                if scope_entities and ticket.entity_id not in scope_entities:
+                    stats.skipped_out_of_scope += 1
+                    continue
+
                 with self._session_factory() as session:
                     if idempotency.is_processed(session, ticket.id):
                         stats.skipped_already_done += 1
@@ -102,10 +110,11 @@ class TriagePoller:
                 logger.exception("poll: erreur sur le Ticket %s: %s", ticket.id, exc)
 
         logger.info(
-            "poll terminé: fetched=%d new=%d skip=%d err=%d",
+            "poll terminé: fetched=%d new=%d skip=%d hors_périmètre=%d err=%d",
             stats.fetched,
             stats.processed_new,
             stats.skipped_already_done,
+            stats.skipped_out_of_scope,
             stats.errors,
         )
         return stats

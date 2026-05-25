@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
 import { Banner, PageHeader } from "@/components/PageHeader";
 import { SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
 import { Api, type RefItem } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
 
 function CheckList({
   items,
@@ -43,10 +43,12 @@ export function Scope() {
   const [msg, setMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
-    if (categories.data) setCats(new Set(categories.data.filter((c) => c.selected).map((c) => c.ext_id)));
+    if (categories.data)
+      setCats(new Set(categories.data.filter((c) => c.selected).map((c) => c.ext_id)));
   }, [categories.data]);
   useEffect(() => {
-    if (entities.data) setEnts(new Set(entities.data.filter((e) => e.selected).map((e) => e.ext_id)));
+    if (entities.data)
+      setEnts(new Set(entities.data.filter((e) => e.selected).map((e) => e.ext_id)));
   }, [entities.data]);
 
   function toggle(set: Set<number>, setter: (s: Set<number>) => void, id: number, on: boolean) {

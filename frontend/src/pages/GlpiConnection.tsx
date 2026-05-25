@@ -1,12 +1,12 @@
-import { useCallback, useState } from "react";
 import { Banner, PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Field } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/label";
 import { useResource } from "@/hooks/useResource";
 import { Api, type ConfigUpdate } from "@/lib/api";
+import { useCallback, useState } from "react";
 
 export function GlpiConnection() {
   const cfg = useResource(useCallback(() => Api.getConfig(), []));
@@ -61,15 +61,27 @@ export function GlpiConnection() {
           </Field>
           <Field
             label="User token"
-            hint={c?.glpi_user_token_set ? "Déjà configuré — laisser vide pour conserver." : undefined}
+            hint={
+              c?.glpi_user_token_set ? "Déjà configuré — laisser vide pour conserver." : undefined
+            }
           >
-            <Input type="password" placeholder="(inchangé)" onChange={(e) => set("glpi_user_token", e.target.value)} />
+            <Input
+              type="password"
+              placeholder="(inchangé)"
+              onChange={(e) => set("glpi_user_token", e.target.value)}
+            />
           </Field>
           <Field
             label="App token (optionnel)"
-            hint={c?.glpi_app_token_set ? "Déjà configuré — laisser vide pour conserver." : undefined}
+            hint={
+              c?.glpi_app_token_set ? "Déjà configuré — laisser vide pour conserver." : undefined
+            }
           >
-            <Input type="password" placeholder="(inchangé)" onChange={(e) => set("glpi_app_token", e.target.value)} />
+            <Input
+              type="password"
+              placeholder="(inchangé)"
+              onChange={(e) => set("glpi_app_token", e.target.value)}
+            />
           </Field>
           <div>
             <Button onClick={save}>Enregistrer</Button>

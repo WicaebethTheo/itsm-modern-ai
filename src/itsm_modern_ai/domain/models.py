@@ -31,6 +31,7 @@ class Ticket(BaseModel):
     title: str = ""
     content: str = ""
     status: int = 1  # 1=New
+    entity_id: int = 0  # entités_id GLPI — sert au filtrage par périmètre (Story 5.4)
     # Champs servant au pipeline à deux étages (FR-5) : a-t-on déjà une catégorie
     # et un technicien posés par une règle GLPI ?
     category_id: int = 0

@@ -1,3 +1,5 @@
+import { Api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import {
   Activity,
   Bot,
@@ -13,8 +15,6 @@ import {
   UsersRound,
 } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Api } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 interface NavItem {
   to: string;

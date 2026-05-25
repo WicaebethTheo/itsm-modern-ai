@@ -1,11 +1,11 @@
-import { useCallback, useState } from "react";
 import { Banner, PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Field } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Field } from "@/components/ui/label";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
+import { useCallback, useState } from "react";
 
 export function EngineSettings() {
   const cfg = useResource(useCallback(() => Api.getConfig(), []));

@@ -1,9 +1,9 @@
-import { type ReactNode, useCallback } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
+import { type ReactNode, useCallback } from "react";
 
 function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -43,7 +43,10 @@ export function Status() {
           <Row label="GLPI configuré" value={String(h?.glpi.configured ?? "—")} />
           <Row label="GLPI joignable" value={String(h?.glpi.reachable ?? "—")} />
           <Row label="LLM configuré" value={String(h?.llm.configured ?? "—")} />
-          <Row label="Polling" value={s?.polling_enabled ? `actif (${s.polling_interval_seconds}s)` : "inactif"} />
+          <Row
+            label="Polling"
+            value={s?.polling_enabled ? `actif (${s.polling_interval_seconds}s)` : "inactif"}
+          />
           <Row label="Whitelist chargée" value={String(s?.whitelist_loaded ?? "—")} />
           <Row label="Catégories" value={s?.categories_count ?? "—"} />
           <Row label="Techniciens" value={s?.technicians_count ?? "—"} />

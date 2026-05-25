@@ -1,7 +1,7 @@
-import { RefreshCw } from "lucide-react";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Api } from "@/lib/api";
+import { RefreshCw } from "lucide-react";
+import { useState } from "react";
 
 /** Bouton « Scanner GLPI » : rafraîchit le cache des référentiels, puis onSynced(). */
 export function SyncButton({ onSynced }: { onSynced: () => void }) {
@@ -27,7 +27,7 @@ export function SyncButton({ onSynced }: { onSynced: () => void }) {
     <div className="flex items-center gap-3">
       {msg && <span className="text-xs text-muted-foreground">{msg}</span>}
       <Button variant="outline" onClick={run} disabled={busy}>
-        <RefreshCw className={"h-4 w-4" + (busy ? " animate-spin" : "")} /> Scanner GLPI
+        <RefreshCw className={`h-4 w-4${busy ? " animate-spin" : ""}`} /> Scanner GLPI
       </Button>
     </div>
   );

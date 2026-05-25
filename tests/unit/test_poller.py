@@ -84,3 +84,28 @@ async def test_one_ticket_error_does_not_block_others(temp_db):
 async def test_followup_capability_via_fake(temp_db, private):
     itsm = FakeItsm([])
     assert await itsm.write_followup(1, "x", private=private) == 1
+
+
+async def test_entity_scope_filters_tickets(temp_db):
+    # Périmètre limité à l'entité 0 → le ticket de l'entité 9 est ignoré (hors périmètre).
+    refs = Referentials(categories={1: "C"}, technicians={11: "T"}, entities={0: "Racine"})
+    seen: list[int] = []
+
+    async def handler(ticket: Ticket, _refs: Referentials) -> bool:
+        seen.append(ticket.id)
+        return True
+
+    itsm = FakeItsm(
+        [Ticket(id=1, content="x", entity_id=0), Ticket(id=2, content="y", entity_id=9)],
+        refs=refs,
+    )
+    stats = await TriagePoller(itsm, WhitelistCache(), handler=handler).poll_once()
+    assert seen == [1]
+    assert stats.processed_new == 1 and stats.skipped_out_of_scope == 1
+
+
+async def test_no_entity_scope_processes_all(temp_db):
+    refs = Referentials(categories={1: "C"}, technicians={11: "T"})  # pas d'entités → toutes
+    itsm = FakeItsm([Ticket(id=1, content="x", entity_id=7)], refs=refs)
+    stats = await TriagePoller(itsm, WhitelistCache()).poll_once()
+    assert stats.processed_new == 1 and stats.skipped_out_of_scope == 0

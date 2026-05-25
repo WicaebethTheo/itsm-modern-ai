@@ -1,10 +1,10 @@
-import { useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Api, type SandboxResult } from "@/lib/api";
+import { useState } from "react";
 
 export function Sandbox() {
   const [text, setText] = useState("");
@@ -77,7 +77,9 @@ export function Sandbox() {
               {result.draft && (
                 <div className="mt-3">
                   <span className="text-sm text-muted-foreground">Brouillon de réponse</span>
-                  <p className="mt-1 whitespace-pre-wrap rounded bg-card p-3 text-sm">{result.draft}</p>
+                  <p className="mt-1 whitespace-pre-wrap rounded bg-card p-3 text-sm">
+                    {result.draft}
+                  </p>
                 </div>
               )}
             </div>

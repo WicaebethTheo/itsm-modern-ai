@@ -7,16 +7,19 @@ interface ResourceState<T> {
   reload: () => void;
 }
 
-/** Charge une ressource async et expose data/loading/error + reload(). */
+/**
+ * Charge une ressource async et expose data/loading/error + reload().
+ * `fetcher` DOIT être stable (l'envelopper dans useCallback côté appelant).
+ */
 export function useResource<T>(fetcher: () => Promise<T>): ResourceState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     let alive = true;
     setLoading(true);
+    setError(null);
     fetcher()
       .then((d) => alive && setData(d))
       .catch((e) => alive && setError(e?.message ?? "Erreur"))
@@ -24,9 +27,9 @@ export function useResource<T>(fetcher: () => Promise<T>): ResourceState<T> {
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick]);
+  }, [fetcher]);
 
-  const reload = useCallback(() => setTick((t) => t + 1), []);
-  return { data, loading, error, reload };
+  useEffect(() => load(), [load]);
+
+  return { data, loading, error, reload: load };
 }
