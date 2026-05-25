@@ -38,6 +38,8 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
+export const APP_VERSION = "0.7.0";
+
 export type LlmProvider = "mistral" | "openai" | "ollama" | "anthropic";
 
 export const PROVIDER_LABELS: Record<LlmProvider, string> = {
@@ -234,6 +236,12 @@ export interface DebugDiagnostics {
   llm: { configured: boolean; reachable?: boolean; error?: string };
 }
 
+export interface DebugInfo {
+  version: string;
+  title: string;
+  endpoints: { path: string; methods: string[] }[];
+}
+
 export interface SandboxResult {
   accepted: boolean;
   reason: string;
@@ -304,6 +312,7 @@ export const Api = {
   // Outils de debug (labo/test).
   debugStatus: () =>
     DEMO ? ok({ enabled: true }) : api.get<{ enabled: boolean }>("/api/debug/status"),
+  debugInfo: () => (DEMO ? ok(demo.info) : api.get<DebugInfo>("/api/debug/info")),
   debugDiagnostics: () =>
     DEMO ? ok(demo.diagnostics) : api.get<DebugDiagnostics>("/api/debug/diagnostics"),
   debugSeed: (technicians: number, groups: number) =>

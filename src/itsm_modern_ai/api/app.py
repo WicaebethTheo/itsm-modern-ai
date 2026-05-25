@@ -104,6 +104,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    from .. import __version__
     from .routes import auth as auth_routes
     from .routes import config as config_routes
     from .routes import debug as debug_routes
@@ -119,7 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(
         title="ITSM Modern AI — moteur de triage (headless)",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
     app.state.settings = settings

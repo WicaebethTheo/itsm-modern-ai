@@ -45,6 +45,20 @@ def status(request: Request) -> dict:
     return {"enabled": _enabled(request)}
 
 
+@router.get("/info", dependencies=[Depends(require_debug)])
+def info(request: Request) -> dict:
+    """Version du logiciel + endpoints exposés (introspection des routes)."""
+    from fastapi.routing import APIRoute
+
+    endpoints = []
+    for r in request.app.routes:
+        if isinstance(r, APIRoute) and (r.path.startswith("/api") or r.path == "/health"):
+            methods = sorted(m for m in r.methods if m not in ("HEAD", "OPTIONS"))
+            endpoints.append({"path": r.path, "methods": methods})
+    endpoints.sort(key=lambda e: e["path"])
+    return {"version": request.app.version, "title": request.app.title, "endpoints": endpoints}
+
+
 @router.get("/diagnostics", dependencies=[Depends(require_debug)])
 async def diagnostics(request: Request) -> dict:
     settings = request.app.state.settings

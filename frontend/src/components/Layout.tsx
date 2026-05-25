@@ -1,5 +1,6 @@
+import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { Api } from "@/lib/api";
+import { APP_VERSION, Api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   Activity,
@@ -12,10 +13,11 @@ import {
   type LucideIcon,
   PlugZap,
   ScrollText,
-  ShieldCheck,
   SlidersHorizontal,
+  Store as StoreIcon,
   Users,
   UsersRound,
+  Workflow,
 } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
@@ -52,6 +54,8 @@ const SECTIONS: { label: string; items: NavItem[] }[] = [
     label: "Avancé",
     items: [
       { to: "/sandbox", label: "Bac à sable", icon: FlaskConical },
+      { to: "/store", label: "Store", icon: StoreIcon },
+      { to: "/automations", label: "Automations", icon: Workflow },
       { to: "/debug", label: "Développement", icon: Code2 },
     ],
   },
@@ -72,7 +76,7 @@ export function Layout() {
         <aside className="flex w-16 shrink-0 flex-col border-r border-border bg-sidebar sm:w-60">
           <div className="flex h-16 items-center gap-2.5 px-4 sm:px-5">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <ShieldCheck className="h-5 w-5" />
+              <Logo className="h-5 w-5" />
             </span>
             <span className="hidden flex-col leading-tight sm:flex">
               <span className="text-sm font-semibold tracking-tight">ITSM Modern AI</span>
@@ -130,7 +134,7 @@ export function Layout() {
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
               </span>
               <span className="text-[11px] leading-snug text-muted-foreground/70">
-                Moteur en marche · mode suggestion
+                Moteur en marche · v{APP_VERSION}
               </span>
             </div>
           </div>

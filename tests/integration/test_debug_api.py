@@ -40,6 +40,13 @@ def test_status_enabled(enabled):
     assert enabled.get("/api/debug/status").json() == {"enabled": True}
 
 
+def test_info_exposes_version_and_endpoints(enabled):
+    body = enabled.get("/api/debug/info").json()
+    assert body["version"] == "0.7.0"
+    paths = {e["path"] for e in body["endpoints"]}
+    assert "/health" in paths and "/api/config" in paths
+
+
 def test_diagnostics_without_glpi(enabled):
     body = enabled.get("/api/debug/diagnostics").json()
     assert body["glpi"]["configured"] is False and body["llm"]["configured"] is False

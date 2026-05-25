@@ -1,4 +1,5 @@
 import { Banner, PageHeader } from "@/components/PageHeader";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ function J({ data }: { data: unknown }) {
 
 export function Debug() {
   const status = useResource(useCallback(() => Api.debugStatus(), []));
+  const info = useResource(useCallback(() => Api.debugInfo(), []));
   const [diag, setDiag] = useState<unknown>(null);
   const [seedRes, setSeedRes] = useState<unknown>(null);
   const [techs, setTechs] = useState(3);
@@ -63,6 +65,39 @@ export function Debug() {
       )}
 
       <div className="flex flex-col gap-4">
+        {/* Logiciel & endpoints */}
+        {info.data && (
+          <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle>Logiciel</CardTitle>
+              <Badge variant="muted">v{info.data.version}</Badge>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">{info.data.title}</p>
+              <p className="mt-3 mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
+                Endpoints exposés ({info.data.endpoints.length})
+              </p>
+              <div className="overflow-hidden rounded-md border border-border">
+                {info.data.endpoints.map((e) => (
+                  <div
+                    key={e.path}
+                    className="flex items-center gap-3 border-b border-border/50 px-3 py-1.5 text-sm last:border-0"
+                  >
+                    <span className="flex shrink-0 gap-1">
+                      {e.methods.map((m) => (
+                        <Badge key={m} variant={m === "GET" ? "default" : "warn"}>
+                          {m}
+                        </Badge>
+                      ))}
+                    </span>
+                    <code className="text-xs text-muted-foreground">{e.path}</code>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Diagnostics */}
         <Card>
           <CardHeader className="flex-row items-center justify-between">

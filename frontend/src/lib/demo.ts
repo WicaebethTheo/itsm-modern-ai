@@ -6,6 +6,7 @@ import type {
   AuthStatus,
   ConfigView,
   DebugDiagnostics,
+  DebugInfo,
   DecisionEntry,
   EngineStatus,
   Health,
@@ -41,8 +42,30 @@ export const demo: {
   entities: RefItem[];
   scope: Scope;
   diagnostics: DebugDiagnostics;
+  info: DebugInfo;
 } = {
   authStatus: { authenticated: true, auth_configured: false },
+  info: {
+    version: "0.7.0",
+    title: "ITSM Modern AI — moteur de triage (headless)",
+    endpoints: [
+      { path: "/health", methods: ["GET"] },
+      { path: "/api/status", methods: ["GET"] },
+      { path: "/api/metrics", methods: ["GET"] },
+      { path: "/api/operational-metrics", methods: ["GET"] },
+      { path: "/api/config", methods: ["GET", "POST"] },
+      { path: "/api/glpi/sync", methods: ["POST"] },
+      { path: "/api/discovery/{kind}", methods: ["GET"] },
+      { path: "/api/scope", methods: ["GET", "PUT"] },
+      { path: "/api/technicians", methods: ["PUT"] },
+      { path: "/api/groups", methods: ["PUT"] },
+      { path: "/api/decisions", methods: ["GET"] },
+      { path: "/api/decisions/{decision_id}/annotation", methods: ["PATCH"] },
+      { path: "/api/export/decisions.csv", methods: ["GET"] },
+      { path: "/api/sandbox", methods: ["POST"] },
+      { path: "/api/auth/login", methods: ["POST"] },
+    ],
+  },
   diagnostics: {
     glpi: {
       configured: true,

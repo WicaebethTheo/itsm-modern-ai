@@ -1,6 +1,7 @@
 import { RequireAuth } from "@/components/RequireAuth";
 import { DEMO } from "@/lib/api";
 import { AiProvider } from "@/pages/AiProvider";
+import { Automations } from "@/pages/Automations";
 import { Dashboard } from "@/pages/Dashboard";
 import { Debug } from "@/pages/Debug";
 import { EngineSettings } from "@/pages/EngineSettings";
@@ -11,6 +12,7 @@ import { Login } from "@/pages/Login";
 import { Sandbox } from "@/pages/Sandbox";
 import { Scope } from "@/pages/Scope";
 import { Status } from "@/pages/Status";
+import { Store } from "@/pages/Store";
 import { Technicians } from "@/pages/Technicians";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 
@@ -31,6 +33,8 @@ export default function App() {
           <Route path="technicians" element={<Technicians />} />
           <Route path="groups" element={<Groups />} />
           <Route path="sandbox" element={<Sandbox />} />
+          <Route path="store" element={<Store />} />
+          <Route path="automations" element={<Automations />} />
           <Route path="debug" element={<Debug />} />
         </Route>
       </Routes>
