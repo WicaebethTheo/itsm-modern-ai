@@ -93,6 +93,16 @@ export interface ConfigView {
   anthropic_model: string | null;
   confidence_threshold: string | null;
   cost_cap_eur_per_day: string | null;
+  llm_retries: string | null;
+  response_tone: string | null;
+  assistant_name: string | null;
+  routing_rules: string | null;
+  polling_enabled: string | null;
+  polling_interval_seconds: string | null;
+  dashboard_window_days: string | null;
+  anomaly_new_age_hours: string | null;
+  glpi_verify_tls: string | null;
+  glpi_followup_legacy_9x: string | null;
   glpi_user_token_set: boolean;
   glpi_app_token_set: boolean;
   llm_api_key_set: boolean;
@@ -102,6 +112,8 @@ export interface ConfigView {
 
 export interface ConfigUpdate {
   glpi_base_url?: string;
+  glpi_verify_tls?: boolean;
+  glpi_followup_legacy_9x?: boolean;
   llm_provider?: LlmProvider;
   llm_base_url?: string;
   llm_model?: string;
@@ -113,11 +125,24 @@ export interface ConfigUpdate {
   anthropic_model?: string;
   confidence_threshold?: number;
   cost_cap_eur_per_day?: number;
+  llm_retries?: number;
+  response_tone?: string;
+  assistant_name?: string;
+  routing_rules?: string;
+  polling_enabled?: boolean;
+  polling_interval_seconds?: number;
+  dashboard_window_days?: number;
+  anomaly_new_age_hours?: number;
   glpi_user_token?: string;
   glpi_app_token?: string;
   llm_api_key?: string;
   openai_api_key?: string;
   anthropic_api_key?: string;
+}
+
+/** Vrai si une valeur de config stockée en chaîne représente un booléen vrai. */
+export function asBool(v: string | null | undefined): boolean {
+  return v != null && ["1", "true", "yes", "on", "vrai"].includes(v.trim().toLowerCase());
 }
 
 export interface DecisionEntry {

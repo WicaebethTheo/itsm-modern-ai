@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     cost_cap_eur_per_day: float = 5.0  # FR-10
     llm_retries: int = 1  # FR-9
 
+    # Qualité de la suggestion (impacte le brouillon proposé au demandeur/technicien)
+    response_tone: str = "professionnel, courtois et concis"
+    assistant_name: str = ""  # signature éventuelle du brouillon
+    routing_rules: str = ""  # consignes de routage en langage naturel (données, pas ordres)
+
     # UI web (Phase 2) : SPA React buildée servie en statique.
     frontend_dist: str = "frontend/dist"
 

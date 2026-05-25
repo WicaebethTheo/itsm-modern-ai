@@ -29,12 +29,21 @@ SECRET_KEYS = frozenset(
 # Clés non-secrètes surchargeables en base (sinon valeur d'env via Settings).
 PLAIN_KEYS = frozenset(
     {
-        "glpi_base_url", "llm_provider",
-        "llm_base_url", "llm_model",
+        # GLPI
+        "glpi_base_url", "glpi_verify_tls", "glpi_followup_legacy_9x",
+        # Fournisseur LLM
+        "llm_provider", "llm_base_url", "llm_model",
         "openai_base_url", "openai_model",
         "ollama_base_url", "ollama_model",
         "anthropic_base_url", "anthropic_model",
-        "confidence_threshold", "cost_cap_eur_per_day",
+        # Moteur
+        "confidence_threshold", "cost_cap_eur_per_day", "llm_retries",
+        # Qualité de la suggestion
+        "response_tone", "assistant_name", "routing_rules",
+        # Polling
+        "polling_enabled", "polling_interval_seconds",
+        # Dashboard
+        "dashboard_window_days", "anomaly_new_age_hours",
     }
 )
 
@@ -87,20 +96,43 @@ class RuntimeConfigService:
             return row.value
         return self._env_default(key)
 
+    def get_bool(self, key: str, default: bool = False) -> bool:
+        v = self.get(key)
+        if v is None:
+            return default
+        return v.strip().lower() in ("1", "true", "yes", "on", "vrai")
+
+    def get_int(self, key: str, default: int = 0) -> int:
+        try:
+            return int(float(self.get(key) or default))
+        except (TypeError, ValueError):
+            return default
+
     def _env_default(self, key: str) -> str | None:
+        s = self._settings
         defaults = {
-            "glpi_base_url": self._settings.glpi_base_url,
-            "llm_provider": self._settings.llm_provider,
-            "llm_base_url": self._settings.llm_base_url,
-            "llm_model": self._settings.llm_model,
-            "openai_base_url": self._settings.openai_base_url,
-            "openai_model": self._settings.openai_model,
-            "ollama_base_url": self._settings.ollama_base_url,
-            "ollama_model": self._settings.ollama_model,
-            "anthropic_base_url": self._settings.anthropic_base_url,
-            "anthropic_model": self._settings.anthropic_model,
-            "confidence_threshold": str(self._settings.confidence_threshold),
-            "cost_cap_eur_per_day": str(self._settings.cost_cap_eur_per_day),
+            "glpi_base_url": s.glpi_base_url,
+            "glpi_verify_tls": str(s.glpi_verify_tls).lower(),
+            "glpi_followup_legacy_9x": str(s.glpi_followup_legacy_9x).lower(),
+            "llm_provider": s.llm_provider,
+            "llm_base_url": s.llm_base_url,
+            "llm_model": s.llm_model,
+            "openai_base_url": s.openai_base_url,
+            "openai_model": s.openai_model,
+            "ollama_base_url": s.ollama_base_url,
+            "ollama_model": s.ollama_model,
+            "anthropic_base_url": s.anthropic_base_url,
+            "anthropic_model": s.anthropic_model,
+            "confidence_threshold": str(s.confidence_threshold),
+            "cost_cap_eur_per_day": str(s.cost_cap_eur_per_day),
+            "llm_retries": str(s.llm_retries),
+            "response_tone": s.response_tone,
+            "assistant_name": s.assistant_name,
+            "routing_rules": s.routing_rules,
+            "polling_enabled": str(s.polling_enabled).lower(),
+            "polling_interval_seconds": str(s.polling_interval_seconds),
+            "dashboard_window_days": str(s.dashboard_window_days),
+            "anomaly_new_age_hours": str(s.anomaly_new_age_hours),
         }
         return defaults.get(key)
 
@@ -132,7 +164,9 @@ class RuntimeConfigService:
             base_url=self.get("glpi_base_url") or "",
             user_token=self.get_secret("glpi_user_token") or "",
             app_token=self.get_secret("glpi_app_token") or "",
-            verify_tls=self._settings.glpi_verify_tls,
+            verify_tls=self.get_bool("glpi_verify_tls", self._settings.glpi_verify_tls),
             timeout_seconds=self._settings.glpi_timeout_seconds,
-            followup_legacy_9x=self._settings.glpi_followup_legacy_9x,
+            followup_legacy_9x=self.get_bool(
+                "glpi_followup_legacy_9x", self._settings.glpi_followup_legacy_9x
+            ),
         )

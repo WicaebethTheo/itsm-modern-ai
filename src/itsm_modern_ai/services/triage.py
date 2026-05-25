@@ -94,17 +94,21 @@ class TriageService:
         settings: Settings,
         tech_profiles_prose: str,
         session_factory: SessionFactory,
+        guidance: str = "",
+        retries: int | None = None,
     ) -> None:
         self._itsm = itsm
         self._llm = llm
         self._settings = settings
         self._profiles = tech_profiles_prose
         self._session_factory = session_factory
+        self._guidance = guidance
+        self._retries = settings.llm_retries if retries is None else retries
 
     async def _call_llm(self, system: str, user: str) -> LlmResult:
         """Appel LLM avec retry borné (FR-9) sur erreur transport."""
         last: Exception | None = None
-        for _ in range(self._settings.llm_retries + 1):
+        for _ in range(self._retries + 1):
             try:
                 return await self._llm.complete(system, user)
             except LlmTransportError as exc:
@@ -117,7 +121,7 @@ class TriageService:
         """Masquage → LLM → Pydantic → Whitelist → seuil. N'écrit RIEN (sandbox-safe)."""
         masked = masking.mask(raw_text)
         system = prompting.SYSTEM_PROMPT
-        user = prompting.build_user_prompt(masked.text, refs, self._profiles)
+        user = prompting.build_user_prompt(masked.text, refs, self._profiles, self._guidance)
         try:
             result = await self._call_llm(system, user)
         except LlmResponseError:

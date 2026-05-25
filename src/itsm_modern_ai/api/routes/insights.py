@@ -54,32 +54,34 @@ async def operational_metrics(request: Request) -> OperationalView:
     Indisponible si GLPI n'est pas configuré. Restreint au périmètre d'entités sélectionné.
     """
     settings = request.app.state.settings
-    connector = build_connector(settings, request.app.state.secrets_box)
+    secrets = request.app.state.secrets_box
+    connector = build_connector(settings, secrets)
     if connector is None:
         return OperationalView(available=False, detail="GLPI non configuré.")
 
+    # Fenêtre / seuil d'anomalie configurables au runtime (UI).
+    from ...persistence import db
+    from ...services import referentials
+    from ...services.runtime_config import RuntimeConfigService
+
+    with db.session_scope() as session:
+        cfg = RuntimeConfigService(session, secrets, settings)
+        window_days = cfg.get_int("dashboard_window_days", settings.dashboard_window_days)
+        new_age_hours = cfg.get_int("anomaly_new_age_hours", settings.anomaly_new_age_hours)
+        scope = referentials.effective_referentials(session).entities
+
     now = datetime.now(UTC).replace(tzinfo=None)  # dates GLPI naïves
-    since = now - timedelta(days=settings.dashboard_window_days)
+    since = now - timedelta(days=window_days)
     try:
         stats = await connector.get_recent_tickets(since)
     except ItsmError as exc:
         return OperationalView(available=False, detail=f"Lecture GLPI impossible : {exc}")
 
     # Restreint au périmètre d'entités sélectionné (cohérent avec le polling, Story 5.4).
-    from ...persistence import db
-    from ...services import referentials
-
-    with db.session_scope() as session:
-        scope = referentials.effective_referentials(session).entities
     if scope:
         stats = [s for s in stats if s.entity_id in scope]
 
     return OperationalView(
         available=True,
-        metrics=dashboard.compute(
-            stats,
-            window_days=settings.dashboard_window_days,
-            now=now,
-            new_age_hours=settings.anomaly_new_age_hours,
-        ),
+        metrics=dashboard.compute(stats, window_days=window_days, now=now, new_age_hours=new_age_hours),
     )

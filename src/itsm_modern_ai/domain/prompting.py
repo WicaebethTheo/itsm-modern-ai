@@ -45,12 +45,32 @@ def _format_referentials(refs: Referentials) -> str:
     return "\n\n".join(parts)
 
 
-def build_user_prompt(masked_content: str, refs: Referentials, profiles_prose: str) -> str:
+def build_guidance(
+    *, response_tone: str = "", assistant_name: str = "", routing_rules: str = ""
+) -> str:
+    """Consignes paramétrées par l'admin (données injectées, jamais des ordres système)."""
+    parts: list[str] = []
+    if response_tone.strip():
+        parts.append(f"- Ton du brouillon : {response_tone.strip()}.")
+    if assistant_name.strip():
+        parts.append(f"- Signe le brouillon au nom de : {assistant_name.strip()}.")
+    if routing_rules.strip():
+        parts.append(f"- Consignes de routage de l'organisation :\n{routing_rules.strip()}")
+    return "\n".join(parts)
+
+
+def build_user_prompt(
+    masked_content: str, refs: Referentials, profiles_prose: str, guidance: str = ""
+) -> str:
     """Assemble le message utilisateur. `masked_content` DOIT déjà être masqué."""
     prose = profiles_prose.strip() or "(aucune fiche fournie)"
+    guidance_block = (
+        f"Consignes (paramétrées par l'admin) :\n{guidance.strip()}\n\n" if guidance.strip() else ""
+    )
     return (
         f"{_format_referentials(refs)}\n\n"
         f"Fiches techniciens et groupes (prose libre) :\n{prose}\n\n"
+        f"{guidance_block}"
         f"--- TICKET À TRIER (contenu déjà masqué) ---\n{masked_content}\n\n"
         "Renvoie uniquement le JSON de la Décision."
     )

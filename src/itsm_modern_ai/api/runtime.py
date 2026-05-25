@@ -86,12 +86,23 @@ def build_triage_service(
     llm = build_llm(settings, secrets)
     if llm is None:
         return None
+    from ..domain import prompting
+
     with db.session_scope() as session:
         prose = referentials.routing_prose(session)
+        cfg = RuntimeConfigService(session, secrets, settings)
+        guidance = prompting.build_guidance(
+            response_tone=cfg.get("response_tone") or "",
+            assistant_name=cfg.get("assistant_name") or "",
+            routing_rules=cfg.get("routing_rules") or "",
+        )
+        retries = cfg.get_int("llm_retries", settings.llm_retries)
     return TriageService(
         itsm=itsm,
         llm=llm,
         settings=settings,
         tech_profiles_prose=prose,
         session_factory=db.session_scope,
+        guidance=guidance,
+        retries=retries,
     )

@@ -22,9 +22,24 @@ from .security import require_auth
 logger = logging.getLogger("itsm.app")
 
 
+def _poll_enabled(app: FastAPI) -> bool:
+    """Lecture runtime de l'activation du polling (pause/reprise à chaud via l'UI)."""
+    from ..persistence import db as _db
+    from ..services.runtime_config import RuntimeConfigService
+
+    settings: Settings = app.state.settings
+    with _db.session_scope() as session:
+        return RuntimeConfigService(session, app.state.secrets_box, settings).get_bool(
+            "polling_enabled", settings.polling_enabled
+        )
+
+
 async def _run_poll_cycle(app: FastAPI) -> None:
     """Job planifié : (re)construit connecteur + triage depuis la config et poll une fois."""
     settings: Settings = app.state.settings
+    if not _poll_enabled(app):
+        logger.info("poll: désactivé (polling_enabled=false) — cycle ignoré")
+        return
     connector = build_connector(settings, app.state.secrets_box)
     if connector is None:
         logger.info("poll: GLPI non configuré (URL/token à pousser via /api/config) — cycle ignoré")
@@ -60,20 +75,28 @@ async def lifespan(app: FastAPI):
     app.state.secrets_box = make_secrets_box(settings)
     app.state.whitelist_cache = WhitelistCache()
 
-    scheduler = AsyncIOScheduler()
-    if settings.polling_enabled:
-        scheduler.add_job(
-            _run_poll_cycle,
-            trigger=IntervalTrigger(seconds=settings.polling_interval_seconds),
-            args=[app],
-            id="poll",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
+    # Intervalle initial depuis la config runtime (modifiable à chaud via /api/config).
+    from ..services.runtime_config import RuntimeConfigService
+
+    with db.session_scope() as session:
+        interval = RuntimeConfigService(session, app.state.secrets_box, settings).get_int(
+            "polling_interval_seconds", settings.polling_interval_seconds
         )
+
+    scheduler = AsyncIOScheduler()
+    # Le job tourne toujours ; l'activation est décidée à l'exécution (_poll_enabled).
+    scheduler.add_job(
+        _run_poll_cycle,
+        trigger=IntervalTrigger(seconds=max(10, interval)),
+        args=[app],
+        id="poll",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.start()
     app.state.scheduler = scheduler
-    logger.info("démarré (polling=%s, interval=%ss)", settings.polling_enabled, settings.polling_interval_seconds)
+    logger.info("démarré (interval=%ss)", interval)
     try:
         yield
     finally:

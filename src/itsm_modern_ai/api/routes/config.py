@@ -1,14 +1,14 @@
 """Configuration runtime (FR-22 backend) — secrets poussés via cette API/UI.
 
 ⚠️ Les secrets (clés API LLM, tokens GLPI) sont écrits ici (write-only) et stockés
-chiffrés (FR-25) ; ils ne sont JAMAIS renvoyés ni lus depuis .env. Le GET expose
-les réglages non-secrets et des booléens « *_set » indiquant si un secret est posé.
-Protégé par l'authentification locale (FR-24) au niveau du routeur (app.py).
+chiffrés (FR-25) ; jamais renvoyés ni lus depuis .env. Le GET expose les réglages
+non-secrets et des booléens « *_set ». Protégé par l'auth locale (FR-24, app.py).
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from apscheduler.triggers.interval import IntervalTrigger
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from ...services.runtime_config import RuntimeConfigService
@@ -18,9 +18,26 @@ router = APIRouter(prefix="/api", tags=["config"])
 
 PROVIDER_PATTERN = "^(mistral|openai|ollama|anthropic)$"
 
+# Réglages non-secrets exposés/éditables (stockés en chaîne ; typés à la lecture).
+_PLAIN = (
+    "glpi_base_url", "glpi_verify_tls", "glpi_followup_legacy_9x",
+    "llm_provider", "llm_base_url", "llm_model",
+    "openai_base_url", "openai_model", "ollama_base_url", "ollama_model",
+    "anthropic_base_url", "anthropic_model",
+    "confidence_threshold", "cost_cap_eur_per_day", "llm_retries",
+    "response_tone", "assistant_name", "routing_rules",
+    "polling_enabled", "polling_interval_seconds",
+    "dashboard_window_days", "anomaly_new_age_hours",
+)
+_SECRETS = ("glpi_user_token", "glpi_app_token", "llm_api_key", "openai_api_key", "anthropic_api_key")
+
 
 class ConfigView(BaseModel):
+    # GLPI
     glpi_base_url: str | None = None
+    glpi_verify_tls: str | None = None
+    glpi_followup_legacy_9x: str | None = None
+    # LLM
     llm_provider: str | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
@@ -30,9 +47,21 @@ class ConfigView(BaseModel):
     ollama_model: str | None = None
     anthropic_base_url: str | None = None
     anthropic_model: str | None = None
+    # Moteur
     confidence_threshold: str | None = None
     cost_cap_eur_per_day: str | None = None
-    # Secrets : jamais leur valeur, seulement leur présence.
+    llm_retries: str | None = None
+    # Qualité de la suggestion
+    response_tone: str | None = None
+    assistant_name: str | None = None
+    routing_rules: str | None = None
+    # Polling
+    polling_enabled: str | None = None
+    polling_interval_seconds: str | None = None
+    # Dashboard
+    dashboard_window_days: str | None = None
+    anomaly_new_age_hours: str | None = None
+    # Secrets : présence seulement.
     glpi_user_token_set: bool
     glpi_app_token_set: bool
     llm_api_key_set: bool
@@ -44,6 +73,8 @@ class ConfigUpdate(BaseModel):
     """Tous les champs sont optionnels ; seuls les fournis sont mis à jour."""
 
     glpi_base_url: str | None = None
+    glpi_verify_tls: bool | None = None
+    glpi_followup_legacy_9x: bool | None = None
     llm_provider: str | None = Field(default=None, pattern=PROVIDER_PATTERN)
     llm_base_url: str | None = None
     llm_model: str | None = None
@@ -55,27 +86,25 @@ class ConfigUpdate(BaseModel):
     anthropic_model: str | None = None
     confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     cost_cap_eur_per_day: float | None = Field(default=None, ge=0.0)
+    llm_retries: int | None = Field(default=None, ge=0, le=5)
+    response_tone: str | None = Field(default=None, max_length=500)
+    assistant_name: str | None = Field(default=None, max_length=200)
+    routing_rules: str | None = Field(default=None, max_length=20_000)
+    polling_enabled: bool | None = None
+    polling_interval_seconds: int | None = Field(default=None, ge=10, le=86_400)
+    dashboard_window_days: int | None = Field(default=None, ge=1, le=365)
+    anomaly_new_age_hours: int | None = Field(default=None, ge=1, le=720)
     # Secrets (write-only) — Ollama n'a pas de clé.
     glpi_user_token: str | None = None
     glpi_app_token: str | None = None
-    llm_api_key: str | None = None  # Mistral
+    llm_api_key: str | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
-
-
-_PLAIN = (
-    "glpi_base_url", "llm_provider", "llm_base_url", "llm_model",
-    "openai_base_url", "openai_model", "ollama_base_url", "ollama_model",
-    "anthropic_base_url", "anthropic_model",
-)
-_SECRETS = ("glpi_user_token", "glpi_app_token", "llm_api_key", "openai_api_key", "anthropic_api_key")
 
 
 def _view(cfg: RuntimeConfigService) -> ConfigView:
     return ConfigView(
         **{k: cfg.get(k) for k in _PLAIN},
-        confidence_threshold=cfg.get("confidence_threshold"),
-        cost_cap_eur_per_day=cfg.get("cost_cap_eur_per_day"),
         glpi_user_token_set=cfg.is_secret_set("glpi_user_token"),
         glpi_app_token_set=cfg.is_secret_set("glpi_app_token"),
         llm_api_key_set=cfg.is_secret_set("llm_api_key"),
@@ -91,17 +120,25 @@ def get_config(cfg: RuntimeConfigService = Depends(get_config_service)) -> Confi
 
 @router.post("/config", response_model=ConfigView)
 def update_config(
-    body: ConfigUpdate, cfg: RuntimeConfigService = Depends(get_config_service)
+    body: ConfigUpdate,
+    request: Request,
+    cfg: RuntimeConfigService = Depends(get_config_service),
 ) -> ConfigView:
     data = body.model_dump(exclude_none=True)
     for key in _PLAIN:
         if key in data:
-            cfg.set(key, data[key])
-    if "confidence_threshold" in data:
-        cfg.set("confidence_threshold", str(data["confidence_threshold"]))
-    if "cost_cap_eur_per_day" in data:
-        cfg.set("cost_cap_eur_per_day", str(data["cost_cap_eur_per_day"]))
+            value = data[key]
+            cfg.set(key, str(value).lower() if isinstance(value, bool) else str(value))
     for key in _SECRETS:
         if key in data:
             cfg.set_secret(key, data[key])
+
+    # Re-planification à chaud de l'intervalle de polling.
+    if "polling_interval_seconds" in data:
+        scheduler = getattr(request.app.state, "scheduler", None)
+        if scheduler is not None and scheduler.get_job("poll") is not None:
+            scheduler.reschedule_job(
+                "poll",
+                trigger=IntervalTrigger(seconds=max(10, int(data["polling_interval_seconds"]))),
+            )
     return _view(cfg)
