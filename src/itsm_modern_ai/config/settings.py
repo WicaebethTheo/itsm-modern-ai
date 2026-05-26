@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     cost_cap_eur_per_day: float = 5.0  # FR-10
     llm_retries: int = 1  # FR-9
 
+    # Mode d'exécution (FR-17). Réglable PAR ENTITÉ dans la console ; ce défaut global
+    # s'applique aux entités sans mode explicite. "suggestion" = sûr par défaut
+    # (aucune mutation GLPI). semi_auto/full_auto mutent le Ticket — choix explicite.
+    execution_mode_default: str = "suggestion"  # suggestion | semi_auto | full_auto
+    auto_min_confidence_default: float = 0.9  # 2e seuil strict du mode semi_auto
+
     # Qualité de la suggestion (impacte le brouillon proposé au demandeur/technicien)
     response_tone: str = "professionnel, courtois et concis"
     assistant_name: str = ""  # signature éventuelle du brouillon

@@ -12,6 +12,7 @@ from __future__ import annotations
 from sqlmodel import Session, select
 
 from ..domain.models import Referentials
+from ..domain.modes import ExecutionMode
 from ..persistence.tables import ReferentialCache
 
 KIND_CATEGORY = "category"
@@ -86,6 +87,42 @@ def set_scope(session: Session, *, category_ids: list[int], entity_ids: list[int
             row.selected = row.ext_id in selected
             session.add(row)
     session.commit()
+
+
+def set_modes(session: Session, items: list[dict]) -> None:
+    """Règle le mode d'exécution (+ seuil auto) PAR ENTITÉ (kind='entity').
+
+    `mode` vide/None → l'entité retombe sur le défaut global. Un mode invalide est ignoré.
+    """
+    valid = {m.value for m in ExecutionMode}
+    for it in items:
+        row = _row(session, KIND_ENTITY, int(it["ext_id"]))
+        if row is None:
+            continue
+        m = it.get("mode")
+        row.mode = m if m in valid else None
+        amc = it.get("auto_min_confidence")
+        row.auto_min_confidence = float(amc) if amc is not None else None
+        session.add(row)
+    session.commit()
+
+
+def mode_for_entity(
+    session: Session,
+    entity_id: int,
+    *,
+    default_mode: ExecutionMode,
+    default_auto_min_confidence: float,
+) -> tuple[ExecutionMode, float]:
+    """Résout le mode effectif d'une entité : son réglage explicite, sinon le défaut global."""
+    row = _row(session, KIND_ENTITY, entity_id)
+    mode = ExecutionMode(row.mode) if row and row.mode else default_mode
+    threshold = (
+        row.auto_min_confidence
+        if row and row.auto_min_confidence is not None
+        else default_auto_min_confidence
+    )
+    return mode, threshold
 
 
 def effective_referentials(session: Session) -> Referentials:

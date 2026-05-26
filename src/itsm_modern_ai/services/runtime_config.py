@@ -37,6 +37,7 @@ PLAIN_KEYS = frozenset(
         "anthropic_base_url", "anthropic_model",
         # Moteur
         "confidence_threshold", "cost_cap_eur_per_day", "llm_retries",
+        "execution_mode_default", "auto_min_confidence_default",
         # Qualité de la suggestion
         "response_tone", "assistant_name", "routing_rules", "system_prompt",
         # Polling
