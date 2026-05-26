@@ -71,6 +71,9 @@ class DecisionLog(SQLModel, table=True):
     confidence: float | None = None
     glpi_link: str = ""
     annotation: str = ""  # éditable a posteriori (revue manuelle pilote)
+    # Mode d'exécution effectif + a-t-on muté le Ticket GLPI (vs Suivi seul) — traçabilité.
+    mode: str = ""  # ExecutionMode résolu pour le périmètre
+    applied: bool = False  # True si la Décision a été appliquée aux champs GLPI
 
 
 class ReferentialCache(SQLModel, table=True):
@@ -95,6 +98,10 @@ class ReferentialCache(SQLModel, table=True):
     selected: bool = False  # catégories/entités dans le périmètre
     eligible: bool = False  # techniciens/groupes vers qui l'IA peut router
     skills: str = ""  # prose (techniciens/groupes)
+    # Mode d'exécution par ENTITÉ (kind="entity") : None = défaut global (runtime_config).
+    # `auto_min_confidence` = 2e seuil strict du mode semi_auto (None = défaut global).
+    mode: str | None = None  # "suggestion" | "semi_auto" | "full_auto"
+    auto_min_confidence: float | None = None
     updated_at: datetime = Field(default_factory=_utcnow)
 
 

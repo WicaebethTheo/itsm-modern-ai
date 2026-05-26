@@ -148,6 +148,22 @@ class GlpiConnector:
             raise ItsmError(f"Écriture du Suivi sans id retourné: {body}")
         return int(fid)
 
+    async def apply_decision(
+        self,
+        ticket_id: int,
+        *,
+        category: int,
+        priority: int,
+        technician_id: int | None = None,
+        group_id: int | None = None,
+    ) -> None:
+        """Mute le Ticket (catégorie, priorité, assignation) — modes semi/full-auto (FR-17)."""
+        payload = mapper.ticket_update_payload(
+            category=category, priority=priority, technician_id=technician_id, group_id=group_id
+        )
+        async with self._client() as gc:
+            await gc.put(f"Ticket/{ticket_id}", json=payload)
+
     async def healthcheck(self) -> bool:
         if not self._creds.is_configured:
             return False

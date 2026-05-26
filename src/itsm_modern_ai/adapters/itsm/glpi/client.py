@@ -77,6 +77,9 @@ class GlpiClient:
     async def post(self, path: str, json: dict | None = None) -> httpx.Response:
         return await self._request("POST", path, json=json)
 
+    async def put(self, path: str, json: dict | None = None) -> httpx.Response:
+        return await self._request("PUT", path, json=json)
+
     async def delete(self, path: str, json: dict | None = None) -> httpx.Response:
         return await self._request("DELETE", path, json=json)
 

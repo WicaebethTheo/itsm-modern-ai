@@ -39,9 +39,19 @@ def record_llm_call(
 
 
 def record_decision(
-    session: Session, ticket_id: int, outcome: TriageOutcome, *, glpi_link: str = ""
+    session: Session,
+    ticket_id: int,
+    outcome: TriageOutcome,
+    *,
+    glpi_link: str = "",
+    mode: str = "",
+    applied: bool = False,
 ) -> int:
-    """Consigne une Décision (acceptée ou « à trier ») dans le Journal (FR-20)."""
+    """Consigne une Décision (acceptée ou « à trier ») dans le Journal (FR-20).
+
+    `mode` = mode d'exécution effectif ; `applied` = la Décision a-t-elle muté le Ticket
+    GLPI (vs Suivi seul). Traçabilité de l'action (audit/DPO).
+    """
     d = outcome.decision
     row = DecisionLog(
         ticket_id=ticket_id,
@@ -53,6 +63,8 @@ def record_decision(
         group_id=d.group_id if d else None,
         confidence=d.confidence if d else None,
         glpi_link=glpi_link,
+        mode=mode,
+        applied=applied,
     )
     session.add(row)
     session.commit()

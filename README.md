@@ -6,8 +6,10 @@ savent pas traiter (la « Queue longue »), **toujours derrière un garde-fou d�
 Open-core, souverain (Mistral EU par défaut), français.
 
 > **Invariant produit :** le LLM **propose**, le code **valide et décide** (whitelist
-> déterministe). Mode suggestion uniquement (jamais de modification d'un champ GLPI),
-> masquage PII avant tout appel LLM, fallback unique « à trier ».
+> déterministe). **Modes par périmètre** : `suggestion` (défaut sûr — Suivi privé annoté, aucune
+> mutation, brouillon jamais envoyé) · `semi_auto`/`full_auto` (appliquent la Décision **après** le
+> garde-fou **et répondent au demandeur** = Suivi public). Constantes dans tous les modes :
+> masquage PII avant tout appel LLM, garde-fou déterministe, fallback unique « à trier ».
 
 ## État du projet — pilote V1 complet (Epics 1→4)
 

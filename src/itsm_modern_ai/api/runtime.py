@@ -12,6 +12,7 @@ from ..adapters.itsm.glpi.connector import GlpiConnector
 from ..adapters.llm.registry import build_llm as _build_llm_adapter
 from ..adapters.secrets.encrypted import FernetSecretsBox
 from ..config.settings import Settings
+from ..domain.modes import ExecutionMode
 from ..persistence import db
 from ..ports.itsm import ItsmPort
 from ..ports.llm import LlmPort
@@ -98,6 +99,10 @@ def build_triage_service(
         )
         retries = cfg.get_int("llm_retries", settings.llm_retries)
         system_prompt = cfg.get("system_prompt") or ""
+        default_mode = _safe_mode(cfg.get("execution_mode_default") or settings.execution_mode_default)
+        auto_min_confidence = cfg.get_float(
+            "auto_min_confidence_default", settings.auto_min_confidence_default
+        )
     return TriageService(
         itsm=itsm,
         llm=llm,
@@ -107,4 +112,14 @@ def build_triage_service(
         guidance=guidance,
         retries=retries,
         system_prompt=system_prompt,
+        default_mode=default_mode,
+        auto_min_confidence=auto_min_confidence,
     )
+
+
+def _safe_mode(value: str) -> ExecutionMode:
+    """Parse le mode par défaut ; toute valeur inconnue retombe sur suggestion (sûr)."""
+    try:
+        return ExecutionMode(value)
+    except ValueError:
+        return ExecutionMode.SUGGESTION

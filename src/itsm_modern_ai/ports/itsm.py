@@ -29,6 +29,23 @@ class ItsmPort(Protocol):
         """Écrit un Suivi interne privé (FR-4). Ne modifie AUCUN champ du Ticket."""
         ...
 
+    async def apply_decision(
+        self,
+        ticket_id: int,
+        *,
+        category: int,
+        priority: int,
+        technician_id: int | None = None,
+        group_id: int | None = None,
+    ) -> None:
+        """Applique la Décision aux champs du Ticket (catégorie, priorité, assignation).
+
+        ⚠️ MUTE le Ticket GLPI. Appelée UNIQUEMENT hors mode suggestion (semi/full-auto),
+        après le garde-fou déterministe (whitelist + seuil). Le routage vise un technicien
+        (préféré) ou, en fallback, un groupe éligible.
+        """
+        ...
+
     async def healthcheck(self) -> bool:
         """True si GLPI est joignable et l'auth fonctionne (FR-27)."""
         ...

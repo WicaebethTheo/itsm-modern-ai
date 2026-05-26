@@ -52,6 +52,9 @@ class ConfigView(BaseModel):
     routing_rules: str | None = None
     system_prompt: str | None = None  # surcharge (vide = défaut)
     system_prompt_default: str | None = None  # lecture seule : le prompt intégré
+    # Mode d'exécution — défaut global (réglable aussi par entité via /api/modes)
+    execution_mode_default: str | None = None
+    auto_min_confidence_default: str | None = None
     # Polling
     polling_enabled: str | None = None
     polling_interval_seconds: str | None = None
@@ -88,6 +91,8 @@ class ConfigUpdate(BaseModel):
     assistant_name: str | None = Field(default=None, max_length=200)
     routing_rules: str | None = Field(default=None, max_length=20_000)
     system_prompt: str | None = Field(default=None, max_length=SYSTEM_PROMPT_MAX)
+    execution_mode_default: str | None = Field(default=None, pattern="^(suggestion|semi_auto|full_auto)$")
+    auto_min_confidence_default: float | None = Field(default=None, ge=0.0, le=1.0)
     polling_enabled: bool | None = None
     polling_interval_seconds: int | None = Field(default=None, ge=10, le=86_400)
     dashboard_window_days: int | None = Field(default=None, ge=1, le=365)

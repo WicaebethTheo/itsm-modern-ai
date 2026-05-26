@@ -52,6 +52,19 @@ def test_discovery_lists_cached(client):
     assert client.get("/api/discovery/unknown").status_code == 404
 
 
+def test_set_and_read_execution_mode_per_entity(client):
+    _seed_cache()
+    # Entité sans mode → null par défaut (= défaut global).
+    entities = client.get("/api/discovery/entity").json()
+    assert entities[0]["mode"] is None
+    # Régler full_auto sur l'entité racine.
+    resp = client.put("/api/modes", json=[{"ext_id": 0, "mode": "full_auto"}])
+    assert resp.status_code == 200
+    assert next(e for e in resp.json() if e["ext_id"] == 0)["mode"] == "full_auto"
+    # Un mode invalide est rejeté (validation Pydantic).
+    assert client.put("/api/modes", json=[{"ext_id": 0, "mode": "bogus"}]).status_code == 422
+
+
 def test_select_eligibility_and_scope_drives_effective_whitelist(client):
     _seed_cache()
     client.put("/api/technicians", json=[{"ext_id": 11, "eligible": True, "skills": "AD, sécurité"}])

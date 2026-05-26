@@ -175,6 +175,8 @@ export interface DecisionEntry {
   annotation: string;
 }
 
+export type ExecutionMode = "suggestion" | "semi_auto" | "full_auto";
+
 export interface RefItem {
   ext_id: number;
   name: string;
@@ -182,6 +184,14 @@ export interface RefItem {
   selected: boolean;
   eligible: boolean;
   skills: string;
+  mode?: ExecutionMode | null;
+  auto_min_confidence?: number | null;
+}
+
+export interface ModeItem {
+  ext_id: number;
+  mode: ExecutionMode | null;
+  auto_min_confidence?: number | null;
 }
 
 export interface SyncResult {
@@ -302,6 +312,8 @@ export const Api = {
     DEMO ? ok(demo.groups) : api.put<RefItem[]>("/api/groups", items),
   getScope: () => (DEMO ? ok(demo.scope) : api.get<Scope>("/api/scope")),
   setScope: (scope: Scope) => (DEMO ? ok(scope) : api.put<Scope>("/api/scope", scope)),
+  saveModes: (items: ModeItem[]) =>
+    DEMO ? ok([] as RefItem[]) : api.put<RefItem[]>("/api/modes", items),
 
   decisions: () => (DEMO ? ok(demo.decisions) : api.get<DecisionEntry[]>("/api/decisions")),
   annotate: (id: number, annotation: string) =>
