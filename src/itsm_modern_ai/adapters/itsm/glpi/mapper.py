@@ -26,6 +26,13 @@ def _to_int(value: object) -> int | None:
         return None
 
 
+def user_display(raw: dict) -> str:
+    """Nom affichable d'un utilisateur GLPI : « prénom nom », sinon login, sinon `user_<id>`."""
+    parts = [str(raw.get("firstname") or ""), str(raw.get("realname") or "")]
+    full = " ".join(p for p in parts if p).strip()
+    return full or str(raw.get("name") or f"user_{raw.get('id')}")
+
+
 def ticketstat_from_glpi(raw: dict) -> TicketStat:
     """Mappe un Ticket GLPI vers les stats du Dashboard inversé (FR-23)."""
     return TicketStat(

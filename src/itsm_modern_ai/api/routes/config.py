@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from ...domain import prompting
-from ...services.runtime_config import RuntimeConfigService
+from ...services.runtime_config import PLAIN_KEYS, SECRET_KEYS, RuntimeConfigService
 from ..deps import get_config_service
 
 router = APIRouter(prefix="/api", tags=["config"])
@@ -20,18 +20,11 @@ router = APIRouter(prefix="/api", tags=["config"])
 PROVIDER_PATTERN = "^(mistral|openai|ollama|anthropic)$"
 SYSTEM_PROMPT_MAX = 8000  # garde-fou de longueur du prompt système
 
-# Réglages non-secrets exposés/éditables (stockés en chaîne ; typés à la lecture).
-_PLAIN = (
-    "glpi_base_url", "glpi_verify_tls", "glpi_followup_legacy_9x",
-    "llm_provider", "llm_base_url", "llm_model",
-    "openai_base_url", "openai_model", "ollama_base_url", "ollama_model",
-    "anthropic_base_url", "anthropic_model",
-    "confidence_threshold", "cost_cap_eur_per_day", "llm_retries",
-    "response_tone", "assistant_name", "routing_rules", "system_prompt",
-    "polling_enabled", "polling_interval_seconds",
-    "dashboard_window_days", "anomaly_new_age_hours",
-)
-_SECRETS = ("glpi_user_token", "glpi_app_token", "llm_api_key", "openai_api_key", "anthropic_api_key")
+# Source de vérité des clés : services/runtime_config (pas de duplication).
+# Les secrets poussables via cette route = tous les secrets SAUF admin_password_hash,
+# qui est géré par le bootstrap d'authentification (FR-24), pas par /api/config.
+_PLAIN = PLAIN_KEYS
+_SECRETS = SECRET_KEYS - {"admin_password_hash"}
 
 
 class ConfigView(BaseModel):

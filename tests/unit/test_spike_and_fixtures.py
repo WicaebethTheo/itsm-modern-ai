@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from itsm_modern_ai.services.tech_profiles import load_tech_profiles
+from itsm_modern_ai.spike_tech_profiles import load_tech_profiles
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "fixtures" / "tickets_fr.json"

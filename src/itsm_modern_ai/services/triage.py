@@ -136,13 +136,30 @@ class TriageService:
         return outcome, result
 
     async def handle(self, ticket: Ticket, refs: Referentials) -> bool:
-        """Handler du poller. Renvoie True si un Suivi a été écrit."""
+        """Handler du poller. Renvoie True si un Suivi a été écrit.
+
+        Orchestration à ordre immuable (cf. docstring du module) ; chaque étape est
+        déléguée à une méthode dédiée pour la lisibilité, sans changer l'enchaînement.
+        """
         # Étage 1 (FR-5) : déjà traité par une règle GLPI → pas d'appel LLM.
         if rules_fully_handled(ticket):
             logger.info("ticket %s déjà traité par règle GLPI → skip moteur", ticket.id)
             return False
 
         # Cost cap (FR-10) AVANT tout appel facturant.
+        if self._cost_cap_reached(ticket):
+            return False
+
+        raw_text = f"{ticket.title}\n{ticket.content}".strip()
+        outcome, result = await self.evaluate_text(ticket.id, raw_text, refs)
+
+        if result is not None:
+            self._journal_llm_call(ticket, raw_text, result)
+
+        return await self._persist_outcome(ticket, outcome, refs)
+
+    def _cost_cap_reached(self, ticket: Ticket) -> bool:
+        """Cost cap (FR-10) : True si atteint. Journalise alors « à trier »."""
         with self._session_factory() as session:
             if cost_cap.is_over_cap(session, self._settings.cost_cap_eur_per_day):
                 journal.record_decision(
@@ -150,29 +167,31 @@ class TriageService:
                     TriageOutcome(accepted=False, reason=TriageReason.COST_CAP_REACHED),
                 )
                 logger.warning("cost cap atteint → ticket %s en « à trier »", ticket.id)
-                return False
+                return True
+        return False
 
-        raw_text = f"{ticket.title}\n{ticket.content}".strip()
-        outcome, result = await self.evaluate_text(ticket.id, raw_text, refs)
+    def _journal_llm_call(self, ticket: Ticket, raw_text: str, result: LlmResult) -> None:
+        """Journalise l'appel LLM (FR-19) — contenu masqué, coût pour le cap."""
+        price_in = self._settings.llm_price_input_per_mtok
+        price_out = self._settings.llm_price_output_per_mtok
+        with self._session_factory() as session:
+            journal.record_llm_call(
+                session,
+                ticket_id=ticket.id,
+                model=result.model,
+                prompt_sent=masking.mask(raw_text).text,
+                response_received=result.raw_response,
+                prompt_tokens=result.prompt_tokens,
+                completion_tokens=result.completion_tokens,
+                cost_eur=cost_cap.cost_eur(
+                    result.prompt_tokens, result.completion_tokens, price_in, price_out
+                ),
+            )
 
-        # Journalisation de l'appel LLM (FR-19) — contenu masqué, coût pour le cap.
-        if result is not None:
-            price_in = self._settings.llm_price_input_per_mtok
-            price_out = self._settings.llm_price_output_per_mtok
-            with self._session_factory() as session:
-                journal.record_llm_call(
-                    session,
-                    ticket_id=ticket.id,
-                    model=result.model,
-                    prompt_sent=masking.mask(raw_text).text,
-                    response_received=result.raw_response,
-                    prompt_tokens=result.prompt_tokens,
-                    completion_tokens=result.completion_tokens,
-                    cost_eur=cost_cap.cost_eur(
-                        result.prompt_tokens, result.completion_tokens, price_in, price_out
-                    ),
-                )
-
+    async def _persist_outcome(
+        self, ticket: Ticket, outcome: TriageOutcome, refs: Referentials
+    ) -> bool:
+        """Dépose le Suivi privé si accepté (FR-4/17) puis journalise la décision."""
         glpi_link = _web_link(self._settings.glpi_base_url, ticket.id)
         wrote = False
         if outcome.accepted:

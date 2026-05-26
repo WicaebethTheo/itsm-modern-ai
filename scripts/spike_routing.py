@@ -34,7 +34,7 @@ from itsm_modern_ai.domain import masking, prompting, whitelist  # noqa: E402
 from itsm_modern_ai.domain.errors import LlmResponseError, LlmTransportError  # noqa: E402
 from itsm_modern_ai.domain.models import Referentials  # noqa: E402
 from itsm_modern_ai.ports.llm import LlmPort, LlmResult  # noqa: E402
-from itsm_modern_ai.services.tech_profiles import load_tech_profiles  # noqa: E402
+from itsm_modern_ai.spike_tech_profiles import load_tech_profiles  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_FIXTURES = REPO / "tests" / "fixtures" / "tickets_fr.json"

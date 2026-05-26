@@ -10,10 +10,9 @@ l'environnement au runtime (exigence produit).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from sqlmodel import Session
 
+from ..config.credentials import GlpiCredentials  # value object réutilisé par glpi_credentials()
 from ..config.settings import Settings
 from ..persistence.tables import RuntimeConfig
 from ..ports.secrets import SecretsPort
@@ -46,20 +45,6 @@ PLAIN_KEYS = frozenset(
         "dashboard_window_days", "anomaly_new_age_hours",
     }
 )
-
-
-@dataclass(frozen=True)
-class GlpiCredentials:
-    base_url: str
-    user_token: str
-    app_token: str
-    verify_tls: bool
-    timeout_seconds: float
-    followup_legacy_9x: bool
-
-    @property
-    def is_configured(self) -> bool:
-        return bool(self.base_url and self.user_token)
 
 
 class RuntimeConfigService:

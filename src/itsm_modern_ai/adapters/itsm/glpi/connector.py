@@ -6,10 +6,10 @@ from datetime import datetime
 
 import httpx
 
+from ....config.credentials import GlpiCredentials
 from ....domain.errors import ItsmError, ItsmUnavailableError
 from ....domain.models import Priority as _Priority
 from ....domain.models import Referentials, Ticket, TicketStat
-from ....services.runtime_config import GlpiCredentials
 from . import mapper
 from .client import GlpiClient
 
@@ -22,12 +22,6 @@ PRIORITY_LABELS_FR = {
     _Priority.VERY_HIGH: "Très haute",
     _Priority.MAJOR: "Majeure",
 }
-
-
-def _user_display(raw: dict) -> str:
-    parts = [str(raw.get("firstname") or ""), str(raw.get("realname") or "")]
-    full = " ".join(p for p in parts if p).strip()
-    return full or str(raw.get("name") or f"user_{raw.get('id')}")
 
 
 def _build_user_profiles(profiles_raw: list[dict], profile_user_raw: list[dict]) -> dict[int, str]:
@@ -115,7 +109,7 @@ class GlpiConnector:
         }
         # On exclut les comptes supprimés (GLPI renvoie tous les utilisateurs).
         technicians = {
-            int(u["id"]): _user_display(u)
+            int(u["id"]): mapper.user_display(u)
             for u in users_raw
             if str(u.get("is_deleted") or "0") in ("0", "False", "false", "")
         }

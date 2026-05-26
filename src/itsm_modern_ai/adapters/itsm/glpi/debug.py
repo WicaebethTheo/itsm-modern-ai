@@ -11,7 +11,7 @@ import uuid
 
 import httpx
 
-from ....services.runtime_config import GlpiCredentials
+from ....config.credentials import GlpiCredentials
 from .client import GlpiClient
 
 # Comptes jamais supprimés : système (1) + super-admin glpi (2 par défaut).

@@ -7,8 +7,8 @@ import pytest
 import respx
 
 from itsm_modern_ai.adapters.itsm.glpi.connector import GlpiConnector
+from itsm_modern_ai.config.credentials import GlpiCredentials
 from itsm_modern_ai.domain.errors import ItsmUnavailableError
-from itsm_modern_ai.services.runtime_config import GlpiCredentials
 
 BASE = "https://glpi.test/apirest.php"
 

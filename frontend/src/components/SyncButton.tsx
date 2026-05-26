@@ -1,10 +1,12 @@
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n";
 import { Api } from "@/lib/api";
 import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 
 /** Bouton « Scanner GLPI » : rafraîchit le cache des référentiels, puis onSynced(). */
 export function SyncButton({ onSynced }: { onSynced: () => void }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -13,7 +15,7 @@ export function SyncButton({ onSynced }: { onSynced: () => void }) {
     setMsg("");
     try {
       const r = await Api.syncGlpi();
-      setMsg(r.ok ? "Référentiels synchronisés." : r.detail);
+      setMsg(r.ok ? t("Référentiels synchronisés.", "Referentials synced.") : r.detail);
       if (r.ok) onSynced();
     } catch (e: unknown) {
       const p = (e as { payload?: { detail?: { message?: string } } }).payload;
@@ -27,7 +29,7 @@ export function SyncButton({ onSynced }: { onSynced: () => void }) {
     <div className="flex items-center gap-3">
       {msg && <span className="text-xs text-muted-foreground">{msg}</span>}
       <Button variant="outline" onClick={run} disabled={busy}>
-        <RefreshCw className={`h-4 w-4${busy ? " animate-spin" : ""}`} /> Scanner GLPI
+        <RefreshCw className={`h-4 w-4${busy ? " animate-spin" : ""}`} /> {t("Scanner GLPI", "Scan GLPI")}
       </Button>
     </div>
   );

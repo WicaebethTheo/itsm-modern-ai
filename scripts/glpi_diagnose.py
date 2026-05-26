@@ -26,8 +26,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from itsm_modern_ai.adapters.itsm.glpi.connector import GlpiConnector  # noqa: E402
+from itsm_modern_ai.config.credentials import GlpiCredentials  # noqa: E402
 from itsm_modern_ai.domain.errors import ItsmError  # noqa: E402
-from itsm_modern_ai.services.runtime_config import GlpiCredentials  # noqa: E402
 
 
 def _creds() -> GlpiCredentials:
