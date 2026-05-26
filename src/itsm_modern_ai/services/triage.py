@@ -28,10 +28,11 @@ from ..domain.models import (
     TriageOutcome,
     TriageReason,
 )
+from ..domain.modes import ExecutionMode, resolve_action
 from ..persistence import journal
 from ..ports.itsm import ItsmPort
 from ..ports.llm import LlmPort, LlmResult
-from . import cost_cap
+from . import cost_cap, referentials
 
 logger = logging.getLogger("itsm.triage")
 
@@ -97,6 +98,8 @@ class TriageService:
         guidance: str = "",
         retries: int | None = None,
         system_prompt: str = "",
+        default_mode: ExecutionMode = ExecutionMode.SUGGESTION,
+        auto_min_confidence: float | None = None,
     ) -> None:
         self._itsm = itsm
         self._llm = llm
@@ -107,6 +110,11 @@ class TriageService:
         self._retries = settings.llm_retries if retries is None else retries
         # Vide → prompt système par défaut intégré.
         self._system_prompt = system_prompt.strip() or prompting.SYSTEM_PROMPT
+        # Mode d'exécution par défaut (les entités peuvent surcharger) + 2e seuil semi-auto.
+        self._default_mode = default_mode
+        self._auto_min_confidence = (
+            settings.auto_min_confidence_default if auto_min_confidence is None else auto_min_confidence
+        )
 
     async def _call_llm(self, system: str, user: str) -> LlmResult:
         """Appel LLM avec retry borné (FR-9) sur erreur transport."""
@@ -191,16 +199,48 @@ class TriageService:
     async def _persist_outcome(
         self, ticket: Ticket, outcome: TriageOutcome, refs: Referentials
     ) -> bool:
-        """Dépose le Suivi privé si accepté (FR-4/17) puis journalise la décision."""
+        """Applique la Décision selon le mode du périmètre, puis journalise (FR-17).
+
+        Mode du périmètre (par entité, défaut global) → `resolve_action` :
+        - suggestion → Suivi privé seul (aucune mutation) ;
+        - semi/full-auto → mutation GLPI (`apply_decision`) PUIS Suivi privé (audit).
+        Le garde-fou (whitelist + seuil) a déjà tranché en amont ; ici on ne fait
+        QUE dispatcher l'action d'une Décision acceptée. « à trier » ne fait rien.
+        """
         glpi_link = _web_link(self._settings.glpi_base_url, ticket.id)
+        mode = self._default_mode
+        applied = False
         wrote = False
+
         if outcome.accepted:
             if self._itsm is None:
-                raise RuntimeError("handle() requiert un ItsmPort pour écrire le Suivi")
-            content = render_followup(outcome, refs)
-            await self._itsm.write_followup(ticket.id, content, private=True)  # FR-4/17
-            wrote = True
+                raise RuntimeError("handle() requiert un ItsmPort pour agir sur le Ticket")
+            with self._session_factory() as session:
+                mode, auto_threshold = referentials.mode_for_entity(
+                    session,
+                    ticket.entity_id,
+                    default_mode=self._default_mode,
+                    default_auto_min_confidence=self._auto_min_confidence,
+                )
+            action = resolve_action(outcome, mode, auto_threshold)
+            d = outcome.decision
+            assert d is not None
+            if action.apply:  # modes semi/full-auto : mutation réelle du Ticket
+                await self._itsm.apply_decision(
+                    ticket.id,
+                    category=d.category,
+                    priority=d.priority,
+                    technician_id=d.technician_id,
+                    group_id=d.group_id,
+                )
+                applied = True
+            if action.write_followup:  # toujours pour une Décision acceptée (audit, FR-19/20)
+                content = render_followup(outcome, refs)
+                await self._itsm.write_followup(ticket.id, content, private=True)
+                wrote = True
 
         with self._session_factory() as session:
-            journal.record_decision(session, ticket.id, outcome, glpi_link=glpi_link)
+            journal.record_decision(
+                session, ticket.id, outcome, glpi_link=glpi_link, mode=mode.value, applied=applied
+            )
         return wrote

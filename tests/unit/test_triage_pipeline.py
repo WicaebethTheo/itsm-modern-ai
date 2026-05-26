@@ -39,10 +39,16 @@ class FakeLlm:
 class FakeItsm:
     def __init__(self):
         self.followups = []
+        self.applied = []  # (ticket_id, category, priority, technician_id, group_id)
 
     async def write_followup(self, ticket_id, content, *, private=True) -> int:
         self.followups.append((ticket_id, content, private))
         return 1
+
+    async def apply_decision(
+        self, ticket_id, *, category, priority, technician_id=None, group_id=None
+    ) -> None:
+        self.applied.append((ticket_id, category, priority, technician_id, group_id))
 
     async def get_new_tickets(self):
         return []
@@ -54,7 +60,9 @@ class FakeItsm:
         return True
 
 
-def _service(llm, itsm=None, **overrides) -> TriageService:
+def _service(llm, itsm=None, *, default_mode=None, auto_min_confidence=None, **overrides) -> TriageService:
+    from itsm_modern_ai.domain.modes import ExecutionMode
+
     settings = Settings(glpi_base_url="https://glpi.local/apirest.php", **overrides)
     return TriageService(
         itsm=itsm or FakeItsm(),
@@ -62,6 +70,8 @@ def _service(llm, itsm=None, **overrides) -> TriageService:
         settings=settings,
         tech_profiles_prose="",
         session_factory=db.session_scope,
+        default_mode=default_mode or ExecutionMode.SUGGESTION,
+        auto_min_confidence=auto_min_confidence,
     )
 
 
@@ -167,3 +177,58 @@ async def test_followup_is_always_private(temp_db, private):
     itsm = FakeItsm()
     await _service(FakeLlm(_accepted_decision()), itsm).handle(Ticket(id=19, content="x"), REFS)
     assert all(f[2] is True for f in itsm.followups)
+
+
+# ── Modes d'exécution (FR-17) ────────────────────────────────────────────────
+from itsm_modern_ai.domain.modes import ExecutionMode  # noqa: E402
+
+
+async def test_suggestion_mode_never_mutates_ticket(temp_db):
+    itsm = FakeItsm()
+    svc = _service(FakeLlm(_accepted_decision()), itsm, default_mode=ExecutionMode.SUGGESTION)
+    await svc.handle(Ticket(id=20, content="x"), REFS)
+    assert itsm.applied == []  # aucune mutation
+    assert itsm.followups  # mais Suivi déposé
+    with db.session_scope() as s:
+        row = journal.list_decisions(s)[0]
+    assert row.applied is False and row.mode == "suggestion"
+
+
+async def test_full_auto_mutates_and_still_writes_followup(temp_db):
+    itsm = FakeItsm()
+    svc = _service(FakeLlm(_accepted_decision()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=21, content="x"), REFS)
+    assert itsm.applied == [(21, 1, 3, 11, None)]  # cat/prio/technicien appliqués
+    assert itsm.followups  # Suivi toujours écrit (audit)
+    with db.session_scope() as s:
+        row = journal.list_decisions(s)[0]
+    assert row.applied is True and row.mode == "full_auto"
+
+
+async def test_semi_auto_applies_above_threshold_else_suggests(temp_db):
+    # Confiance 0.9 ≥ seuil auto 0.85 → applique.
+    itsm = FakeItsm()
+    d = Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.9)
+    svc = _service(FakeLlm(d), itsm, default_mode=ExecutionMode.SEMI_AUTO, auto_min_confidence=0.85)
+    await svc.handle(Ticket(id=22, content="x"), REFS)
+    assert itsm.applied  # appliqué
+
+    # Confiance 0.8 < seuil auto 0.85 (mais ≥ seuil normal 0.7) → suggestion seule.
+    itsm2 = FakeItsm()
+    d2 = Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.8)
+    svc2 = _service(FakeLlm(d2), itsm2, default_mode=ExecutionMode.SEMI_AUTO, auto_min_confidence=0.85)
+    await svc2.handle(Ticket(id=23, content="x"), REFS)
+    assert itsm2.applied == [] and itsm2.followups  # pas de mutation, Suivi déposé
+
+
+async def test_mode_resolved_per_entity_overrides_default(temp_db):
+    # Entité 7 réglée en full_auto ; défaut global = suggestion.
+    from itsm_modern_ai.persistence.tables import ReferentialCache
+
+    with db.session_scope() as s:
+        s.add(ReferentialCache(kind="entity", ext_id=7, name="E7", mode="full_auto"))
+        s.commit()
+    itsm = FakeItsm()
+    svc = _service(FakeLlm(_accepted_decision()), itsm, default_mode=ExecutionMode.SUGGESTION)
+    await svc.handle(Ticket(id=24, content="x", entity_id=7), REFS)
+    assert itsm.applied  # l'entité force full_auto malgré le défaut suggestion

@@ -94,6 +94,12 @@ class RuntimeConfigService:
         except (TypeError, ValueError):
             return default
 
+    def get_float(self, key: str, default: float = 0.0) -> float:
+        try:
+            return float(self.get(key) or default)
+        except (TypeError, ValueError):
+            return default
+
     def _env_default(self, key: str) -> str | None:
         s = self._settings
         defaults = {
