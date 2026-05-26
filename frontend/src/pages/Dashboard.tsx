@@ -43,7 +43,8 @@ export function Dashboard() {
   const decisions = useResource(useCallback(() => Api.decisions(), []));
 
   const m = metrics.data;
-  const op = ops.data?.metrics ?? null;
+  const opView = ops.data ?? null;
+  const op = opView?.metrics ?? null;
   const series = m?.series ?? [];
   const totals = series.map((d) => d.accepted + d.a_trier);
   const aTrier = series.map((d) => d.a_trier);
@@ -186,49 +187,74 @@ export function Dashboard() {
       <Card className="overflow-hidden">
         <PanelHead
           title={t("Opérationnel (GLPI)", "Operational (GLPI)")}
-          subtitle={t(
-            "Métriques d'équipe — jamais par personne",
-            "Team metrics — never per person",
-          )}
+          subtitle={
+            op
+              ? `${t("Métriques d'équipe", "Team metrics")} · ${op.window_days} ${t("j", "d")} · ${op.tickets_in_window} ${t("tickets dans la fenêtre", "tickets in window")}`
+              : t("Métriques d'équipe — jamais par personne", "Team metrics — never per person")
+          }
         />
-        <div className="grid grid-cols-2 gap-px bg-border md:grid-cols-4">
-          {[
-            {
-              label: t("Temps 1ʳᵉ réponse", "First response time"),
-              value:
-                op?.first_response_median_minutes != null
-                  ? `${op.first_response_median_minutes} min`
-                  : "—",
-              hint: t("médian", "median"),
-            },
-            {
-              label: t("Respect SLA", "SLA compliance"),
-              value:
-                op?.sla_compliance_rate != null
-                  ? `${Math.round(op.sla_compliance_rate * 100)}%`
-                  : "—",
-              hint: op ? `${op.sla_evaluated} ${t("évalués", "evaluated")}` : "",
-            },
-            {
-              label: t("Réaffectation", "Reassignment"),
-              value: "n/d",
-              hint: t("historique GLPI requis", "GLPI history required"),
-            },
-            {
-              label: t("Anomalies", "Anomalies"),
-              value: op ? String(op.anomalies.length) : "—",
-              hint: "",
-            },
-          ].map((s) => (
-            <div key={s.label} className="bg-card p-4">
-              <div className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                {s.label}
+        {opView && !opView.available ? (
+          <div className="px-4 py-8">
+            <EmptyState
+              icon={ListChecks}
+              title={t("Métriques GLPI indisponibles", "GLPI metrics unavailable")}
+              description={
+                opView.detail ||
+                t(
+                  "GLPI est injoignable ou non configuré. Renseigne la connexion dans Configuration.",
+                  "GLPI is unreachable or not configured. Set the connection in Configuration.",
+                )
+              }
+            />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-px bg-border md:grid-cols-4">
+            {[
+              {
+                label: t("Temps 1ʳᵉ réponse", "First response time"),
+                value:
+                  op?.first_response_median_minutes != null
+                    ? `${op.first_response_median_minutes} min`
+                    : "—",
+                hint:
+                  op?.first_response_median_minutes != null
+                    ? t("médian sur la fenêtre", "median in window")
+                    : t("aucune prise en compte horodatée", "no timestamped pickup"),
+              },
+              {
+                label: t("Respect SLA", "SLA compliance"),
+                value:
+                  op?.sla_compliance_rate != null
+                    ? `${Math.round(op.sla_compliance_rate * 100)}%`
+                    : "—",
+                hint:
+                  op && op.sla_evaluated > 0
+                    ? `${op.sla_evaluated} ${t("ticket(s) avec SLA", "ticket(s) with SLA")}`
+                    : t("aucune échéance SLA dans GLPI", "no SLA deadline in GLPI"),
+              },
+              {
+                label: t("Réaffectation", "Reassignment"),
+                value: "n/d",
+                hint: t("historique GLPI requis (Log)", "GLPI history required (Log)"),
+              },
+              {
+                label: t("Anomalies", "Anomalies"),
+                value: op ? String(op.anomalies.length) : "—",
+                hint: op
+                  ? t("tickets en alerte sur la fenêtre", "flagged tickets in window")
+                  : "",
+              },
+            ].map((s) => (
+              <div key={s.label} className="bg-card p-4">
+                <div className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
+                  {s.label}
+                </div>
+                <div className="mt-1.5 text-[22px] font-semibold tracking-tight">{s.value}</div>
+                {s.hint && <div className="mt-0.5 text-[11px] text-muted-foreground">{s.hint}</div>}
               </div>
-              <div className="mt-1.5 text-[22px] font-semibold tracking-tight">{s.value}</div>
-              {s.hint && <div className="mt-0.5 text-[11px] text-muted-foreground">{s.hint}</div>}
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
