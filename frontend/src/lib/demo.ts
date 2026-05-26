@@ -232,6 +232,7 @@ function d(
     id,
     ticket_id: id,
     ts,
+    subject,
     accepted,
     reason,
     category,
@@ -240,7 +241,7 @@ function d(
     group_id,
     confidence,
     glpi_link: `https://glpi.demo.local/front/ticket.form.php?id=${id}`,
-    annotation: subject, // réutilisé comme « sujet » lisible en démo
+    annotation: "", // annotation manuelle (vide en démo)
   };
 }
 

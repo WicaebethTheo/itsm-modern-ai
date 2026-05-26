@@ -184,6 +184,7 @@ class TriageService:
                 journal.record_decision(
                     session, ticket.id,
                     TriageOutcome(accepted=False, reason=TriageReason.COST_CAP_REACHED),
+                    subject=ticket.title,
                 )
                 logger.warning("cost cap atteint → ticket %s en « à trier »", ticket.id)
                 return True
@@ -254,6 +255,7 @@ class TriageService:
 
         with self._session_factory() as session:
             journal.record_decision(
-                session, ticket.id, outcome, glpi_link=glpi_link, mode=mode.value, applied=applied
+                session, ticket.id, outcome, glpi_link=glpi_link, mode=mode.value,
+                applied=applied, subject=ticket.title,
             )
         return wrote
