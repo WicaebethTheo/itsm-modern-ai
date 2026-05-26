@@ -1,14 +1,16 @@
-import { Banner } from "@/components/PageHeader";
+import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
 import { Api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { ShieldCheck } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 export function Login() {
+  const t = useT();
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -31,7 +33,7 @@ export function Login() {
       await Api.login(password);
       navigate("/", { replace: true });
     } catch {
-      setError("Mot de passe incorrect.");
+      setError(t("Mot de passe incorrect.", "Incorrect password."));
     } finally {
       setBusy(false);
     }
@@ -42,13 +44,15 @@ export function Login() {
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
           <ShieldCheck className="mx-auto h-7 w-7 text-primary" />
-          <CardTitle>ITSM Modern AI</CardTitle>
-          <p className="text-sm text-muted-foreground">Console d'administration</p>
+          <CardTitle className="text-base">ITSM Modern AI</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            {t("Console d'administration", "Admin console")}
+          </p>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="flex flex-col gap-4">
             {error && <Banner kind="error">{error}</Banner>}
-            <Field label="Mot de passe administrateur">
+            <Field label={t("Mot de passe administrateur", "Administrator password")}>
               <Input
                 type="password"
                 value={password}
@@ -57,7 +61,7 @@ export function Login() {
               />
             </Field>
             <Button type="submit" disabled={busy}>
-              {busy ? "Connexion…" : "Se connecter"}
+              {busy ? t("Connexion…", "Signing in…") : t("Se connecter", "Sign in")}
             </Button>
           </form>
         </CardContent>

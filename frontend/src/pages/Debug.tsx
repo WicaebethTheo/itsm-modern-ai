@@ -1,12 +1,13 @@
-import { Banner, PageHeader } from "@/components/PageHeader";
-import { Badge } from "@/components/ui/badge";
+import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
+import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { AlertTriangle, FlaskConical, Trash2 } from "lucide-react";
 import { useCallback, useState } from "react";
 
@@ -19,6 +20,7 @@ function J({ data }: { data: unknown }) {
 }
 
 export function Debug() {
+  const t = useT();
   const status = useResource(useCallback(() => Api.debugStatus(), []));
   const info = useResource(useCallback(() => Api.debugInfo(), []));
   const [diag, setDiag] = useState<unknown>(null);
@@ -46,163 +48,169 @@ export function Debug() {
   }
 
   return (
-    <>
-      <PageHeader
-        title="Développement"
-        description="Diagnostics et jeux de données de test. Réservé au labo — désactivé en production."
-      />
-
+    <div className="flex flex-col gap-4">
       {!enabled && (
-        <div className="mb-4">
-          <Banner kind="warning">
-            Outils désactivés. Active <code>DEBUG_TOOLS_ENABLED=true</code> pour les utiliser.
-          </Banner>
-        </div>
+        <Banner kind="warning">
+          {t("Outils désactivés. Active ", "Tools disabled. Set ")}
+          <code>DEBUG_TOOLS_ENABLED=true</code>
+          {t(" pour les utiliser.", " to use them.")}
+        </Banner>
       )}
-      {err && (
-        <div className="mb-4">
-          <Banner kind="error">{err}</Banner>
-        </div>
-      )}
+      {err && <Banner kind="error">{err}</Banner>}
 
-      <div className="flex flex-col gap-4">
-        {/* Logiciel & endpoints */}
-        {info.data && (
-          <Card>
-            <CardHeader className="flex-row items-center justify-between">
-              <CardTitle>Logiciel</CardTitle>
-              <Badge variant="muted">v{info.data.version}</Badge>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">{info.data.title}</p>
-              <p className="mt-3 mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">
-                Endpoints exposés ({info.data.endpoints.length})
-              </p>
-              <div className="overflow-hidden rounded-md border border-border">
-                {info.data.endpoints.map((e) => (
-                  <div
-                    key={e.path}
-                    className="flex items-center gap-3 border-b border-border/50 px-3 py-1.5 text-sm last:border-0"
-                  >
-                    <span className="flex shrink-0 gap-1">
-                      {e.methods.map((m) => (
-                        <Tag key={m} tone={m === "GET" ? "green" : "amber"}>
-                          {m}
-                        </Tag>
-                      ))}
-                    </span>
-                    <code className="font-mono text-xs text-muted-foreground">{e.path}</code>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Diagnostics */}
+      {/* Informations & endpoints */}
+      {info.data && (
         <Card>
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Diagnostics</CardTitle>
+          <PanelHead
+            title={t("Informations", "Information")}
+            right={<Tag tone="muted">v{info.data.version}</Tag>}
+          />
+          <CardContent className="p-5">
+            <p className="text-[12.5px] text-muted-foreground">{info.data.title}</p>
+            <p className="mt-3 mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">
+              {t("Endpoints exposés", "Exposed endpoints")} ({info.data.endpoints.length})
+            </p>
+            <div className="overflow-hidden rounded-md border border-border font-mono">
+              {info.data.endpoints.map((e) => (
+                <div
+                  key={e.path}
+                  className="flex items-center gap-3 border-b border-border/50 px-3 py-1.5 text-xs last:border-0"
+                >
+                  <span className="flex shrink-0 gap-1">
+                    {e.methods.map((m) => (
+                      <Tag key={m} tone={m === "GET" ? "green" : "indigo"}>
+                        {m}
+                      </Tag>
+                    ))}
+                  </span>
+                  <code className="text-muted-foreground">{e.path}</code>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Diagnostics */}
+      <Card>
+        <PanelHead
+          title="Diagnostics"
+          subtitle={t(
+            "Vérifie GLPI (auth, référentiels, tickets) et le LLM (clé, sonde)",
+            "Checks GLPI (auth, referentials, tickets) and the LLM (key, probe)",
+          )}
+          right={
             <Button
               variant="outline"
+              size="sm"
               disabled={!enabled || busy === "diag"}
               onClick={() => wrap("diag", async () => setDiag(await Api.debugDiagnostics()))}
             >
-              {busy === "diag" ? "…" : "Lancer les diagnostics"}
+              {busy === "diag" ? "…" : t("Lancer", "Run")}
             </Button>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Vérifie GLPI (auth, référentiels, tickets) et le LLM (clé, sonde).
-            </p>
-            {diag != null && <J data={diag} />}
+          }
+        />
+        {diag != null && (
+          <CardContent className="p-5">
+            <J data={diag} />
           </CardContent>
-        </Card>
+        )}
+      </Card>
 
-        {/* Seed */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FlaskConical className="h-4 w-4" /> Jeu de données de test
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <p className="text-sm text-muted-foreground">
-              Crée de faux techniciens (profil Technician) et groupes assignables dans GLPI.
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Techniciens">
-                <Input
-                  type="number"
-                  min="0"
-                  max="50"
-                  value={techs}
-                  onChange={(e) => setTechs(Number(e.target.value))}
-                />
-              </Field>
-              <Field label="Groupes">
-                <Input
-                  type="number"
-                  min="0"
-                  max="50"
-                  value={groups}
-                  onChange={(e) => setGroups(Number(e.target.value))}
-                />
-              </Field>
-            </div>
-            <div>
-              <Button
-                disabled={!enabled || busy === "seed"}
-                onClick={() =>
-                  wrap("seed", async () => setSeedRes(await Api.debugSeed(techs, groups)))
-                }
-              >
-                {busy === "seed" ? "Création…" : "Créer les faux comptes"}
-              </Button>
-            </div>
-            {seedRes != null && <J data={seedRes} />}
-          </CardContent>
-        </Card>
-
-        {/* Purge — destructif */}
-        <Card className="border-destructive/40">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-4 w-4" /> Zone dangereuse — purge des utilisateurs
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <Banner kind="error">
-              Supprime (corbeille GLPI, récupérable) <strong>tous les utilisateurs</strong> sauf les
-              comptes protégés (système, <code>glpi</code>, et l'utilisateur du token API). À
-              n'utiliser qu'en labo. Tape <strong>SUPPRIMER</strong> pour confirmer.
-            </Banner>
-            <Field label="Confirmation">
+      {/* Seed */}
+      <Card>
+        <PanelHead
+          title={
+            <span className="flex items-center gap-2">
+              <FlaskConical className="h-4 w-4" /> {t("Jeu de données de test", "Test dataset")}
+            </span>
+          }
+          subtitle={t(
+            "Crée de faux techniciens et groupes assignables dans GLPI",
+            "Creates fake technicians and assignable groups in GLPI",
+          )}
+        />
+        <CardContent className="flex flex-col gap-4 p-5">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label={t("Techniciens", "Technicians")}>
               <Input
-                value={confirm}
-                placeholder="SUPPRIMER"
-                onChange={(e) => setConfirm(e.target.value)}
+                type="number"
+                min="0"
+                max="50"
+                value={techs}
+                onChange={(e) => setTechs(Number(e.target.value))}
               />
             </Field>
-            <div>
-              <Button
-                variant="destructive"
-                disabled={!enabled || confirm !== "SUPPRIMER" || busy === "purge"}
-                onClick={() =>
-                  wrap("purge", async () => {
-                    setPurgeRes(await Api.debugPurgeUsers(confirm));
-                    setConfirm("");
-                  })
-                }
-              >
-                <Trash2 className="h-4 w-4" />{" "}
-                {busy === "purge" ? "Suppression…" : "Purger les utilisateurs"}
-              </Button>
-            </div>
-            {purgeRes != null && <J data={purgeRes} />}
-          </CardContent>
-        </Card>
-      </div>
-    </>
+            <Field label={t("Groupes", "Groups")}>
+              <Input
+                type="number"
+                min="0"
+                max="50"
+                value={groups}
+                onChange={(e) => setGroups(Number(e.target.value))}
+              />
+            </Field>
+          </div>
+          <div>
+            <Button
+              disabled={!enabled || busy === "seed"}
+              onClick={() =>
+                wrap("seed", async () => setSeedRes(await Api.debugSeed(techs, groups)))
+              }
+            >
+              {busy === "seed"
+                ? t("Création…", "Creating…")
+                : t("Créer les faux comptes", "Create fake accounts")}
+            </Button>
+          </div>
+          {seedRes != null && <J data={seedRes} />}
+        </CardContent>
+      </Card>
+
+      {/* Purge — destructif */}
+      <Card className="border-destructive/40">
+        <PanelHead
+          title={
+            <span className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-4 w-4" />
+              {t("Zone dangereuse — purge des utilisateurs", "Danger zone — purge users")}
+            </span>
+          }
+        />
+        <CardContent className="flex flex-col gap-4 p-5">
+          <Banner kind="error">
+            {t(
+              "Supprime (corbeille GLPI, récupérable) tous les utilisateurs sauf les comptes protégés (système, glpi, et l'utilisateur du token API). À n'utiliser qu'en labo. Tape SUPPRIMER pour confirmer.",
+              "Soft-deletes (GLPI trash, recoverable) all users except protected accounts (system, glpi, and the API token user). Lab use only. Type SUPPRIMER to confirm.",
+            )}
+          </Banner>
+          <Field label={t("Confirmation", "Confirmation")}>
+            <Input
+              value={confirm}
+              placeholder="SUPPRIMER"
+              onChange={(e) => setConfirm(e.target.value)}
+            />
+          </Field>
+          <div>
+            <Button
+              variant="destructive"
+              disabled={!enabled || confirm !== "SUPPRIMER" || busy === "purge"}
+              onClick={() =>
+                wrap("purge", async () => {
+                  setPurgeRes(await Api.debugPurgeUsers(confirm));
+                  setConfirm("");
+                })
+              }
+            >
+              <Trash2 className="h-4 w-4" />{" "}
+              {busy === "purge"
+                ? t("Suppression…", "Deleting…")
+                : t("Purger les utilisateurs", "Purge users")}
+            </Button>
+          </div>
+          {purgeRes != null && <J data={purgeRes} />}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

@@ -1,77 +1,57 @@
-import { PageHeader } from "@/components/PageHeader";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { Bot, Copy, FileText, ShieldQuestion, Sparkles, Workflow } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Tag } from "@/components/ui/tag";
+import { useT } from "@/lib/i18n";
 
-// Catalogue d'extensions/automatisations PRÉVU (interface anticipée — pas encore actif).
-const CATALOG: { icon: LucideIcon; name: string; description: string; tag: string }[] = [
+// Catalogue d'extensions PRÉVU (interface anticipée — pas encore actif).
+const RECIPES: { fr: string; en: string; descFr: string; descEn: string }[] = [
   {
-    icon: FileText,
-    name: "Rapport hebdomadaire",
-    description: "Email automatique du bilan de triage de la semaine (volume, couverture, coût).",
-    tag: "Automatisation",
+    fr: "Rapport hebdomadaire",
+    en: "Weekly report",
+    descFr: "Email automatique du bilan de triage de la semaine (volume, couverture, coût).",
+    descEn: "Automatic weekly triage summary email (volume, coverage, cost).",
   },
   {
-    icon: ShieldQuestion,
-    name: "Masquage avancé (NER)",
-    description: "Masquage des noms et adresses en plus des regex (reconnaissance d'entités).",
-    tag: "Confidentialité",
+    fr: "Masquage avancé (NER)",
+    en: "Advanced masking (NER)",
+    descFr: "Masque noms et adresses en plus des regex (reconnaissance d'entités).",
+    descEn: "Masks names and addresses on top of regexes (entity recognition).",
   },
   {
-    icon: Copy,
-    name: "Détection de doublons",
-    description: "Regroupe les tickets similaires / incidents de masse avant triage.",
-    tag: "Moteur",
+    fr: "Détection de doublons",
+    en: "Duplicate detection",
+    descFr: "Regroupe les tickets similaires / incidents de masse avant triage.",
+    descEn: "Groups similar tickets / mass incidents before triage.",
   },
   {
-    icon: Bot,
-    name: "Connecteurs LLM additionnels",
-    description: "Gemini, OVH, Scaleway, vLLM… au-delà de Mistral / OpenAI / Ollama / Anthropic.",
-    tag: "Fournisseur",
-  },
-  {
-    icon: Workflow,
-    name: "Modes semi-auto / full-auto",
-    description: "Au-delà du mode suggestion : application automatique sous conditions.",
-    tag: "Moteur",
-  },
-  {
-    icon: Sparkles,
-    name: "Modules Enterprise",
-    description: "Multi-entités, SSO SAML, audit log signé — pour les grandes organisations.",
-    tag: "Enterprise",
+    fr: "Connecteurs LLM additionnels",
+    en: "Additional LLM connectors",
+    descFr: "Gemini, OVH, Scaleway, vLLM… au-delà de Mistral / OpenAI / Ollama / Anthropic.",
+    descEn: "Gemini, OVH, Scaleway, vLLM… beyond Mistral / OpenAI / Ollama / Anthropic.",
   },
 ];
 
 export function Store() {
+  const t = useT();
   return (
-    <>
-      <PageHeader
-        title="Store"
-        description="Catalogue d'extensions et d'automatisations. Aperçu de l'offre à venir."
-      />
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {CATALOG.map((it) => (
-          <Card key={it.name} interactive>
-            <CardContent className="flex flex-col gap-3 p-5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <it.icon className="h-5 w-5" />
-                </span>
-                <Badge variant="muted">Bientôt</Badge>
-              </div>
-              <div>
-                <p className="font-semibold">{it.name}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{it.description}</p>
-              </div>
-              <span className="text-xs uppercase tracking-wide text-muted-foreground/70">
-                {it.tag}
-              </span>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {RECIPES.map((r) => (
+        <Card key={r.en} className="flex flex-col p-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[13px] font-medium">{t(r.fr, r.en)}</span>
+            <Tag tone="muted">{t("Bientôt", "Soon")}</Tag>
+          </div>
+          <div className="mt-1 mb-3 flex-1 text-[12px] leading-relaxed text-muted-foreground">
+            {t(r.descFr, r.descEn)}
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-muted-foreground">{t("Aperçu", "Preview")}</span>
+            <Button size="sm" variant="outline" disabled>
+              {t("Installer", "Install")}
+            </Button>
+          </div>
+        </Card>
+      ))}
+    </div>
   );
 }

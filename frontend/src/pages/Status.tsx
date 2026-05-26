@@ -42,7 +42,10 @@ export function Status() {
       name: t("Worker (moteur)", "Worker (engine)"),
       state: s?.polling_enabled ? t("En marche", "Running") : t("En pause", "Paused"),
       meta: s
-        ? t(`cycle toutes les ${s.polling_interval_seconds}s`, `cycle every ${s.polling_interval_seconds}s`)
+        ? t(
+            `cycle toutes les ${s.polling_interval_seconds}s`,
+            `cycle every ${s.polling_interval_seconds}s`,
+          )
         : "—",
       tone: s?.polling_enabled ? "green" : "amber",
     },

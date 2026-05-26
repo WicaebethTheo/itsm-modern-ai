@@ -56,7 +56,10 @@ export function Dashboard() {
     <div className="space-y-4">
       {/* 5 cartes KPI */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <KpiCard label={t("Décisions", "Decisions")} value={m ? m.total.toLocaleString("fr-FR") : "—"}>
+        <KpiCard
+          label={t("Décisions", "Decisions")}
+          value={m ? m.total.toLocaleString("fr-FR") : "—"}
+        >
           <Sparkline values={totals} />
         </KpiCard>
         <KpiCard
@@ -95,7 +98,9 @@ export function Dashboard() {
       <Card className="p-4">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <div className="text-[13px] font-medium">{t("Tendance sur 14 jours", "14-day trend")}</div>
+            <div className="text-[13px] font-medium">
+              {t("Tendance sur 14 jours", "14-day trend")}
+            </div>
             <div className="text-[11px] text-muted-foreground">
               {t("Décisions · déposées vs à trier", "Decisions · deposited vs to triage")}
             </div>

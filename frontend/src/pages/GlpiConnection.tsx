@@ -1,5 +1,4 @@
-import { Banner, PageHeader } from "@/components/PageHeader";
-import { Badge } from "@/components/ui/badge";
+import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dot, type DotTone } from "@/components/ui/dot";
@@ -9,9 +8,11 @@ import { PanelHead } from "@/components/ui/panel";
 import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type ConfigUpdate, asBool } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { useCallback, useEffect, useState } from "react";
 
 export function GlpiConnection() {
+  const t = useT();
   const cfg = useResource(useCallback(() => Api.getConfig(), []));
   const health = useResource(useCallback(() => Api.health(), []));
   const [form, setForm] = useState<ConfigUpdate>({});
@@ -43,9 +44,9 @@ export function GlpiConnection() {
       setForm({});
       cfg.reload();
       health.reload();
-      setMsg({ kind: "success", text: "Connexion GLPI enregistrée." });
+      setMsg({ kind: "success", text: t("Connexion GLPI enregistrée.", "GLPI connection saved.") });
     } catch (e: unknown) {
-      setMsg({ kind: "error", text: `Erreur : ${(e as Error).message}` });
+      setMsg({ kind: "error", text: `${t("Erreur", "Error")} : ${(e as Error).message}` });
     }
   }
 
@@ -54,10 +55,18 @@ export function GlpiConnection() {
     setMsg(null);
     try {
       const h = await Api.health();
-      if (!h.glpi.configured) setMsg({ kind: "error", text: "GLPI non configuré." });
+      if (!h.glpi.configured)
+        setMsg({ kind: "error", text: t("GLPI non configuré.", "GLPI not configured.") });
       else if (h.glpi.reachable)
-        setMsg({ kind: "success", text: "Connexion GLPI OK (joignable)." });
-      else setMsg({ kind: "error", text: "GLPI injoignable (URL/token/SSL ?)." });
+        setMsg({
+          kind: "success",
+          text: t("Connexion GLPI OK (joignable).", "GLPI connection OK (reachable)."),
+        });
+      else
+        setMsg({
+          kind: "error",
+          text: t("GLPI injoignable (URL/token/SSL ?).", "GLPI unreachable (URL/token/SSL?)."),
+        });
       health.reload();
     } finally {
       setTesting(false);
@@ -66,94 +75,90 @@ export function GlpiConnection() {
 
   const g = health.data?.glpi;
   const [connTone, connLabel]: [DotTone, string] = !g?.configured
-    ? ["muted", "Non configurée"]
+    ? ["muted", t("Non configurée", "Not configured")]
     : g.reachable
-      ? ["green", "Connecté"]
-      : ["red", "Injoignable"];
+      ? ["green", t("Connecté", "Connected")]
+      : ["red", t("Injoignable", "Unreachable")];
+
+  const keepHint = t(
+    "Déjà configuré — laisser vide pour conserver.",
+    "Already set — leave blank to keep.",
+  );
 
   return (
-    <>
-      <PageHeader
-        title="Connexion GLPI"
-        description="API legacy apirest.php. Les tokens sont chiffrés au repos et jamais réaffichés."
-        actions={
-          health.data?.glpi.configured ? (
-            health.data.glpi.reachable ? (
-              <Badge variant="success">joignable</Badge>
-            ) : (
-              <Badge variant="destructive">injoignable</Badge>
-            )
-          ) : (
-            <Badge variant="warn">non configurée</Badge>
-          )
+    <Card className="max-w-2xl">
+      <PanelHead
+        title={t("Paramètres de connexion", "Connection settings")}
+        subtitle={t(
+          "API legacy apirest.php — tokens chiffrés au repos, jamais réaffichés",
+          "Legacy apirest.php API — tokens encrypted at rest, never shown again",
+        )}
+        right={
+          <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <Dot tone={connTone} />
+            {connLabel}
+          </span>
         }
       />
-      <Card className="max-w-2xl">
-        <PanelHead
-          title="Paramètres de connexion"
-          subtitle="API legacy apirest.php — tokens chiffrés au repos, jamais réaffichés"
-          right={
-            <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-              <Dot tone={connTone} />
-              {connLabel}
-            </span>
-          }
+      <CardContent className="flex flex-col gap-4 p-5">
+        {msg && <Banner kind={msg.kind}>{msg.text}</Banner>}
+        <Field label={t("URL de base (apirest.php)", "Base URL (apirest.php)")}>
+          <Input
+            defaultValue={c?.glpi_base_url ?? ""}
+            placeholder="https://glpi.exemple.local/apirest.php"
+            onChange={(e) => set("glpi_base_url", e.target.value)}
+          />
+        </Field>
+        <Field
+          label={t("User token", "User token")}
+          hint={c?.glpi_user_token_set ? keepHint : undefined}
+        >
+          <Input
+            type="password"
+            placeholder={t("(inchangé)", "(unchanged)")}
+            onChange={(e) => set("glpi_user_token", e.target.value)}
+          />
+        </Field>
+        <Field
+          label={t("App token (optionnel)", "App token (optional)")}
+          hint={c?.glpi_app_token_set ? keepHint : undefined}
+        >
+          <Input
+            type="password"
+            placeholder={t("(inchangé)", "(unchanged)")}
+            onChange={(e) => set("glpi_app_token", e.target.value)}
+          />
+        </Field>
+
+        <Toggle
+          checked={verifyTls}
+          onChange={setVerifyTls}
+          label={t("Vérifier le certificat TLS", "Verify TLS certificate")}
+          description={t(
+            "Décocher pour un certificat auto-signé.",
+            "Turn off for a self-signed certificate.",
+          )}
         />
-        <CardContent className="flex flex-col gap-4 p-5">
-          {msg && <Banner kind={msg.kind}>{msg.text}</Banner>}
-          <Field label="URL de base (apirest.php)">
-            <Input
-              defaultValue={c?.glpi_base_url ?? ""}
-              placeholder="https://glpi.exemple.local/apirest.php"
-              onChange={(e) => set("glpi_base_url", e.target.value)}
-            />
-          </Field>
-          <Field
-            label="User token"
-            hint={
-              c?.glpi_user_token_set ? "Déjà configuré — laisser vide pour conserver." : undefined
-            }
-          >
-            <Input
-              type="password"
-              placeholder="(inchangé)"
-              onChange={(e) => set("glpi_user_token", e.target.value)}
-            />
-          </Field>
-          <Field
-            label="App token (optionnel)"
-            hint={
-              c?.glpi_app_token_set ? "Déjà configuré — laisser vide pour conserver." : undefined
-            }
-          >
-            <Input
-              type="password"
-              placeholder="(inchangé)"
-              onChange={(e) => set("glpi_app_token", e.target.value)}
-            />
-          </Field>
+        <Toggle
+          checked={legacy9x}
+          onChange={setLegacy9x}
+          label={t("GLPI 9.x (suivis legacy)", "GLPI 9.x (legacy followups)")}
+          description={t(
+            "Suivis via TicketFollowup au lieu d'ITILFollowup (10.x+).",
+            "Followups via TicketFollowup instead of ITILFollowup (10.x+).",
+          )}
+        />
 
-          <Toggle
-            checked={verifyTls}
-            onChange={setVerifyTls}
-            label="Vérifier le certificat TLS"
-            description="Décocher pour un certificat auto-signé."
-          />
-          <Toggle
-            checked={legacy9x}
-            onChange={setLegacy9x}
-            label="GLPI 9.x (suivis legacy)"
-            description="Suivis via TicketFollowup au lieu d'ITILFollowup (10.x+)."
-          />
-
-          <div className="flex gap-2">
-            <Button onClick={save}>Enregistrer</Button>
-            <Button variant="outline" onClick={testConnection} disabled={testing}>
-              {testing ? "Test…" : "Tester la connexion"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </>
+        <div className="flex items-center gap-2">
+          <Button onClick={save}>{t("Enregistrer", "Save")}</Button>
+          <Button variant="outline" onClick={testConnection} disabled={testing}>
+            {testing ? t("Test…", "Testing…") : t("Tester la connexion", "Test connection")}
+          </Button>
+          <span className="ml-1 text-[11px] text-muted-foreground">
+            {t("Chiffré au repos (Fernet)", "Encrypted at rest (Fernet)")}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

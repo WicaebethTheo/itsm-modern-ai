@@ -1,23 +1,23 @@
 import { EmptyState } from "@/components/EmptyState";
-import { PageHeader } from "@/components/PageHeader";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PanelHead } from "@/components/ui/panel";
+import { Tag } from "@/components/ui/tag";
 import { useResource } from "@/hooks/useResource";
 import { Api, type DecisionEntry } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { ScrollText } from "lucide-react";
 import { useCallback, useState } from "react";
 
-function AnnotationCell({ d }: { d: DecisionEntry }) {
+function AnnotationCell({ d, ph }: { d: DecisionEntry; ph: string }) {
   const [value, setValue] = useState(d.annotation);
   const [saved, setSaved] = useState<"idle" | "ok">("idle");
   return (
     <div className="flex items-center gap-2">
       <Input
         value={value}
-        placeholder="juste / faux / signal…"
+        placeholder={ph}
         className="h-8"
         onChange={(e) => {
           setValue(e.target.value);
@@ -32,111 +32,112 @@ function AnnotationCell({ d }: { d: DecisionEntry }) {
           setSaved("ok");
         }}
       >
-        {saved === "ok" ? "✓" : "Enregistrer"}
+        {saved === "ok" ? "✓" : "OK"}
       </Button>
     </div>
   );
 }
 
 export function Journal() {
+  const t = useT();
   const decisions = useResource(useCallback(() => Api.decisions(), []));
 
   return (
-    <>
-      <PageHeader
-        title="Journaux"
-        description="Décisions du moteur, annotables pour la revue qualité (mode suggestion)."
+    <Card className="overflow-hidden">
+      <PanelHead
+        title={t("Journal des décisions", "Decision journal")}
+        subtitle={
+          decisions.data
+            ? t(`${decisions.data.length} décision(s)`, `${decisions.data.length} decision(s)`)
+            : undefined
+        }
+        right={
+          <>
+            <a href="/api/export/decisions.csv">
+              <Button variant="outline" size="sm">
+                {t("Export décisions", "Export decisions")}
+              </Button>
+            </a>
+            <a href="/api/export/llm-calls.csv">
+              <Button variant="outline" size="sm">
+                {t("Export appels LLM", "Export LLM calls")}
+              </Button>
+            </a>
+          </>
+        }
       />
-
-      <Card className="overflow-hidden">
-        <PanelHead
-          title="Journal des décisions"
-          subtitle={
-            decisions.data ? `${decisions.data.length} décision(s) enregistrée(s)` : undefined
-          }
-          right={
-            <>
-              <a href="/api/export/decisions.csv">
-                <Button variant="outline" size="sm">
-                  Export décisions
-                </Button>
-              </a>
-              <a href="/api/export/llm-calls.csv">
-                <Button variant="outline" size="sm">
-                  Export appels LLM
-                </Button>
-              </a>
-            </>
-          }
-        />
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
-            <tr>
-              <th className="px-4 py-2.5 text-left font-semibold">Date</th>
-              <th className="px-4 py-2.5 text-left font-semibold">Ticket</th>
-              <th className="px-4 py-2.5 text-left font-semibold">Issue</th>
-              <th className="px-4 py-2.5 text-left font-semibold">Cat/Prio/Affect.</th>
-              <th className="px-4 py-2.5 text-left font-semibold">Conf.</th>
-              <th className="px-4 py-2.5 text-left font-semibold">Annotation</th>
+      <table className="w-full text-[12.5px]">
+        <thead className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+          <tr>
+            <th className="px-4 py-2 text-left font-medium">Date</th>
+            <th className="px-4 py-2 text-left font-medium">Ticket</th>
+            <th className="px-4 py-2 text-left font-medium">{t("Statut", "Status")}</th>
+            <th className="px-4 py-2 text-left font-medium">
+              {t("Cat/Prio/Affect.", "Cat/Prio/Assign.")}
+            </th>
+            <th className="px-4 py-2 text-left font-medium">{t("Conf.", "Conf.")}</th>
+            <th className="px-4 py-2 text-left font-medium">{t("Annotation", "Annotation")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {decisions.data?.map((d) => (
+            <tr key={d.id} className="border-t border-border">
+              <td className="px-4 py-2 text-muted-foreground">
+                {new Date(d.ts).toLocaleString(t("fr-FR", "en-US"), {
+                  dateStyle: "short",
+                  timeStyle: "short",
+                })}
+              </td>
+              <td className="px-4 py-2">
+                {d.glpi_link ? (
+                  <a
+                    className="font-mono text-primary hover:underline"
+                    href={d.glpi_link}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    #{d.ticket_id}
+                  </a>
+                ) : (
+                  <span className="font-mono">#{d.ticket_id}</span>
+                )}
+              </td>
+              <td className="px-4 py-2">
+                {d.accepted ? (
+                  <Tag tone="green">{t("déposée", "deposited")}</Tag>
+                ) : (
+                  <Tag tone="amber">{d.reason}</Tag>
+                )}
+              </td>
+              <td className="px-4 py-2 text-muted-foreground">
+                {d.category ?? "—"} / {d.priority ?? "—"} /{" "}
+                {d.technician_id != null
+                  ? `T#${d.technician_id}`
+                  : d.group_id != null
+                    ? `G#${d.group_id}`
+                    : "—"}
+              </td>
+              <td className="px-4 py-2 font-mono">
+                {d.confidence != null ? `${Math.round(d.confidence * 100)}%` : "—"}
+              </td>
+              <td className="px-4 py-2">
+                <AnnotationCell d={d} ph={t("juste / faux / signal…", "right / wrong / signal…")} />
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {decisions.data?.map((d) => (
-              <tr key={d.id} className="border-t border-border">
-                <td className="px-4 py-2.5 text-muted-foreground">
-                  {new Date(d.ts).toLocaleString("fr-FR", {
-                    dateStyle: "short",
-                    timeStyle: "short",
-                  })}
-                </td>
-                <td className="px-4 py-2.5">
-                  {d.glpi_link ? (
-                    <a
-                      className="text-primary hover:underline"
-                      href={d.glpi_link}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      #{d.ticket_id}
-                    </a>
-                  ) : (
-                    `#${d.ticket_id}`
-                  )}
-                </td>
-                <td className="px-4 py-2.5">
-                  {d.accepted ? (
-                    <Badge variant="success">déposée</Badge>
-                  ) : (
-                    <Badge variant="warn">{d.reason}</Badge>
-                  )}
-                </td>
-                <td className="px-4 py-2.5 text-muted-foreground">
-                  {d.category ?? "—"} / {d.priority ?? "—"} /{" "}
-                  {d.technician_id != null
-                    ? `T#${d.technician_id}`
-                    : d.group_id != null
-                      ? `G#${d.group_id}`
-                      : "—"}
-                </td>
-                <td className="px-4 py-2.5">
-                  {d.confidence != null ? `${Math.round(d.confidence * 100)}%` : "—"}
-                </td>
-                <td className="px-4 py-2.5">
-                  <AnnotationCell d={d} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {decisions.data?.length === 0 && (
-          <EmptyState
-            icon={ScrollText}
-            title="Aucune décision pour le moment"
-            description="Les suggestions déposées et les « à trier » s'afficheront ici."
-          />
-        )}
-        {decisions.error && <p className="p-6 text-sm text-destructive">{decisions.error}</p>}
-      </Card>
-    </>
+          ))}
+        </tbody>
+      </table>
+      {decisions.data?.length === 0 && (
+        <EmptyState
+          icon={ScrollText}
+          title={t("Aucune décision pour le moment", "No decisions yet")}
+          description={t(
+            "Les suggestions déposées et les « à trier » s'afficheront ici.",
+            "Deposited suggestions and “to triage” entries will appear here.",
+          )}
+        />
+      )}
+      {decisions.error && <p className="p-6 text-[12.5px] text-destructive">{decisions.error}</p>}
+    </Card>
   );
 }
