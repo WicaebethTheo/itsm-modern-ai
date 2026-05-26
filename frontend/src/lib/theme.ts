@@ -8,7 +8,7 @@ export function getStoredTheme(): Theme {
   return v === "light" ? "light" : "dark";
 }
 
-export function applyTheme(theme: Theme): void {
+function applyTheme(theme: Theme): void {
   document.documentElement.classList.toggle("dark", theme === "dark");
 }
 
