@@ -188,7 +188,7 @@ async def test_suggestion_mode_never_mutates_ticket(temp_db):
     svc = _service(FakeLlm(_accepted_decision()), itsm, default_mode=ExecutionMode.SUGGESTION)
     await svc.handle(Ticket(id=20, content="x"), REFS)
     assert itsm.applied == []  # aucune mutation
-    assert itsm.followups  # mais Suivi déposé
+    assert itsm.followups and itsm.followups[0][2] is True  # Suivi PRIVÉ (technicien)
     assert "proposition, non appliquée" in itsm.followups[0][1]  # texte mode suggestion
     with db.session_scope() as s:
         row = journal.list_decisions(s)[0]
@@ -200,10 +200,11 @@ async def test_full_auto_mutates_and_still_writes_followup(temp_db):
     svc = _service(FakeLlm(_accepted_decision()), itsm, default_mode=ExecutionMode.FULL_AUTO)
     await svc.handle(Ticket(id=21, content="x"), REFS)
     assert itsm.applied == [(21, 1, 3, 11, None)]  # cat/prio/technicien appliqués
-    assert itsm.followups  # Suivi toujours écrit (audit)
-    text = itsm.followups[0][1]
-    assert "appliqué automatiquement" in text  # texte reflète la mutation réelle
-    assert "non appliquée" not in text and "Vous gardez la main" not in text
+    assert itsm.followups  # réponse écrite
+    tid, content, private = itsm.followups[0]
+    assert private is False  # PUBLIC → visible par le demandeur (l'IA répond)
+    assert content == "Bonjour"  # brouillon seul, sans annotation de triage
+    assert "Triage" not in content and "Confiance" not in content
     with db.session_scope() as s:
         row = journal.list_decisions(s)[0]
     assert row.applied is True and row.mode == "full_auto"
@@ -215,14 +216,15 @@ async def test_semi_auto_applies_above_threshold_else_suggests(temp_db):
     d = Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.9)
     svc = _service(FakeLlm(d), itsm, default_mode=ExecutionMode.SEMI_AUTO, auto_min_confidence=0.85)
     await svc.handle(Ticket(id=22, content="x"), REFS)
-    assert itsm.applied  # appliqué
+    assert itsm.applied and itsm.followups[0][2] is False  # appliqué → réponse publique
 
     # Confiance 0.8 < seuil auto 0.85 (mais ≥ seuil normal 0.7) → suggestion seule.
     itsm2 = FakeItsm()
     d2 = Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.8)
     svc2 = _service(FakeLlm(d2), itsm2, default_mode=ExecutionMode.SEMI_AUTO, auto_min_confidence=0.85)
     await svc2.handle(Ticket(id=23, content="x"), REFS)
-    assert itsm2.applied == [] and itsm2.followups  # pas de mutation, Suivi déposé
+    assert itsm2.applied == []  # pas de mutation
+    assert itsm2.followups and itsm2.followups[0][2] is True  # Suivi privé annoté
 
 
 async def test_mode_resolved_per_entity_overrides_default(temp_db):
