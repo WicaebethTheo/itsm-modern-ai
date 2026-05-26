@@ -95,6 +95,25 @@ def followup_itemtype(legacy_9x: bool) -> str:
     return "TicketFollowup" if legacy_9x else "ITILFollowup"
 
 
+def ticket_update_payload(
+    *, category: int, priority: int, technician_id: int | None = None, group_id: int | None = None
+) -> dict:
+    """Payload `PUT Ticket/:id` appliquant une Décision (modes semi/full-auto).
+
+    Mute la catégorie + la priorité, et assigne un acteur : technicien (préféré) ou,
+    en fallback, un groupe. Assignation via `_users_id_assign` / `_groups_id_assign`
+    (acteurs en update, addendum §A — point de douleur connu : selon la version GLPI,
+    certains serveurs exigent l'itemtype `Ticket_User`/`Group_Ticket` ; on isole donc
+    le payload ici pour pouvoir l'adapter sans toucher au connecteur).
+    """
+    inp: dict = {"itilcategories_id": category, "priority": priority}
+    if technician_id is not None:
+        inp["_users_id_assign"] = technician_id
+    elif group_id is not None:
+        inp["_groups_id_assign"] = group_id
+    return {"input": inp}
+
+
 def followup_payload(ticket_id: int, content: str, *, private: bool, legacy_9x: bool) -> dict:
     """Payload d'écriture d'un Suivi. Aucun champ du Ticket n'est touché (mode suggestion)."""
     is_private = 1 if private else 0

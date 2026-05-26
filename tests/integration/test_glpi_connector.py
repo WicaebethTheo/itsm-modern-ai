@@ -91,6 +91,27 @@ async def test_write_followup_private_no_field_mutation():
 
 
 @respx.mock
+async def test_apply_decision_mutates_fields_and_assigns_technician():
+    _session_routes()
+    route = respx.put(f"{BASE}/Ticket/7").mock(return_value=httpx.Response(200, json={"id": 7}))
+    await (await _connector()).apply_decision(7, category=3, priority=4, technician_id=11)
+    body = route.calls.last.request.content
+    assert b'"itilcategories_id":3' in body
+    assert b'"priority":4' in body
+    assert b'"_users_id_assign":11' in body  # technicien préféré
+
+
+@respx.mock
+async def test_apply_decision_group_fallback_when_no_technician():
+    _session_routes()
+    route = respx.put(f"{BASE}/Ticket/8").mock(return_value=httpx.Response(200, json={"id": 8}))
+    await (await _connector()).apply_decision(8, category=3, priority=2, group_id=5)
+    body = route.calls.last.request.content
+    assert b'"_groups_id_assign":5' in body
+    assert b"_users_id_assign" not in body
+
+
+@respx.mock
 async def test_get_recent_tickets_parses_stats_and_window():
     import datetime as _dt
 
