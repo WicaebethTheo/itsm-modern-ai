@@ -55,6 +55,11 @@ class ConfigView(BaseModel):
     # Mode d'exécution — défaut global (réglable aussi par entité via /api/modes)
     execution_mode_default: str | None = None
     auto_min_confidence_default: str | None = None
+    # Masquage PII avant l'IA (FR-14)
+    mask_email: str | None = None
+    mask_phone: str | None = None
+    mask_iban: str | None = None
+    mask_secret: str | None = None
     # Polling
     polling_enabled: str | None = None
     polling_interval_seconds: str | None = None
@@ -93,6 +98,10 @@ class ConfigUpdate(BaseModel):
     system_prompt: str | None = Field(default=None, max_length=SYSTEM_PROMPT_MAX)
     execution_mode_default: str | None = Field(default=None, pattern="^(suggestion|semi_auto|full_auto)$")
     auto_min_confidence_default: float | None = Field(default=None, ge=0.0, le=1.0)
+    mask_email: bool | None = None
+    mask_phone: bool | None = None
+    mask_iban: bool | None = None
+    mask_secret: bool | None = None
     polling_enabled: bool | None = None
     polling_interval_seconds: int | None = Field(default=None, ge=10, le=86_400)
     dashboard_window_days: int | None = Field(default=None, ge=1, le=365)

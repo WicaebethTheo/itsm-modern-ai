@@ -54,8 +54,19 @@ class MaskingResult(BaseModel):
         return self.secret_found
 
 
-def mask(text: str) -> MaskingResult:
-    """Masque les motifs sensibles. Idempotent, sans effet de bord."""
+def mask(
+    text: str,
+    *,
+    email: bool = True,
+    phone: bool = True,
+    iban: bool = True,
+    secret: bool = True,
+) -> MaskingResult:
+    """Masque les motifs sensibles. Idempotent, sans effet de bord.
+
+    Chaque motif est activable/désactivable (défaut : tous actifs = défaut sûr, FR-14).
+    ⚠️ Désactiver un motif envoie cette donnée EN CLAIR au LLM — choix explicite de l'admin.
+    """
     counts = {"email": 0, "phone": 0, "iban": 0, "secret": 0}
 
     def _sub_secret(m: re.Match[str]) -> str:
@@ -66,7 +77,7 @@ def mask(text: str) -> MaskingResult:
 
     # Ordre : secret (ancré sur mot-clé) d'abord, pour qu'un token chiffré
     # ne soit pas grignoté par les regex téléphone/IBAN.
-    out = _SECRET_KEYWORD_RE.sub(_sub_secret, text)
+    out = _SECRET_KEYWORD_RE.sub(_sub_secret, text) if secret else text
 
     def _count_sub(pattern: re.Pattern[str], placeholder: str, key: str, s: str) -> str:
         def repl(_: re.Match[str]) -> str:
@@ -75,9 +86,12 @@ def mask(text: str) -> MaskingResult:
 
         return pattern.sub(repl, s)
 
-    out = _count_sub(_EMAIL_RE, EMAIL_PLACEHOLDER, "email", out)
-    out = _count_sub(_IBAN_RE, IBAN_PLACEHOLDER, "iban", out)
-    out = _count_sub(_PHONE_RE, PHONE_PLACEHOLDER, "phone", out)
+    if email:
+        out = _count_sub(_EMAIL_RE, EMAIL_PLACEHOLDER, "email", out)
+    if iban:
+        out = _count_sub(_IBAN_RE, IBAN_PLACEHOLDER, "iban", out)
+    if phone:
+        out = _count_sub(_PHONE_RE, PHONE_PLACEHOLDER, "phone", out)
 
     return MaskingResult(
         text=out,

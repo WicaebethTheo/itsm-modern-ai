@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     execution_mode_default: str = "suggestion"  # suggestion | semi_auto | full_auto
     auto_min_confidence_default: float = 0.9  # 2e seuil strict du mode semi_auto
 
+    # Masquage PII avant l'appel LLM (FR-14). Tous actifs par défaut (défaut sûr).
+    # ⚠️ Désactiver un motif envoie cette donnée EN CLAIR au LLM (choix explicite).
+    mask_email: bool = True
+    mask_phone: bool = True
+    mask_iban: bool = True
+    mask_secret: bool = True
+
     # Qualité de la suggestion (impacte le brouillon proposé au demandeur/technicien)
     response_tone: str = "professionnel, courtois et concis"
     assistant_name: str = ""  # signature éventuelle du brouillon

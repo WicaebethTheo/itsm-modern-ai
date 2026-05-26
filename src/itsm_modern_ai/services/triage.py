@@ -111,6 +111,7 @@ class TriageService:
         system_prompt: str = "",
         default_mode: ExecutionMode = ExecutionMode.SUGGESTION,
         auto_min_confidence: float | None = None,
+        mask_flags: dict[str, bool] | None = None,
     ) -> None:
         self._itsm = itsm
         self._llm = llm
@@ -126,6 +127,8 @@ class TriageService:
         self._auto_min_confidence = (
             settings.auto_min_confidence_default if auto_min_confidence is None else auto_min_confidence
         )
+        # Motifs de masquage actifs (FR-14). Vide → tous actifs (défaut sûr).
+        self._mask_flags = mask_flags or {}
 
     async def _call_llm(self, system: str, user: str) -> LlmResult:
         """Appel LLM avec retry borné (FR-9) sur erreur transport."""
@@ -141,7 +144,7 @@ class TriageService:
         self, ticket_id: int, raw_text: str, refs: Referentials
     ) -> tuple[TriageOutcome, LlmResult | None]:
         """Masquage → LLM → Pydantic → Whitelist → seuil. N'écrit RIEN (sandbox-safe)."""
-        masked = masking.mask(raw_text)
+        masked = masking.mask(raw_text, **self._mask_flags)
         system = self._system_prompt
         user = prompting.build_user_prompt(masked.text, refs, self._profiles, self._guidance)
         try:
@@ -199,7 +202,7 @@ class TriageService:
                 session,
                 ticket_id=ticket.id,
                 model=result.model,
-                prompt_sent=masking.mask(raw_text).text,
+                prompt_sent=masking.mask(raw_text, **self._mask_flags).text,
                 response_received=result.raw_response,
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,

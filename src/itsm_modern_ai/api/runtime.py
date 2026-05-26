@@ -103,6 +103,12 @@ def build_triage_service(
         auto_min_confidence = cfg.get_float(
             "auto_min_confidence_default", settings.auto_min_confidence_default
         )
+        mask_flags = {
+            "email": cfg.get_bool("mask_email", settings.mask_email),
+            "phone": cfg.get_bool("mask_phone", settings.mask_phone),
+            "iban": cfg.get_bool("mask_iban", settings.mask_iban),
+            "secret": cfg.get_bool("mask_secret", settings.mask_secret),
+        }
     return TriageService(
         itsm=itsm,
         llm=llm,
@@ -114,6 +120,7 @@ def build_triage_service(
         system_prompt=system_prompt,
         default_mode=default_mode,
         auto_min_confidence=auto_min_confidence,
+        mask_flags=mask_flags,
     )
 
 

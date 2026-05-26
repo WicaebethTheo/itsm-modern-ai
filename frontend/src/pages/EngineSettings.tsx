@@ -19,6 +19,8 @@ export function EngineSettings() {
   const [form, setForm] = useState<ConfigUpdate>({});
   const [pollingOn, setPollingOn] = useState(true);
   const [sysPrompt, setSysPrompt] = useState("");
+  // Masquage PII (FR-14) — défaut ON ; tant que la config n'est pas chargée, on suppose ON.
+  const [mask, setMask] = useState({ email: true, phone: true, iban: true, secret: true });
   const [msg, setMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const c = cfg.data;
 
@@ -26,6 +28,12 @@ export function EngineSettings() {
     if (c) {
       setPollingOn(asBool(c.polling_enabled));
       setSysPrompt(c.system_prompt ?? "");
+      setMask({
+        email: asBool(c.mask_email),
+        phone: asBool(c.mask_phone),
+        iban: asBool(c.mask_iban),
+        secret: asBool(c.mask_secret),
+      });
     }
   }, [c]);
 
@@ -37,7 +45,15 @@ export function EngineSettings() {
   async function save() {
     setMsg(null);
     try {
-      await Api.updateConfig({ ...form, polling_enabled: pollingOn, system_prompt: sysPrompt });
+      await Api.updateConfig({
+        ...form,
+        polling_enabled: pollingOn,
+        system_prompt: sysPrompt,
+        mask_email: mask.email,
+        mask_phone: mask.phone,
+        mask_iban: mask.iban,
+        mask_secret: mask.secret,
+      });
       setForm({});
       cfg.reload();
       setMsg({ kind: "success", text: t("Réglages enregistrés.", "Settings saved.") });
@@ -147,6 +163,45 @@ export function EngineSettings() {
               onChange={(e) => set("routing_rules", e.target.value)}
             />
           </Field>
+        </CardContent>
+      </Card>
+
+      {/* Masquage des données sensibles (FR-14) */}
+      <Card>
+        <PanelHead
+          title={t("Masquage avant l'IA", "Masking before AI")}
+          subtitle={t(
+            "Remplace les données sensibles par [EMAIL]/[IBAN]… AVANT l'envoi au LLM",
+            "Replaces sensitive data with [EMAIL]/[IBAN]… BEFORE sending to the LLM",
+          )}
+        />
+        <CardContent className="flex flex-col gap-4 p-5">
+          <Banner kind="error">
+            {t(
+              "⚠ Désactiver un motif envoie cette donnée EN CLAIR au LLM — d'autant plus sensible si le fournisseur est hors UE (OpenAI, Anthropic). À valider avec la DPO.",
+              "⚠ Disabling a pattern sends that data IN CLEAR to the LLM — especially sensitive with a non-EU provider (OpenAI, Anthropic). Validate with the DPO.",
+            )}
+          </Banner>
+          <Toggle
+            checked={mask.email}
+            onChange={(v) => setMask((s) => ({ ...s, email: v }))}
+            label={t("Masquer les e-mails", "Mask emails")}
+          />
+          <Toggle
+            checked={mask.phone}
+            onChange={(v) => setMask((s) => ({ ...s, phone: v }))}
+            label={t("Masquer les téléphones", "Mask phone numbers")}
+          />
+          <Toggle
+            checked={mask.iban}
+            onChange={(v) => setMask((s) => ({ ...s, iban: v }))}
+            label={t("Masquer les IBAN", "Mask IBANs")}
+          />
+          <Toggle
+            checked={mask.secret}
+            onChange={(v) => setMask((s) => ({ ...s, secret: v }))}
+            label={t("Masquer mots de passe / tokens", "Mask passwords / tokens")}
+          />
         </CardContent>
       </Card>
 

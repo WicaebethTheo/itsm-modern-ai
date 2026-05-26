@@ -38,6 +38,8 @@ PLAIN_KEYS = frozenset(
         # Moteur
         "confidence_threshold", "cost_cap_eur_per_day", "llm_retries",
         "execution_mode_default", "auto_min_confidence_default",
+        # Masquage PII (FR-14)
+        "mask_email", "mask_phone", "mask_iban", "mask_secret",
         # Qualité de la suggestion
         "response_tone", "assistant_name", "routing_rules", "system_prompt",
         # Polling
@@ -126,6 +128,12 @@ class RuntimeConfigService:
             "polling_interval_seconds": str(s.polling_interval_seconds),
             "dashboard_window_days": str(s.dashboard_window_days),
             "anomaly_new_age_hours": str(s.anomaly_new_age_hours),
+            "execution_mode_default": s.execution_mode_default,
+            "auto_min_confidence_default": str(s.auto_min_confidence_default),
+            "mask_email": str(s.mask_email).lower(),
+            "mask_phone": str(s.mask_phone).lower(),
+            "mask_iban": str(s.mask_iban).lower(),
+            "mask_secret": str(s.mask_secret).lower(),
         }
         return defaults.get(key)
 
