@@ -58,8 +58,13 @@ def _web_link(glpi_base_url: str, ticket_id: int) -> str:
     return f"{base}/front/ticket.form.php?id={ticket_id}" if base else ""
 
 
-def render_followup(outcome: TriageOutcome, refs: Referentials) -> str:
-    """Contenu du Suivi interne privé (français, lisible par le technicien)."""
+def render_followup(outcome: TriageOutcome, refs: Referentials, *, applied: bool = False) -> str:
+    """Contenu du Suivi interne privé (français, lisible par le technicien).
+
+    `applied` reflète le mode : en semi/full-auto la Décision a réellement muté le Ticket
+    → le texte le dit (« appliqué ») ; en suggestion → texte « proposition, non appliquée ».
+    Le brouillon de réponse reste un brouillon JAMAIS envoyé au demandeur dans tous les cas.
+    """
     d = outcome.decision
     assert d is not None
     cat = refs.categories.get(d.category, str(d.category))
@@ -74,15 +79,27 @@ def render_followup(outcome: TriageOutcome, refs: Referentials) -> str:
         assignee = f"Groupe {refs.groups.get(d.group_id, str(d.group_id))} (#{d.group_id})"
     else:
         assignee = "—"
+    if applied:
+        header = "🤖 Triage appliqué automatiquement — ITSM Modern AI"
+        verb, assign_label = "appliquée", "Affectation appliquée"
+        footer = (
+            "— Champs appliqués automatiquement par l'IA, après le garde-fou déterministe "
+            "(whitelist + seuil). Le technicien peut les corriger ; aucune réponse n'a été "
+            "envoyée au demandeur."
+        )
+    else:
+        header = "🤖 Suggestion de triage — ITSM Modern AI (proposition, non appliquée)"
+        verb, assign_label = "proposée", "Affectation suggérée"
+        footer = "— Vous gardez la main : ignorer cette suggestion n'est ni bloqué ni enregistré."
     return (
-        "🤖 Suggestion de triage — ITSM Modern AI (proposition, non appliquée)\n"
-        f"• Catégorie proposée : {cat} (#{d.category})\n"
-        f"• Priorité proposée : {prio}\n"
-        f"• Affectation suggérée : {assignee}\n"
+        f"{header}\n"
+        f"• Catégorie {verb} : {cat} (#{d.category})\n"
+        f"• Priorité {verb} : {prio}\n"
+        f"• {assign_label} : {assignee}\n"
         f"• Confiance : {d.confidence:.0%}\n\n"
         "Brouillon de réponse (à valider, jamais envoyé automatiquement) :\n"
         f"{d.draft}\n\n"
-        "— Vous gardez la main : ignorer cette suggestion n'est ni bloqué ni enregistré."
+        f"{footer}"
     )
 
 
@@ -235,7 +252,7 @@ class TriageService:
                 )
                 applied = True
             if action.write_followup:  # toujours pour une Décision acceptée (audit, FR-19/20)
-                content = render_followup(outcome, refs)
+                content = render_followup(outcome, refs, applied=applied)
                 await self._itsm.write_followup(ticket.id, content, private=True)
                 wrote = True
 

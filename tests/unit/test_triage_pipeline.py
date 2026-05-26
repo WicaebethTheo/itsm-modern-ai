@@ -189,6 +189,7 @@ async def test_suggestion_mode_never_mutates_ticket(temp_db):
     await svc.handle(Ticket(id=20, content="x"), REFS)
     assert itsm.applied == []  # aucune mutation
     assert itsm.followups  # mais Suivi déposé
+    assert "proposition, non appliquée" in itsm.followups[0][1]  # texte mode suggestion
     with db.session_scope() as s:
         row = journal.list_decisions(s)[0]
     assert row.applied is False and row.mode == "suggestion"
@@ -200,6 +201,9 @@ async def test_full_auto_mutates_and_still_writes_followup(temp_db):
     await svc.handle(Ticket(id=21, content="x"), REFS)
     assert itsm.applied == [(21, 1, 3, 11, None)]  # cat/prio/technicien appliqués
     assert itsm.followups  # Suivi toujours écrit (audit)
+    text = itsm.followups[0][1]
+    assert "appliqué automatiquement" in text  # texte reflète la mutation réelle
+    assert "non appliquée" not in text and "Vous gardez la main" not in text
     with db.session_scope() as s:
         row = journal.list_decisions(s)[0]
     assert row.applied is True and row.mode == "full_auto"
