@@ -124,22 +124,6 @@
   }
 }
 
-/* Caret clignotant pour les logs (spec § 7), désactivé en reduced-motion. */
-@keyframes caret-blink {
-  50% {
-    opacity: 0;
-  }
-}
-.app-caret {
-  color: hsl(var(--primary));
-  animation: caret-blink 1.1s steps(1) infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .app-caret {
-    animation: none;
-  }
-}
-
 /* === Atomes visuels portés de la maquette « operator preview » === */
 
 /* Logo bicolore (montagne « M »). */
