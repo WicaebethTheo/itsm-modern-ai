@@ -86,7 +86,7 @@ frontend/          # SPA React 19 + Vite + Tailwind v4 (buildée -> frontend/dis
 migrations/        # Alembic
 scripts/spike_routing.py        # Spike Epic 1
 tests/             # unit + integration (respx) ; fixtures/tickets_fr.json
-planning/          # PRD, architecture, epics, addendum (specs)
+docs/              # install, dpo, spike, handoff, project-context, planning/ (specs)
 ```
 
 ## Stack
@@ -99,7 +99,7 @@ Deps : uv. Docker + docker-compose (on-prem).
 
 - [`docs/install.md`](docs/install.md) — installation on-prem (½ page). [`docs/dpo.md`](docs/dpo.md) — fiche DPO. [`SECURITY.md`](SECURITY.md).
 - [`docs/spike.md`](docs/spike.md) — spike Epic 1. [`docs/handoff.md`](docs/handoff.md) — passation.
-- [`planning/`](planning/) — PRD, architecture, epics, addendum. [`project-context.md`](project-context.md) — règles & invariants.
+- [`docs/planning/`](docs/planning/) — PRD, architecture, epics, addendum. [`docs/project-context.md`](docs/project-context.md) — règles & invariants.
 
 ## Licence
 

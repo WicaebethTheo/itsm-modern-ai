@@ -25,3 +25,7 @@ spike-report*.md
 .DS_Store
 .idea/
 .vscode/
+
+# Mockups / images de travail
+Untitled.png
+*.mockup.png
