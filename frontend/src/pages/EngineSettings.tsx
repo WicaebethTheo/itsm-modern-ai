@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type ConfigUpdate, asBool } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
@@ -133,15 +134,12 @@ export function EngineSettings() {
             <CardTitle>Polling</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <label className="flex items-center gap-3 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={pollingOn}
-                onChange={(e) => setPollingOn(e.target.checked)}
-              />
-              Polling activé (le moteur traite les nouveaux tickets)
-            </label>
+            <Toggle
+              checked={pollingOn}
+              onChange={setPollingOn}
+              label="Polling activé"
+              description="Le moteur traite les nouveaux tickets en continu."
+            />
             <Field
               label="Intervalle de polling (secondes)"
               hint={`Actuel : ${c?.polling_interval_seconds ?? "—"} s. Appliqué immédiatement.`}

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PanelHead } from "@/components/ui/panel";
 import { useResource } from "@/hooks/useResource";
 import { Api, type DecisionEntry } from "@/lib/api";
 import { ScrollText } from "lucide-react";
@@ -45,19 +46,29 @@ export function Journal() {
       <PageHeader
         title="Journaux"
         description="Décisions du moteur, annotables pour la revue qualité (mode suggestion)."
-        actions={
-          <>
-            <a href="/api/export/decisions.csv">
-              <Button variant="outline">Export décisions</Button>
-            </a>
-            <a href="/api/export/llm-calls.csv">
-              <Button variant="outline">Export appels LLM</Button>
-            </a>
-          </>
-        }
       />
 
       <Card className="overflow-hidden">
+        <PanelHead
+          title="Journal des décisions"
+          subtitle={
+            decisions.data ? `${decisions.data.length} décision(s) enregistrée(s)` : undefined
+          }
+          right={
+            <>
+              <a href="/api/export/decisions.csv">
+                <Button variant="outline" size="sm">
+                  Export décisions
+                </Button>
+              </a>
+              <a href="/api/export/llm-calls.csv">
+                <Button variant="outline" size="sm">
+                  Export appels LLM
+                </Button>
+              </a>
+            </>
+          }
+        />
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
             <tr>

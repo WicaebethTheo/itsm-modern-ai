@@ -2,8 +2,11 @@ import { Banner, PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dot, type DotTone } from "@/components/ui/dot";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
+import { PanelHead } from "@/components/ui/panel";
+import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type ConfigUpdate, asBool } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
@@ -61,6 +64,13 @@ export function GlpiConnection() {
     }
   }
 
+  const g = health.data?.glpi;
+  const [connTone, connLabel]: [DotTone, string] = !g?.configured
+    ? ["muted", "Non configurée"]
+    : g.reachable
+      ? ["green", "Connecté"]
+      : ["red", "Injoignable"];
+
   return (
     <>
       <PageHeader
@@ -78,8 +88,18 @@ export function GlpiConnection() {
           )
         }
       />
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-6">
+      <Card className="max-w-2xl">
+        <PanelHead
+          title="Paramètres de connexion"
+          subtitle="API legacy apirest.php — tokens chiffrés au repos, jamais réaffichés"
+          right={
+            <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+              <Dot tone={connTone} />
+              {connLabel}
+            </span>
+          }
+        />
+        <CardContent className="flex flex-col gap-4 p-5">
           {msg && <Banner kind={msg.kind}>{msg.text}</Banner>}
           <Field label="URL de base (apirest.php)">
             <Input
@@ -113,25 +133,18 @@ export function GlpiConnection() {
             />
           </Field>
 
-          <label className="flex items-center gap-3 text-sm">
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={verifyTls}
-              onChange={(e) => setVerifyTls(e.target.checked)}
-            />
-            Vérifier le certificat TLS (décocher pour un certificat auto-signé)
-          </label>
-          <label className="flex items-center gap-3 text-sm">
-            <input
-              type="checkbox"
-              className="h-4 w-4"
-              checked={legacy9x}
-              onChange={(e) => setLegacy9x(e.target.checked)}
-            />
-            GLPI 9.x (suivis via <code className="mx-1">TicketFollowup</code> au lieu de{" "}
-            <code className="ml-1">ITILFollowup</code> en 10.x+)
-          </label>
+          <Toggle
+            checked={verifyTls}
+            onChange={setVerifyTls}
+            label="Vérifier le certificat TLS"
+            description="Décocher pour un certificat auto-signé."
+          />
+          <Toggle
+            checked={legacy9x}
+            onChange={setLegacy9x}
+            label="GLPI 9.x (suivis legacy)"
+            description="Suivis via TicketFollowup au lieu d'ITILFollowup (10.x+)."
+          />
 
           <div className="flex gap-2">
             <Button onClick={save}>Enregistrer</Button>

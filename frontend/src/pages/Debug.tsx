@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
+import { Tag } from "@/components/ui/tag";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
 import { AlertTriangle, FlaskConical, Trash2 } from "lucide-react";
@@ -85,12 +86,12 @@ export function Debug() {
                   >
                     <span className="flex shrink-0 gap-1">
                       {e.methods.map((m) => (
-                        <Badge key={m} variant={m === "GET" ? "default" : "warn"}>
+                        <Tag key={m} tone={m === "GET" ? "green" : "amber"}>
                           {m}
-                        </Badge>
+                        </Tag>
                       ))}
                     </span>
-                    <code className="text-xs text-muted-foreground">{e.path}</code>
+                    <code className="font-mono text-xs text-muted-foreground">{e.path}</code>
                   </div>
                 ))}
               </div>

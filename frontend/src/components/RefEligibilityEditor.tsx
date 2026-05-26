@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type EligibilityItem, type RefItem, type RefKind } from "@/lib/api";
 import { Search, Users } from "lucide-react";
@@ -129,13 +130,8 @@ export function RefEligibilityEditor({
                 ))}
               </select>
             )}
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={eligibleOnly}
-                onChange={(e) => setEligibleOnly(e.target.checked)}
-              />
+            <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+              <Toggle checked={eligibleOnly} onChange={setEligibleOnly} />
               Éligibles seulement
             </label>
             <span className="ml-auto text-sm text-muted-foreground">
