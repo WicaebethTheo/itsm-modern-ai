@@ -62,6 +62,7 @@ class DecisionLog(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     ticket_id: int = Field(index=True)
     ts: datetime = Field(default_factory=_utcnow, index=True)
+    subject: str = ""  # titre du Ticket GLPI (lisible dans le journal)
     accepted: bool = False
     reason: str = ""  # TriageReason
     category: int | None = None

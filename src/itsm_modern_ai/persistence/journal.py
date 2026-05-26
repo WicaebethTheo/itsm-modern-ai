@@ -46,15 +46,17 @@ def record_decision(
     glpi_link: str = "",
     mode: str = "",
     applied: bool = False,
+    subject: str = "",
 ) -> int:
     """Consigne une Décision (acceptée ou « à trier ») dans le Journal (FR-20).
 
     `mode` = mode d'exécution effectif ; `applied` = la Décision a-t-elle muté le Ticket
-    GLPI (vs Suivi seul). Traçabilité de l'action (audit/DPO).
+    GLPI (vs Suivi seul) ; `subject` = titre du Ticket (lisibilité). Traçabilité (audit/DPO).
     """
     d = outcome.decision
     row = DecisionLog(
         ticket_id=ticket_id,
+        subject=subject,
         accepted=outcome.accepted,
         reason=outcome.reason.value,
         category=d.category if d else None,

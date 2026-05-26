@@ -164,6 +164,7 @@ export interface DecisionEntry {
   id: number;
   ticket_id: number;
   ts: string;
+  subject: string;
   accepted: boolean;
   reason: string;
   category: number | null;

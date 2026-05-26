@@ -19,6 +19,7 @@ class DecisionEntry(BaseModel):
     id: int
     ticket_id: int
     ts: datetime
+    subject: str
     accepted: bool
     reason: str
     category: int | None

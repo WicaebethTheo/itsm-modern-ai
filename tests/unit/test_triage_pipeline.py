@@ -82,13 +82,16 @@ def _accepted_decision() -> Decision:
 async def test_accepted_writes_private_followup_and_journals(temp_db):
     itsm = FakeItsm()
     svc = _service(FakeLlm(_accepted_decision()), itsm)
-    wrote = await svc.handle(Ticket(id=10, content="je n'arrive plus à me connecter"), REFS)
+    wrote = await svc.handle(
+        Ticket(id=10, title="Connexion impossible", content="je n'arrive plus à me connecter"), REFS
+    )
     assert wrote is True
     assert itsm.followups and itsm.followups[0][2] is True  # privé
     assert "Suggestion de triage" in itsm.followups[0][1]
     with db.session_scope() as s:
         decisions = journal.list_decisions(s)
     assert decisions[0].accepted and decisions[0].technician_id == 11
+    assert decisions[0].subject == "Connexion impossible"  # titre du ticket journalisé
 
 
 async def test_low_confidence_goes_a_trier_no_write(temp_db):

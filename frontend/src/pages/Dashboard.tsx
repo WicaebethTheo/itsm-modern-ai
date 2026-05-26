@@ -147,7 +147,9 @@ export function Dashboard() {
               style={{ gridTemplateColumns: "80px 1fr 130px 110px 70px" }}
             >
               <span className="font-mono text-muted-foreground">#{d.ticket_id}</span>
-              <span className="truncate">{d.annotation || "—"}</span>
+              <span className="truncate" title={d.subject}>
+                {d.subject || d.annotation || "—"}
+              </span>
               <span>
                 {d.technician_id != null ? (
                   <Tag tone="indigo">T#{d.technician_id}</Tag>
