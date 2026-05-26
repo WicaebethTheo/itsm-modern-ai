@@ -3,7 +3,7 @@ import { type VariantProps, cva } from "class-variance-authority";
 import * as React from "react";
 
 const buttonVariants = cva(
-  "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium shadow-sm transition-colors active:translate-y-px disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-md text-[13px] font-medium transition-colors active:translate-y-px disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {

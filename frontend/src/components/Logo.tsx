@@ -9,8 +9,8 @@ export function Logo({ className = "h-5 w-5" }: { className?: string }) {
       strokeWidth="2.2"
       strokeLinejoin="round"
       strokeLinecap="round"
-      aria-hidden
       role="img"
+      aria-label="ITSM Modern AI"
     >
       <path d="M3 19 L8.5 6 L12 13 L15.5 6 L21 19" />
     </svg>

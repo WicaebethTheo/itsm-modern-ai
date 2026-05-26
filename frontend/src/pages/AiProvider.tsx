@@ -114,7 +114,7 @@ export function AiProvider() {
           </Field>
 
           {NON_SOVEREIGN.includes(provider) && (
-            <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[12.5px] text-warning">
               <AlertTriangle className="h-4 w-4 shrink-0" />
               {PROVIDER_LABELS[provider]} est hors UE (non-souverain) — à valider avec la DPO.
             </div>

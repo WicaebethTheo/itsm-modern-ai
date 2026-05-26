@@ -1,6 +1,7 @@
 import { ProgressBar, Sparkline, StackedBars } from "@/components/Charts";
 import { EmptyState } from "@/components/EmptyState";
 import { StatCard } from "@/components/StatCard";
+import { useSetHeader } from "@/components/topbar-context";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useResource } from "@/hooks/useResource";
@@ -26,7 +27,7 @@ function Kpi({
       <CardContent className="flex flex-col gap-3 p-5">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
         <div className="flex items-end justify-between gap-2">
-          <span className="text-3xl font-bold tracking-tight">{value}</span>
+          <span className="text-[22px] font-semibold tracking-tight">{value}</span>
           {delta && (
             <span
               className={delta.muted ? "text-sm text-muted-foreground" : "text-sm text-success"}
@@ -42,13 +43,12 @@ function Kpi({
 }
 
 export function Dashboard() {
+  useSetHeader("Tableau de bord", "Vue d'ensemble du triage IA sur 14 jours");
   const metrics = useResource(useCallback(() => Api.metrics(), []));
-  const health = useResource(useCallback(() => Api.health(), []));
   const ops = useResource(useCallback(() => Api.operationalMetrics(), []));
   const decisions = useResource(useCallback(() => Api.decisions(), []));
 
   const m = metrics.data;
-  const h = health.data;
   const op = ops.data?.metrics ?? null;
   const series = m?.series ?? [];
   const totals = series.map((d) => d.accepted + d.a_trier);
@@ -59,31 +59,6 @@ export function Dashboard() {
 
   return (
     <>
-      {/* Top bar */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-5">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Tableau de bord{" "}
-          <span className="text-base font-normal text-muted-foreground">· 14 derniers jours</span>
-        </h1>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          {h && (
-            <span className="flex items-center gap-1.5">
-              <span
-                className={`h-2 w-2 rounded-full ${h.glpi.reachable ? "bg-success" : "bg-muted-foreground/50"}`}
-              />
-              {h.glpi.configured
-                ? h.glpi.reachable
-                  ? "GLPI connecté"
-                  : "GLPI injoignable"
-                : "GLPI non configuré"}
-            </span>
-          )}
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
-            OP
-          </span>
-        </div>
-      </div>
-
       {/* 5 cartes KPI */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <Kpi label="Décisions" value={m ? m.total.toLocaleString("fr-FR") : "—"}>
