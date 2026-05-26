@@ -100,13 +100,21 @@ def ticket_update_payload(
 ) -> dict:
     """Payload `PUT Ticket/:id` appliquant une Décision (modes semi/full-auto).
 
-    Mute la catégorie + la priorité, et assigne un acteur : technicien (préféré) ou,
-    en fallback, un groupe. Assignation via `_users_id_assign` / `_groups_id_assign`
-    (acteurs en update, addendum §A — point de douleur connu : selon la version GLPI,
-    certains serveurs exigent l'itemtype `Ticket_User`/`Group_Ticket` ; on isole donc
-    le payload ici pour pouvoir l'adapter sans toucher au connecteur).
+    Mute la catégorie, l'**urgence** + la **priorité**, et assigne un acteur : technicien
+    (préféré) ou, en fallback, un groupe.
+
+    GLPI calcule fréquemment `priority` = matrice(`urgency` × `impact`) : poser `priority`
+    seul peut être recalculé/ignoré et ne change pas l'urgence affichée. On pose donc aussi
+    `urgency` (dérivée du niveau proposé, bornée à 1-5 car l'urgence GLPI n'a pas de « Majeure »)
+    pour que l'urgence visible bouge et que la matrice remonte la priorité ; `priority` couvre
+    le cas où la matrice est désactivée. Assignation via `_users_id_assign`/`_groups_id_assign`
+    (acteurs en update, addendum §A — isolé ici pour adaptation sans toucher au connecteur).
     """
-    inp: dict = {"itilcategories_id": category, "priority": priority}
+    inp: dict = {
+        "itilcategories_id": category,
+        "priority": priority,
+        "urgency": min(priority, 5),  # GLPI urgency ∈ 1..5 ; MAJEURE (6) → Très haute (5)
+    }
     if technician_id is not None:
         inp["_users_id_assign"] = technician_id
     elif group_id is not None:

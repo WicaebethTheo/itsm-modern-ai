@@ -98,7 +98,18 @@ async def test_apply_decision_mutates_fields_and_assigns_technician():
     body = route.calls.last.request.content
     assert b'"itilcategories_id":3' in body
     assert b'"priority":4' in body
+    assert b'"urgency":4' in body  # urgence posée aussi (sinon GLPI ne la bouge pas)
     assert b'"_users_id_assign":11' in body  # technicien préféré
+
+
+@respx.mock
+async def test_apply_decision_clamps_urgency_for_major_priority():
+    _session_routes()
+    route = respx.put(f"{BASE}/Ticket/9").mock(return_value=httpx.Response(200, json={"id": 9}))
+    await (await _connector()).apply_decision(9, category=1, priority=6, group_id=5)  # MAJEURE
+    body = route.calls.last.request.content
+    assert b'"priority":6' in body
+    assert b'"urgency":5' in body  # urgence GLPI plafonne à 5 (pas de « Majeure »)
 
 
 @respx.mock
