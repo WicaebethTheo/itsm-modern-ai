@@ -139,3 +139,35 @@
     animation: none;
   }
 }
+
+/* === Atomes visuels portés de la maquette « operator preview » === */
+
+/* Logo bicolore (montagne « M »). */
+.logo-grad-a {
+  fill: #6366f1;
+}
+.logo-grad-b {
+  fill: #8b8df7;
+}
+
+/* Sparkline en mini-barres (carte KPI). */
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+.spark span {
+  width: 3px;
+  border-radius: 1px;
+  background: rgba(139, 141, 247, 0.55);
+}
+
+/* Barres du graphe de tendance : plein = série principale, .dim = secondaire atténué. */
+.bar {
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(to top, #4f52e5, #8b8df7);
+}
+.bar.dim {
+  background: linear-gradient(to top, #2a2c66, #3d3f8a);
+}

@@ -1,115 +1,101 @@
+import { LangToggle } from "@/components/LangToggle";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { TopbarProvider, useTopbar } from "@/components/topbar-context";
 import { useResource } from "@/hooks/useResource";
 import { APP_VERSION, Api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
+import { type IconName, NAV, navByPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
-import {
-  Activity,
-  Bot,
-  Code2,
-  Cpu,
-  FlaskConical,
-  LayoutDashboard,
-  LogOut,
-  type LucideIcon,
-  PlugZap,
-  ScrollText,
-  SlidersHorizontal,
-  Store as StoreIcon,
-  Users,
-  UsersRound,
-  Workflow,
-} from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useCallback } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
-interface NavItem {
-  to: string;
-  label: string;
-  icon: LucideIcon;
-  end?: boolean;
-}
-
-// Navigation data-driven : ajouter une page = une ligne ici + une route.
-// Les chemins `to` sont stables (liés au routeur) — ne pas les modifier.
-const SECTIONS: { label: string; items: NavItem[] }[] = [
-  {
-    label: "Opération",
-    items: [
-      { to: "/", label: "Tableau de bord", icon: LayoutDashboard, end: true },
-      { to: "/status", label: "Statut", icon: Activity },
-      { to: "/journal", label: "Journaux", icon: ScrollText },
-      { to: "/glpi", label: "Connexion GLPI", icon: PlugZap },
-    ],
-  },
-  {
-    label: "Configuration",
-    items: [
-      { to: "/scope", label: "Règles métier", icon: SlidersHorizontal },
-      { to: "/technicians", label: "Techniciens", icon: Users },
-      { to: "/groups", label: "Groupes", icon: UsersRound },
-      { to: "/ai-provider", label: "Fournisseur IA", icon: Bot },
-      { to: "/engine", label: "Moteur", icon: Cpu },
-    ],
-  },
-  {
-    label: "Avancé",
-    items: [
-      { to: "/sandbox", label: "Bac à sable", icon: FlaskConical },
-      { to: "/store", label: "Store", icon: StoreIcon },
-      { to: "/automations", label: "Automations", icon: Workflow },
-      { to: "/debug", label: "Développement", icon: Code2 },
-    ],
-  },
-];
-
-/** Indicateur d'état GLPI dans la topbar (pastille + libellé court). */
-function GlpiIndicator() {
-  const health = useResource(useCallback(() => Api.health(), []));
-  const reachable = health.data?.glpi.reachable;
-  const configured = health.data?.glpi.configured;
-  const [color, label] = !configured
-    ? ["bg-muted-foreground/50", "GLPI non configuré"]
-    : reachable
-      ? ["bg-success", "GLPI connecté"]
-      : ["bg-destructive", "GLPI injoignable"];
+/** Les 4 icônes de la section « Opération » (fidèles à la maquette). */
+function SidebarIcon({ name }: { name: IconName }) {
+  const common = {
+    className: "h-3.5 w-3.5 shrink-0",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.7,
+  } as const;
+  if (name === "grid")
+    return (
+      <svg {...common} aria-hidden="true">
+        <rect x="3" y="3" width="7" height="9" />
+        <rect x="14" y="3" width="7" height="5" />
+        <rect x="14" y="12" width="7" height="9" />
+        <rect x="3" y="16" width="7" height="5" />
+      </svg>
+    );
+  if (name === "clock")
+    return (
+      <svg {...common} aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </svg>
+    );
+  if (name === "log")
+    return (
+      <svg {...common} aria-hidden="true">
+        <path d="M3 4h18v4H3zM3 10h18v4H3zM3 16h18v4H3z" />
+      </svg>
+    );
   return (
-    <span className="hidden items-center gap-2 text-[12px] text-muted-foreground sm:flex">
-      <span className={cn("h-1.5 w-1.5 rounded-full", color)} />
-      {label}
-    </span>
+    <svg {...common} aria-hidden="true">
+      <path d="M4 7h16M4 12h16M4 17h10" />
+    </svg>
   );
 }
 
 function Topbar({ onLogout }: { onLogout: () => void }) {
-  const { header } = useTopbar();
+  const t = useT();
+  const { pathname } = useLocation();
+  const item = navByPath(pathname);
+  const title = item ? t(item.fr, item.en) : "ITSM Modern AI";
+  const health = useResource(useCallback(() => Api.health(), []));
+  const g = health.data?.glpi;
+
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b border-border px-5 sm:px-6">
-      <div className="min-w-0">
-        <h1 className="truncate text-[15px] font-medium leading-tight tracking-tight">
-          {header.title || "ITSM Modern AI"}
-        </h1>
-        {header.subtitle && (
-          <p className="truncate text-[12px] leading-tight text-muted-foreground">
-            {header.subtitle}
-          </p>
+    <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-5 sm:px-6">
+      <div className="flex min-w-0 items-baseline gap-3">
+        <h1 className="truncate text-[15px] font-medium tracking-tight">{title}</h1>
+        {pathname === "/" && (
+          <span className="hidden text-[12px] text-muted-foreground sm:inline">
+            {t("· derniers 14 jours", "· last 14 days")}
+          </span>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-3">
-        <GlpiIndicator />
-        <span
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent-indigo text-[11px] font-semibold text-white"
-          title="Administrateur"
-        >
-          AD
+        <span className="hidden items-center gap-1.5 text-[12px] text-muted-foreground md:flex">
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              !g?.configured
+                ? "bg-muted-foreground/50"
+                : g.reachable
+                  ? "bg-success"
+                  : "bg-destructive",
+            )}
+          />
+          {!g?.configured
+            ? t("GLPI non configuré", "GLPI not configured")
+            : g.reachable
+              ? t("GLPI connecté", "GLPI connected")
+              : t("GLPI injoignable", "GLPI unreachable")}
         </span>
+        <span
+          className="hidden h-7 w-7 rounded-full sm:block"
+          style={{ background: "linear-gradient(135deg,#6366f1,#8b8df7)" }}
+          title="Administrateur"
+        />
+        <LangToggle />
         <ThemeToggle compact />
         <button
           type="button"
           onClick={onLogout}
-          aria-label="Déconnexion"
-          title="Déconnexion"
+          aria-label={t("Déconnexion", "Sign out")}
+          title={t("Déconnexion", "Sign out")}
           className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <LogOut className="h-4 w-4" />
@@ -121,6 +107,7 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
 
 export function Layout() {
   const navigate = useNavigate();
+  const t = useT();
 
   async function logout() {
     await Api.logout().catch(() => undefined);
@@ -128,64 +115,56 @@ export function Layout() {
   }
 
   return (
-    <TopbarProvider>
-      <div className="flex h-screen overflow-hidden bg-background text-foreground">
-        {/* Sidebar fixe à gauche (224px), bordure droite fine. */}
-        <aside className="flex w-16 shrink-0 flex-col border-r border-border bg-sidebar sm:w-56">
-          <div className="flex h-12 items-center gap-2.5 border-b border-border px-3 sm:px-4">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <Logo className="h-5 w-5" />
-            </span>
-            <span className="hidden text-[14px] font-semibold tracking-tight sm:inline">
-              ITSM Modern AI
-            </span>
-          </div>
-
-          <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-2 py-4 sm:px-2.5">
-            {SECTIONS.map((section) => (
-              <div key={section.label} className="flex flex-col gap-0.5">
-                <p className="mb-1 hidden px-2.5 text-[10.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/70 sm:block">
-                  {section.label}
-                </p>
-                {section.items.map(({ to, label, icon: Icon, end }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={end}
-                    title={label}
-                    className={({ isActive }) =>
-                      cn(
-                        "flex items-center justify-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors sm:justify-start",
-                        isActive
-                          ? "bg-primary/15 text-accent-indigo"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                      )
-                    }
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span className="hidden sm:inline">{label}</span>
-                  </NavLink>
-                ))}
-              </div>
-            ))}
-          </nav>
-
-          <div className="flex items-center gap-2 border-t border-border px-3 py-3">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
-            <span className="hidden text-[11px] leading-snug text-muted-foreground sm:inline">
-              Moteur en marche · v{APP_VERSION}
-            </span>
-          </div>
-        </aside>
-
-        {/* Zone principale : topbar + contenu défilant. */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Topbar onLogout={logout} />
-          <main className="flex-1 overflow-y-auto p-5 sm:p-6">
-            <Outlet />
-          </main>
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+      {/* Sidebar fixe (224px), bordure droite fine. */}
+      <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar p-3 text-[13px]">
+        <div className="mb-2 flex items-center gap-2 px-2 py-2">
+          <Logo className="h-5 w-5" />
+          <span className="font-semibold tracking-tight">ITSM Modern AI</span>
         </div>
+
+        {NAV.map((section) => (
+          <div key={section.en} className="flex flex-col gap-0.5">
+            <p
+              className="px-2 pt-4 pb-1 text-[10.5px] font-medium uppercase text-muted-foreground/70"
+              style={{ letterSpacing: "0.12em" }}
+            >
+              {t(section.fr, section.en)}
+            </p>
+            {section.items.map((it) => (
+              <NavLink
+                key={it.to}
+                to={it.to}
+                end={it.end}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 transition-colors",
+                    isActive
+                      ? "bg-primary/15 text-accent-indigo"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )
+                }
+              >
+                {it.icon && <SidebarIcon name={it.icon} />}
+                {t(it.fr, it.en)}
+              </NavLink>
+            ))}
+          </div>
+        ))}
+
+        <div className="mt-auto flex items-center gap-2 px-2 pt-3 text-[11px] text-muted-foreground">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
+          {t(`Moteur en marche · v${APP_VERSION}`, `Engine running · v${APP_VERSION}`)}
+        </div>
+      </aside>
+
+      {/* Zone principale : topbar + contenu défilant. */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Topbar onLogout={logout} />
+        <main className="flex-1 overflow-y-auto p-5 sm:p-6">
+          <Outlet />
+        </main>
       </div>
-    </TopbarProvider>
+    </div>
   );
 }
