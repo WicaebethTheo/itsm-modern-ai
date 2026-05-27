@@ -79,7 +79,12 @@ class Decision(BaseModel):
     group_id: int | None = Field(
         default=None, description="ID GLPI du groupe proposé (fallback si aucun technicien), sinon null."
     )
-    draft: str = Field(description="Brouillon de première réponse, en français. Jamais envoyé.")
+    draft: str = Field(
+        description=(
+            "Brouillon de première réponse, en français. En mode suggestion : jamais envoyé "
+            "(Suivi privé). En semi/full-auto : posté en Suivi PUBLIC au demandeur (FR-17)."
+        )
+    )
     confidence: float = Field(
         ge=0.0, le=1.0, description="Confiance auto-déclarée par le LLM (NON calibrée)."
     )
