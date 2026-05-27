@@ -240,9 +240,7 @@ export function Dashboard() {
               {
                 label: t("Anomalies", "Anomalies"),
                 value: op ? String(op.anomalies.length) : "—",
-                hint: op
-                  ? t("tickets en alerte sur la fenêtre", "flagged tickets in window")
-                  : "",
+                hint: op ? t("tickets en alerte sur la fenêtre", "flagged tickets in window") : "",
               },
             ].map((s) => (
               <div key={s.label} className="bg-card p-4">

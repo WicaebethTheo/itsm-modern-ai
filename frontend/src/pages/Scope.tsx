@@ -86,7 +86,10 @@ export function Scope() {
     try {
       await Api.setScope({ category_ids: [...cats], entity_ids: [...ents] });
       await Api.saveModes([...modes].map(([ext_id, mode]) => ({ ext_id, mode: mode || null })));
-      setMsg({ kind: "success", text: t("Périmètre et modes enregistrés.", "Scope and modes saved.") });
+      setMsg({
+        kind: "success",
+        text: t("Périmètre et modes enregistrés.", "Scope and modes saved."),
+      });
     } catch (e: unknown) {
       setMsg({ kind: "error", text: (e as Error).message });
     }
@@ -163,7 +166,9 @@ export function Scope() {
           />
         </Card>
       </div>
-      <Button onClick={save}>{t("Enregistrer le périmètre et les modes", "Save scope and modes")}</Button>
+      <Button onClick={save}>
+        {t("Enregistrer le périmètre et les modes", "Save scope and modes")}
+      </Button>
     </div>
   );
 }
