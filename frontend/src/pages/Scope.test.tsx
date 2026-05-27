@@ -57,8 +57,8 @@ describe("Scope — périmètre & modes", () => {
     await waitFor(() => expect(Api.saveModes).toHaveBeenCalledTimes(1));
     expect(Api.setScope).toHaveBeenCalledWith({ category_ids: [1], entity_ids: [0] });
     expect(Api.saveModes).toHaveBeenCalledWith([
-      { ext_id: 0, mode: "full_auto" },
-      { ext_id: 1, mode: null },
+      { ext_id: 0, mode: "full_auto", auto_min_confidence: null },
+      { ext_id: 1, mode: null, auto_min_confidence: null },
     ]);
     expect(await screen.findByText("Périmètre et modes enregistrés.")).toBeInTheDocument();
   });

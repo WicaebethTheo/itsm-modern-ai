@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" role="img" aria-label="ITSM Modern AI">
+  <!-- Fond sombre arrondi (palette « operator preview » #0b0b14) pour ressortir sur tout onglet. -->
+  <rect width="40" height="40" rx="9" fill="#0b0b14" />
+  <!-- Montagne « M » bicolore, fidèle au logo de la console. -->
+  <path d="M4 31 L13 12 L20 23 Z" fill="#6366f1" />
+  <path d="M20 23 L27 12 L36 31 Z" fill="#8b8df7" />
+</svg>

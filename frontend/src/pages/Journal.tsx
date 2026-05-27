@@ -71,9 +71,10 @@ export function Journal() {
           <tr>
             <th className="px-4 py-2 text-left font-medium">Date</th>
             <th className="px-4 py-2 text-left font-medium">Ticket</th>
+            <th className="px-4 py-2 text-left font-medium">{t("Sujet", "Subject")}</th>
             <th className="px-4 py-2 text-left font-medium">{t("Statut", "Status")}</th>
             <th className="px-4 py-2 text-left font-medium">
-              {t("Cat/Prio/Affect.", "Cat/Prio/Assign.")}
+              {t("Routage · cat./urg./prio.", "Routing · cat./urg./prio.")}
             </th>
             <th className="px-4 py-2 text-left font-medium">{t("Conf.", "Conf.")}</th>
             <th className="px-4 py-2 text-left font-medium">{t("Annotation", "Annotation")}</th>
@@ -103,19 +104,46 @@ export function Journal() {
                 )}
               </td>
               <td className="px-4 py-2">
+                <div className="max-w-[280px] truncate" title={d.subject || undefined}>
+                  {d.subject ? (
+                    d.glpi_link ? (
+                      <a
+                        className="text-primary hover:underline"
+                        href={d.glpi_link}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {d.subject}
+                      </a>
+                    ) : (
+                      d.subject
+                    )
+                  ) : (
+                    "—"
+                  )}
+                </div>
+              </td>
+              <td className="px-4 py-2">
                 {d.accepted ? (
-                  <Tag tone="green">{t("déposée", "deposited")}</Tag>
+                  <Tag tone="green">{t("traité", "handled")}</Tag>
                 ) : (
                   <Tag tone="amber">{d.reason}</Tag>
                 )}
               </td>
-              <td className="px-4 py-2 text-muted-foreground">
-                {d.category ?? "—"} / {d.priority ?? "—"} /{" "}
-                {d.technician_id != null
-                  ? `T#${d.technician_id}`
-                  : d.group_id != null
-                    ? `G#${d.group_id}`
-                    : "—"}
+              <td className="px-4 py-2">
+                <div className="font-medium">
+                  {d.technician_name ??
+                    d.group_name ??
+                    (d.technician_id != null
+                      ? `T#${d.technician_id}`
+                      : d.group_id != null
+                        ? `G#${d.group_id}`
+                        : "—")}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {d.category_name ?? (d.category != null ? `#${d.category}` : "—")} ·{" "}
+                  {t("urg.", "urg.")} {d.urgency ?? "—"} · {t("prio.", "prio.")} {d.priority ?? "—"}
+                </div>
               </td>
               <td className="px-4 py-2 font-mono">
                 {d.confidence != null ? `${Math.round(d.confidence * 100)}%` : "—"}
@@ -132,8 +160,8 @@ export function Journal() {
           icon={ScrollText}
           title={t("Aucune décision pour le moment", "No decisions yet")}
           description={t(
-            "Les suggestions déposées et les « à trier » s'afficheront ici.",
-            "Deposited suggestions and “to triage” entries will appear here.",
+            "Les tickets traités et les « à trier » s'afficheront ici.",
+            "Handled tickets and “to triage” entries will appear here.",
           )}
         />
       )}

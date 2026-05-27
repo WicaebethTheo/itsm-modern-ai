@@ -111,6 +111,8 @@ export interface ConfigView {
   routing_rules: string | null;
   system_prompt: string | null;
   system_prompt_default: string | null;
+  execution_mode_default: string | null;
+  auto_min_confidence_default: string | null;
   polling_enabled: string | null;
   polling_interval_seconds: string | null;
   dashboard_window_days: string | null;
@@ -148,6 +150,8 @@ export interface ConfigUpdate {
   assistant_name?: string;
   routing_rules?: string;
   system_prompt?: string;
+  execution_mode_default?: ExecutionMode;
+  auto_min_confidence_default?: number;
   polling_enabled?: boolean;
   polling_interval_seconds?: number;
   dashboard_window_days?: number;
@@ -176,9 +180,13 @@ export interface DecisionEntry {
   accepted: boolean;
   reason: string;
   category: number | null;
+  category_name?: string | null; // libellé GLPI résolu (sinon on affiche l'id)
   priority: number | null;
+  urgency?: number | null; // urgence appliquée = min(priority, 5)
   technician_id: number | null;
+  technician_name?: string | null; // nom GLPI du technicien routé
   group_id: number | null;
+  group_name?: string | null; // nom GLPI du groupe routé
   confidence: number | null;
   glpi_link: string;
   annotation: string;

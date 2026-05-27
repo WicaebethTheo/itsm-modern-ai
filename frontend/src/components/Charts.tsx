@@ -50,7 +50,7 @@ export function StackedBars({
           // biome-ignore lint/suspicious/noArrayIndexKey: 14 jours, ordre stable
           key={i}
           className="flex flex-1 flex-col justify-end gap-px"
-          title={`${d.date ?? ""} · ${d.accepted} déposées / ${d.a_trier} à trier`}
+          title={`${d.date ?? ""} · ${d.accepted} traités / ${d.a_trier} à trier`}
         >
           <div className="bar dim" style={{ height: (d.a_trier / max) * height }} />
           <div className="bar" style={{ height: (d.accepted / max) * height }} />
