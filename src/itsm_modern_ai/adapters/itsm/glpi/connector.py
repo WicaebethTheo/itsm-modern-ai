@@ -176,6 +176,23 @@ class GlpiConnector:
             # Auth/permission KO mais GLPI répond → considéré non sain pour le pilote.
             return False
 
+    @property
+    def base_url(self) -> str:
+        return self._creds.base_url
+
+    async def server_version(self) -> str | None:
+        """Version du serveur GLPI via `getGlpiConfig` (best-effort, None si indisponible)."""
+        if not self._creds.is_configured:
+            return None
+        try:
+            async with self._client() as gc:
+                data = (await gc.get("getGlpiConfig")).json()
+        except (ItsmError, ItsmUnavailableError):
+            return None
+        cfg = data.get("cfg_glpi") if isinstance(data, dict) else None
+        version = cfg.get("version") if isinstance(cfg, dict) else None
+        return str(version) if version else None
+
 
 def _as_list(data: object) -> list[dict]:
     if isinstance(data, list):

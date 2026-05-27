@@ -23,9 +23,30 @@ Séquençage : `Epic 1 (spike) → [GO humain] → Epic 2 → Epic 3 → Epic 4`
   - **Whitelist curée depuis un scan GLPI.** La console scanne GLPI (`POST /api/glpi/sync` → cache des catégories, entités, techniciens, groupes), puis l'admin **sélectionne** ce que l'IA a le droit d'utiliser : catégories autorisées + entités du périmètre (`PUT /api/scope`), techniciens/groupes **éligibles** + leur **fiche en prose** éditée dans l'UI (`PUT /api/technicians`, `PUT /api/groups`). Le moteur n'agit que dans ce **périmètre effectif** (= GLPI ∩ sélections admin) ; le routage vise un **technicien** (préféré) ou, en fallback, un **groupe** éligible. **Les fiches techniciens ne sont plus un YAML** : elles sont stockées en base.
   - **4 fournisseurs LLM** configurables (clés chiffrées au repos) : **Mistral EU** (défaut souverain) · **OpenAI** (distinct, non-souverain) · **Ollama** (modèle **local**, pas de clé) · **Anthropic / Claude** (non-souverain, FR-12).
 
-UI : **`/`** (SPA). API : `/health` · `/api/status` · `/api/metrics` · `/api/auth/*` · `/api/config` · `/api/glpi/sync` · `/api/discovery/{category|entity|technician|group}` · `/api/scope` (`GET`/`PUT`) · `/api/technicians` (`PUT`) · `/api/groups` (`PUT`) · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/export/{decisions,llm-calls}.csv`. OpenAPI sur `/docs`.
+UI : **`/`** (SPA). API : `/health` (expose aussi la **version GLPI**) · `/api/status` · `/api/metrics` · `/api/auth/*` · `/api/config` · `/api/glpi/sync` · `/api/discovery/{category|entity|technician|group}` · `/api/scope` (`GET`/`PUT`) · `/api/modes` (`PUT` — mode d'exécution par entité) · `/api/technicians` (`PUT`) · `/api/groups` (`PUT`) · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/export/{decisions,llm-calls}.csv`. OpenAPI sur `/docs`.
 
 > **Souveraineté** : le défaut reste Mistral EU. **OpenAI et Anthropic (Claude) sont hors UE** — leur activation est un choix explicite de l'opérateur, à valider avec la DPO (cf. `docs/dpo.md`). **Ollama** tourne en local (aucune donnée ne sort).
+
+## Évolutions post-pilote (au-delà du plan initial)
+
+Le planning d'origine (`docs/planning/` : PRD, architecture, epics, addendum) décrit le pilote V1
+en **mode suggestion verrouillé** (FR-17). Depuis, le produit a évolué — ces écarts sont **assumés**
+et priment sur les specs historiques (qui restent comme référence de conception) :
+
+- **Modes d'exécution par entité** (remplace le « suggestion hardcodé » de FR-17) : `suggestion`
+  (défaut sûr) · `semi_auto` (applique si confiance ≥ 2ᵉ seuil strict) · `full_auto`. En semi/full-auto,
+  le moteur **mute le Ticket GLPI** (catégorie, **urgence + priorité**, assignation) **et poste une
+  réponse publique au demandeur** — après le garde-fou déterministe. Réglé dans la console (page
+  Périmètre, `PUT /api/modes`) avec bandeau d'avertissement. ⚠️ Lève l'invariant « rien n'est jamais
+  envoyé au demandeur » (vrai uniquement en mode suggestion).
+- **Masquage PII configurable** (FR-14) : email / téléphone / IBAN / mot de passe activables **motif
+  par motif** dans l'UI (page Moteur), tous ON par défaut, avec avertissement DPO si on en désactive un.
+- **Durcissement production** : conteneur **non-root** (utilisateur `app` + `gosu`, le volume `./data`
+  est ré-approprié au démarrage) · **rate-limiting du login** (en mémoire par IP, `429 + Retry-After`) ·
+  **scan de dépendances en CI** (`pip-audit` + `npm audit`).
+- **Version GLPI affichée** dans la topbar (lue via `getGlpiConfig`, exposée par `/health`).
+- **Tests frontend** (absents du plan initial) : **Vitest + Testing Library** (composants & pages) et
+  **E2E Playwright** (parcours login → dashboard / navigation, API mockée).
 
 ## Configuration : secrets poussés via l'API/UI (jamais `.env`)
 
@@ -49,7 +70,7 @@ curl -X POST http://localhost:8000/api/config -H 'Content-Type: application/json
 ```bash
 make install          # venv (uv) + deps Python
 make lint             # ruff
-make test             # pytest (87 tests : masquage, whitelist, GLPI mocké, idempotence, API…)
+make test             # pytest (145 tests : masquage, whitelist, GLPI mocké, modes, rate-limit, API…)
 make migrate          # alembic upgrade head
 make ui               # build de la SPA (npm install + build -> frontend/dist) — requiert Node 22
 make run              # uvicorn + scheduler ; UI sur http://localhost:8000
@@ -57,9 +78,14 @@ make run              # uvicorn + scheduler ; UI sur http://localhost:8000
 # Dev UI (hot reload, proxy /api -> :8000) :
 make ui-dev           # http://localhost:5173
 
-# Déploiement on-prem (build UI inclus dans l'image multi-stage) :
+# Tests frontend :
+make ui-lint          # Biome + typecheck
+make ui-test          # Vitest + Testing Library (42 tests)
+make ui-e2e           # Playwright E2E (1ère fois : npx playwright install --with-deps chromium)
+
+# Déploiement on-prem (build UI inclus dans l'image multi-stage ; conteneur non-root) :
 cp .env.example .env  # renseigner MASTER_KEY + ADMIN_PASSWORD
-docker compose up --build
+docker compose up -d --build   # NE PAS faire `down -v` : efface le volume ./data (config !)
 
 # Spike Epic 1 (homelab) :
 make spike-mock       # offline ; make spike → vraie mesure (LLM_API_KEY pour le CLI)
@@ -83,8 +109,8 @@ src/itsm_modern_ai/
 ├── services/      # referentials (scan GLPI + périmètre/fiches en base), runtime_config, whitelist_cache
 ├── scheduler/     # poller APScheduler (idempotent, FR-2)
 ├── persistence/   # SQLModel/SQLite, idempotence, journal/audit, tables
-└── api/           # FastAPI : app+lifespan, routes REST, spa.py (sert la SPA)
-frontend/          # SPA React 19 + Vite + Tailwind v4 (buildée -> frontend/dist)
+└── api/           # FastAPI : app+lifespan, routes REST, security (Argon2), ratelimit (login), spa.py
+frontend/          # SPA React 19 + Vite + Tailwind v4 (buildée -> frontend/dist) ; e2e/ (Playwright)
 migrations/        # Alembic
 scripts/spike_routing.py        # Spike Epic 1
 tests/             # unit + integration (respx) ; fixtures/tickets_fr.json
@@ -93,9 +119,12 @@ docs/              # install, dpo, spike, handoff, project-context, planning/ (s
 
 ## Stack
 
-Python 3.12+, FastAPI/uvicorn, SQLModel (SQLite, Postgres-ready) + Alembic, Pydantic v2 +
-pydantic-settings, APScheduler, cryptography, httpx. Tests : pytest + respx. Lint : ruff.
-Deps : uv. Docker + docker-compose (on-prem).
+**Backend** : Python 3.12+, FastAPI/uvicorn, SQLModel (SQLite, Postgres-ready) + Alembic, Pydantic v2 +
+pydantic-settings, APScheduler, cryptography (Fernet), **pwdlib/Argon2** (auth locale), httpx. Tests :
+pytest + respx. Lint : ruff. Deps : uv.
+**Frontend** : React 19 + Vite 6 + Tailwind v4, i18n FR/EN. Lint/format : Biome. Tests : **Vitest +
+Testing Library** (composants/pages) et **Playwright** (E2E).
+**Conteneur** : Docker multi-stage (build UI + moteur), **exécution non-root** (`gosu`), docker-compose (on-prem).
 
 ## Documentation
 

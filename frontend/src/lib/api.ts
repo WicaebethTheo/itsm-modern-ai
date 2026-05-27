@@ -58,7 +58,7 @@ export interface AuthStatus {
 
 export interface Health {
   status: "ok" | "degraded";
-  glpi: { configured: boolean; reachable: boolean };
+  glpi: { configured: boolean; reachable: boolean; version?: string | null };
   llm: { configured: boolean; reachable: boolean | null };
 }
 

@@ -25,7 +25,7 @@ def client(tmp_path):
 def test_health_ok_when_glpi_unconfigured(client):
     r = client.get("/health")
     assert r.status_code == 200
-    assert r.json()["glpi"] == {"configured": False, "reachable": False}
+    assert r.json()["glpi"] == {"configured": False, "reachable": False, "version": None}
 
 
 def test_status_reports_polling(client):

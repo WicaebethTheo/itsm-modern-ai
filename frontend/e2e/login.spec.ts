@@ -30,6 +30,8 @@ test("login → dashboard (API mockée)", async ({ page }) => {
 
   // Après login on est redirigé vers "/" ; le titre de la topbar = « Tableau de bord ».
   await expect(page.getByRole("heading", { name: "Tableau de bord" })).toBeVisible();
+  // La topbar affiche la version GLPI remontée par /health.
+  await expect(page.getByText("GLPI 10.0.18")).toBeVisible();
 });
 
 test("redirige vers /login si l'auth est requise et non connecté", async ({ page }) => {

@@ -78,7 +78,7 @@ export const demo: {
   },
   health: {
     status: "ok",
-    glpi: { configured: true, reachable: true },
+    glpi: { configured: true, reachable: true, version: "10.0.18" },
     llm: { configured: true, reachable: true },
   },
   status: {

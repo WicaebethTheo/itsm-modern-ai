@@ -165,3 +165,28 @@ async def test_get_tickets_unavailable_raises_typed_error():
 def test_connector_requires_configured_creds():
     with pytest.raises(ItsmUnavailableError):
         GlpiConnector(_creds(base_url="", user_token=""))._client()
+
+
+@respx.mock
+async def test_server_version_from_getglpiconfig():
+    _session_routes()
+    respx.get(f"{BASE}/getGlpiConfig").mock(
+        return_value=httpx.Response(200, json={"cfg_glpi": {"version": "10.0.18"}})
+    )
+    assert await (await _connector()).server_version() == "10.0.18"
+
+
+@respx.mock
+async def test_server_version_none_when_absent():
+    _session_routes()
+    respx.get(f"{BASE}/getGlpiConfig").mock(
+        return_value=httpx.Response(200, json={"cfg_glpi": {}})
+    )
+    assert await (await _connector()).server_version() is None
+
+
+@respx.mock
+async def test_server_version_none_on_error():
+    _session_routes()
+    respx.get(f"{BASE}/getGlpiConfig").mock(return_value=httpx.Response(403, text="forbidden"))
+    assert await (await _connector()).server_version() is None

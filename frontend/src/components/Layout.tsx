@@ -81,7 +81,9 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
           {!g?.configured
             ? t("GLPI non configuré", "GLPI not configured")
             : g.reachable
-              ? t("GLPI connecté", "GLPI connected")
+              ? g.version
+                ? `GLPI ${g.version}`
+                : t("GLPI connecté", "GLPI connected")
               : t("GLPI injoignable", "GLPI unreachable")}
         </span>
         <span

@@ -1,4 +1,4 @@
-.PHONY: install lint test fmt run migrate ui ui-dev ui-lint spike spike-mock glpi-diagnose
+.PHONY: install lint test fmt run migrate ui ui-dev ui-lint ui-test ui-e2e spike spike-mock glpi-diagnose
 
 install:
 	uv venv --python 3.13
@@ -32,6 +32,14 @@ ui-dev:
 # UI : lint (Biome) + typecheck
 ui-lint:
 	cd frontend && npm run lint && npm run typecheck
+
+# UI : tests unitaires/composants (Vitest + Testing Library)
+ui-test:
+	cd frontend && npm test
+
+# UI : E2E (Playwright, API mockée) — 1ère fois : npx playwright install --with-deps chromium
+ui-e2e:
+	cd frontend && npm run test:e2e
 
 # Spike Epic 1 — vrai LLM (nécessite LLM_API_KEY, défaut Mistral EU)
 spike:
