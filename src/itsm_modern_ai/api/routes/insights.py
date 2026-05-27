@@ -93,5 +93,11 @@ async def operational_metrics(request: Request) -> OperationalView:
 
     return OperationalView(
         available=True,
-        metrics=dashboard.compute(stats, window_days=window_days, now=now, new_age_hours=new_age_hours),
+        metrics=dashboard.compute(
+            stats,
+            window_days=window_days,
+            now=now,
+            new_age_hours=new_age_hours,
+            glpi_base_url=connector.base_url,
+        ),
     )

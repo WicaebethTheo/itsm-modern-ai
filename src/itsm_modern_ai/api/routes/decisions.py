@@ -35,6 +35,8 @@ class DecisionEntry(BaseModel):
     confidence: float | None
     glpi_link: str
     annotation: str
+    mode: str = ""  # mode d'exécution résolu (suggestion | semi_auto | full_auto)
+    applied: bool = False  # True si la Décision a muté les champs du Ticket GLPI
 
 
 class AnnotationUpdate(BaseModel):
@@ -71,6 +73,8 @@ def _to_entry(
         confidence=row.confidence,
         glpi_link=row.glpi_link,
         annotation=row.annotation,
+        mode=row.mode,
+        applied=row.applied,
     )
 
 

@@ -33,6 +33,7 @@ from ..persistence import journal
 from ..ports.itsm import ItsmPort
 from ..ports.llm import LlmPort, LlmResult
 from . import cost_cap, referentials
+from .links import ticket_web_link as _web_link  # lien front GLPI (factorisé dans links.py)
 
 logger = logging.getLogger("itsm.triage")
 
@@ -47,15 +48,6 @@ def rules_fully_handled(ticket: Ticket) -> bool:
     considéré NON complètement traité → passe au Moteur pour les champs manquants.
     """
     return ticket.category_id > 0 and ticket.assignee_present
-
-
-def _web_link(glpi_base_url: str, ticket_id: int) -> str:
-    base = glpi_base_url.rstrip("/")
-    for suffix in ("/apirest.php", "/api.php"):
-        if base.endswith(suffix):
-            base = base[: -len(suffix)]
-            break
-    return f"{base}/front/ticket.form.php?id={ticket_id}" if base else ""
 
 
 def render_followup(outcome: TriageOutcome, refs: Referentials, *, applied: bool = False) -> str:
