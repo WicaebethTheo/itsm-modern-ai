@@ -95,8 +95,14 @@ export function Sandbox() {
                 />
                 <Row label={t("Priorité", "Priority")} value={result.priority ?? "—"} />
                 <Row
-                  label={t("Technicien", "Technician")}
-                  value={result.technician_id != null ? `T#${result.technician_id}` : "—"}
+                  label={t("Routage — technicien / groupe", "Routing — technician / group")}
+                  value={
+                    result.technician_id != null
+                      ? `T#${result.technician_id}`
+                      : result.group_id != null
+                        ? `G#${result.group_id}`
+                        : "—"
+                  }
                   mono
                 />
                 <Row

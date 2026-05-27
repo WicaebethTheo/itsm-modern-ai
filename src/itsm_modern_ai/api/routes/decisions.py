@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from ...persistence import journal
+from ...persistence.tables import DecisionLog
+from ...services import referentials
 from ..deps import get_session
 from ..security import require_auth
 
@@ -23,9 +25,13 @@ class DecisionEntry(BaseModel):
     accepted: bool
     reason: str
     category: int | None
+    category_name: str | None = None  # libellé GLPI résolu (sinon None → l'UI affiche l'id)
     priority: int | None
+    urgency: int | None = None  # urgence appliquée = min(priority, 5) ; None si pas de priorité
     technician_id: int | None
+    technician_name: str | None = None  # nom GLPI du technicien routé (résolu)
     group_id: int | None
+    group_name: str | None = None  # nom GLPI du groupe routé (résolu)
     confidence: float | None
     glpi_link: str
     annotation: str
@@ -35,9 +41,45 @@ class AnnotationUpdate(BaseModel):
     annotation: str
 
 
+def _name_map(session: Session, kind: str) -> dict[int, str]:
+    return {r.ext_id: r.name for r in referentials.list_kind(session, kind)}
+
+
+def _to_entry(
+    row: DecisionLog,
+    cats: dict[int, str],
+    techs: dict[int, str],
+    groups: dict[int, str],
+) -> DecisionEntry:
+    """Enrichit une décision brute : noms résolus (cat/tech/groupe) + urgence dérivée."""
+    return DecisionEntry(
+        id=row.id,
+        ticket_id=row.ticket_id,
+        ts=row.ts,
+        subject=row.subject,
+        accepted=row.accepted,
+        reason=row.reason,
+        category=row.category,
+        category_name=cats.get(row.category) if row.category is not None else None,
+        priority=row.priority,
+        # GLPI : urgence ∈ 1..5 (MAJEURE 6 → 5), comme à l'application (cf. mapper).
+        urgency=min(row.priority, 5) if row.priority is not None else None,
+        technician_id=row.technician_id,
+        technician_name=techs.get(row.technician_id) if row.technician_id is not None else None,
+        group_id=row.group_id,
+        group_name=groups.get(row.group_id) if row.group_id is not None else None,
+        confidence=row.confidence,
+        glpi_link=row.glpi_link,
+        annotation=row.annotation,
+    )
+
+
 @router.get("/decisions", response_model=list[DecisionEntry])
 def list_decisions(limit: int = 500, session: Session = Depends(get_session)) -> list[DecisionEntry]:
-    return [DecisionEntry.model_validate(d, from_attributes=True) for d in journal.list_decisions(session, limit=limit)]
+    cats = _name_map(session, referentials.KIND_CATEGORY)
+    techs = _name_map(session, referentials.KIND_TECHNICIAN)
+    groups = _name_map(session, referentials.KIND_GROUP)
+    return [_to_entry(d, cats, techs, groups) for d in journal.list_decisions(session, limit=limit)]
 
 
 @router.patch("/decisions/{decision_id}/annotation", response_model=DecisionEntry)
@@ -47,4 +89,7 @@ def annotate(
     row = journal.set_annotation(session, decision_id, body.annotation)
     if row is None:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "Décision introuvable."})
-    return DecisionEntry.model_validate(row, from_attributes=True)
+    cats = _name_map(session, referentials.KIND_CATEGORY)
+    techs = _name_map(session, referentials.KIND_TECHNICIAN)
+    groups = _name_map(session, referentials.KIND_GROUP)
+    return _to_entry(row, cats, techs, groups)

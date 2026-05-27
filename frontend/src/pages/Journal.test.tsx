@@ -33,7 +33,7 @@ describe("Journal des décisions", () => {
     vi.mocked(Api.decisions).mockResolvedValue([decision()]);
     render(<Journal />);
     expect(await screen.findByText("#48217")).toBeInTheDocument();
-    expect(screen.getByText("déposée")).toBeInTheDocument();
+    expect(screen.getByText("traité")).toBeInTheDocument();
     expect(screen.getByText("94%")).toBeInTheDocument();
   });
 

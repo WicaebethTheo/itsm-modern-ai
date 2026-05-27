@@ -25,6 +25,7 @@ class SandboxResponse(BaseModel):
     category: int | None = None
     priority: int | None = None
     technician_id: int | None = None
+    group_id: int | None = None  # routage de repli vers un groupe (si pas de technicien)
     confidence: float | None = None
     draft: str | None = None
 
@@ -49,6 +50,7 @@ async def sandbox(body: SandboxRequest, request: Request) -> SandboxResponse:
         category=d.category if d else None,
         priority=d.priority if d else None,
         technician_id=d.technician_id if d else None,
+        group_id=d.group_id if d else None,
         confidence=d.confidence if d else None,
         draft=d.draft if d else None,
     )

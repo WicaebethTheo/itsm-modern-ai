@@ -7,7 +7,7 @@ import { PanelHead } from "@/components/ui/panel";
 import { Textarea } from "@/components/ui/textarea";
 import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
-import { Api, type ConfigUpdate, asBool } from "@/lib/api";
+import { Api, type ConfigUpdate, type ExecutionMode, asBool } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useCallback, useEffect, useState } from "react";
 
@@ -21,6 +21,8 @@ export function EngineSettings() {
   const [sysPrompt, setSysPrompt] = useState("");
   // Masquage PII (FR-14) — défaut ON ; tant que la config n'est pas chargée, on suppose ON.
   const [mask, setMask] = useState({ email: true, phone: true, iban: true, secret: true });
+  // Mode d'exécution par défaut global (FR-17) — appliqué aux entités sans mode explicite.
+  const [modeDefault, setModeDefault] = useState<ExecutionMode>("suggestion");
   const [msg, setMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const c = cfg.data;
 
@@ -34,6 +36,7 @@ export function EngineSettings() {
         iban: asBool(c.mask_iban),
         secret: asBool(c.mask_secret),
       });
+      setModeDefault((c.execution_mode_default as ExecutionMode) || "suggestion");
     }
   }, [c]);
 
@@ -53,6 +56,7 @@ export function EngineSettings() {
         mask_phone: mask.phone,
         mask_iban: mask.iban,
         mask_secret: mask.secret,
+        execution_mode_default: modeDefault,
       });
       setForm({});
       cfg.reload();
@@ -113,6 +117,62 @@ export function EngineSettings() {
               onChange={(e) => set("llm_retries", num(e.target.value))}
             />
           </Field>
+        </CardContent>
+      </Card>
+
+      {/* Mode d'exécution par défaut (FR-17) */}
+      <Card>
+        <PanelHead
+          title={t("Mode d'exécution par défaut", "Default execution mode")}
+          subtitle={t(
+            "S'applique aux entités sans mode explicite. Réglable par entité dans « Règles métier ».",
+            "Applies to entities without an explicit mode. Tunable per entity in “Business rules”.",
+          )}
+        />
+        <CardContent className="flex flex-col gap-4 p-5">
+          <Field
+            label={t("Mode par défaut", "Default mode")}
+            hint={t(
+              "suggestion : aucune écriture · semi/full-auto : applique la Décision et répond au demandeur.",
+              "suggestion: no write · semi/full-auto: applies the Decision and replies to the requester.",
+            )}
+          >
+            <select
+              value={modeDefault}
+              onChange={(e) => setModeDefault(e.target.value as ExecutionMode)}
+              className="h-9 rounded-md border border-input bg-card px-3 text-sm"
+            >
+              <option value="suggestion">{t("Suggestion (sûr)", "Suggestion (safe)")}</option>
+              <option value="semi_auto">
+                {t("Semi-auto (≥ seuil)", "Semi-auto (≥ threshold)")}
+              </option>
+              <option value="full_auto">Full-auto</option>
+            </select>
+          </Field>
+          <Field
+            label={t("Seuil du mode semi-auto (0 – 1)", "Semi-auto threshold (0 – 1)")}
+            hint={t(
+              `Actuel : ${c?.auto_min_confidence_default ?? "—"}. En semi-auto, la Décision n'est appliquée qu'au-dessus de ce seuil.`,
+              `Current: ${c?.auto_min_confidence_default ?? "—"}. In semi-auto, the Decision is applied only above this threshold.`,
+            )}
+          >
+            <Input
+              type="number"
+              step="0.05"
+              min="0"
+              max="1"
+              placeholder={c?.auto_min_confidence_default ?? "0.9"}
+              onChange={(e) => set("auto_min_confidence_default", num(e.target.value))}
+            />
+          </Field>
+          {modeDefault === "full_auto" && (
+            <Banner kind="warning">
+              {t(
+                "⚠ full_auto par défaut : toute entité sans mode explicite modifiera les tickets GLPI et répondra au demandeur.",
+                "⚠ full_auto by default: any entity without an explicit mode will modify GLPI tickets and reply to the requester.",
+              )}
+            </Banner>
+          )}
         </CardContent>
       </Card>
 

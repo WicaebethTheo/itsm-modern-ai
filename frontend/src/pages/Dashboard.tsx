@@ -58,13 +58,13 @@ export function Dashboard() {
       {/* 5 cartes KPI */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard
-          label={t("Décisions", "Decisions")}
+          label={t("Tickets analysés", "Analyzed tickets")}
           value={m ? m.total.toLocaleString("fr-FR") : "—"}
         >
           <Sparkline values={totals} />
         </KpiCard>
         <KpiCard
-          label={t("Déposées", "Deposited")}
+          label={t("Traités", "Handled")}
           value={m ? m.accepted.toLocaleString("fr-FR") : "—"}
           tag={m ? `${pct(m.accepted)}%` : undefined}
           tagClass="text-success"
@@ -103,13 +103,13 @@ export function Dashboard() {
               {t("Tendance sur 14 jours", "14-day trend")}
             </div>
             <div className="text-[11px] text-muted-foreground">
-              {t("Décisions · déposées vs à trier", "Decisions · deposited vs to triage")}
+              {t("Tickets · traités vs à trier", "Tickets · handled vs to triage")}
             </div>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-sm" style={{ background: "#6366f1" }} />
-              {t("Déposées", "Deposited")}
+              {t("Traités", "Handled")}
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-sm" style={{ background: "#3d3f8a" }} />
@@ -133,11 +133,16 @@ export function Dashboard() {
         <div className="text-[12px]">
           <div
             className="grid gap-3 border-b border-border px-4 py-2 text-[11px] uppercase text-muted-foreground"
-            style={{ gridTemplateColumns: "80px 1fr 130px 110px 70px", letterSpacing: "0.08em" }}
+            style={{
+              gridTemplateColumns: "72px 1fr 150px 130px 48px 100px 60px",
+              letterSpacing: "0.08em",
+            }}
           >
             <span>{t("Ticket", "Ticket")}</span>
             <span>{t("Sujet", "Subject")}</span>
+            <span>{t("Catégorie", "Category")}</span>
             <span>{t("Routage", "Routing")}</span>
+            <span>{t("Urg.", "Urg.")}</span>
             <span>{t("Statut", "Status")}</span>
             <span>{t("Conf.", "Conf.")}</span>
           </div>
@@ -145,24 +150,52 @@ export function Dashboard() {
             <div
               key={d.id}
               className={`grid items-center gap-3 px-4 py-2 ${i < arr.length - 1 ? "border-b border-border" : ""}`}
-              style={{ gridTemplateColumns: "80px 1fr 130px 110px 70px" }}
+              style={{ gridTemplateColumns: "72px 1fr 150px 130px 48px 100px 60px" }}
             >
-              <span className="font-mono text-muted-foreground">#{d.ticket_id}</span>
-              <span className="truncate" title={d.subject}>
-                {d.subject || d.annotation || "—"}
+              <span className="font-mono">
+                {d.glpi_link ? (
+                  <a
+                    className="text-primary hover:underline"
+                    href={d.glpi_link}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    #{d.ticket_id}
+                  </a>
+                ) : (
+                  <span className="text-muted-foreground">#{d.ticket_id}</span>
+                )}
               </span>
-              <span>
+              <span className="truncate" title={d.subject}>
+                {d.subject && d.glpi_link ? (
+                  <a
+                    className="text-primary hover:underline"
+                    href={d.glpi_link}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {d.subject}
+                  </a>
+                ) : (
+                  d.subject || d.annotation || "—"
+                )}
+              </span>
+              <span className="truncate text-muted-foreground" title={d.category_name ?? undefined}>
+                {d.category_name ?? (d.category != null ? `#${d.category}` : "—")}
+              </span>
+              <span className="truncate">
                 {d.technician_id != null ? (
-                  <Tag tone="indigo">T#{d.technician_id}</Tag>
+                  <Tag tone="indigo">{d.technician_name ?? `T#${d.technician_id}`}</Tag>
                 ) : d.group_id != null ? (
-                  <Tag tone="indigo">G#{d.group_id}</Tag>
+                  <Tag tone="indigo">{d.group_name ?? `G#${d.group_id}`}</Tag>
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 )}
               </span>
+              <span className="font-mono text-muted-foreground">{d.urgency ?? "—"}</span>
               <span>
                 {d.accepted ? (
-                  <Tag tone="green">{t("déposée", "deposited")}</Tag>
+                  <Tag tone="green">{t("traité", "handled")}</Tag>
                 ) : (
                   <Tag tone="amber">{t("à trier", "to triage")}</Tag>
                 )}

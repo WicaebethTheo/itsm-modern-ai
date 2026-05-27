@@ -49,6 +49,24 @@ def test_journal_open_when_no_admin_password(open_client):
     assert r2.json()["annotation"] == "juste"
 
 
+def test_decisions_resolve_names_and_urgency(open_client):
+    """Le journal enrichit chaque décision : noms (cat/tech) résolus + urgence dérivée."""
+    from itsm_modern_ai.domain.models import Referentials
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.services import referentials
+
+    _seed_decision()  # category=1, priority=3, technician_id=11
+    with db.session_scope() as s:
+        referentials.sync(
+            s, Referentials(categories={1: "Compte"}, technicians={11: "Marc Lefèvre"})
+        )
+    entry = open_client.get("/api/decisions").json()[0]
+    assert entry["technician_name"] == "Marc Lefèvre"
+    assert entry["category_name"] == "Compte"
+    assert entry["urgency"] == 3  # min(priority=3, 5)
+    assert entry["group_name"] is None
+
+
 def test_export_csv_open(open_client):
     _seed_decision()
     r = open_client.get("/api/export/decisions.csv")

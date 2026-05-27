@@ -28,6 +28,22 @@ function series14() {
   return out;
 }
 
+// Noms de démo (le vrai backend les résout depuis le cache des référentiels GLPI).
+// Déclarés AVANT `demo` : l'objet appelle d() à l'initialisation du module.
+const DEMO_TECH: Record<number, string> = {
+  11: "Sylvain Martin",
+  12: "Nadia Bouaziz",
+  13: "Marc Lefèvre",
+};
+const DEMO_CAT: Record<number, string> = {
+  1: "Compte / Authentification",
+  2: "Application RH / Paie / ERP",
+  3: "Poste de travail / Matériel",
+  4: "Messagerie / Collaboratif",
+  5: "Réseau / Sécurité",
+};
+const DEMO_GROUP: Record<number, string> = { 5: "Support N1", 6: "Sys / Sécu" };
+
 export const demo: {
   authStatus: AuthStatus;
   health: Health;
@@ -169,6 +185,8 @@ export const demo: {
     routing_rules: "",
     system_prompt: "",
     system_prompt_default: "(prompt par défaut intégré)",
+    execution_mode_default: "suggestion",
+    auto_min_confidence_default: "0.9",
     polling_enabled: "true",
     polling_interval_seconds: "60",
     dashboard_window_days: "14",
@@ -240,9 +258,13 @@ function d(
     accepted,
     reason,
     category,
+    category_name: category != null ? (DEMO_CAT[category] ?? null) : null,
     priority,
+    urgency: priority != null ? Math.min(priority, 5) : null,
     technician_id,
+    technician_name: technician_id != null ? (DEMO_TECH[technician_id] ?? null) : null,
     group_id,
+    group_name: group_id != null ? (DEMO_GROUP[group_id] ?? null) : null,
     confidence,
     glpi_link: `https://glpi.demo.local/front/ticket.form.php?id=${id}`,
     annotation: "", // annotation manuelle (vide en démo)
