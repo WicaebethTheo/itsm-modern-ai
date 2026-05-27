@@ -88,6 +88,35 @@ def test_auth_status_reports_configured(secured_client):
     assert body["auth_configured"] is True and body["authenticated"] is False
 
 
+# ── Rate-limiting du login (FR-24 durci) ─────────────────────────────────────
+def test_login_rate_limited_after_repeated_failures(tmp_path):
+    # Seuil bas pour déclencher vite ; fenêtre/blocage longs pour rester bloqué.
+    settings = _settings(tmp_path, admin_password="s3cret", login_max_attempts=3)
+    with TestClient(create_app(settings)) as c:
+        # 3 échecs → le 3e franchit le seuil (toujours 401, mais arme le blocage).
+        for _ in range(3):
+            assert c.post("/api/auth/login", json={"password": "nope"}).status_code == 401
+        # 4e tentative : bloquée même avec le bon mot de passe.
+        blocked = c.post("/api/auth/login", json={"password": "s3cret"})
+        assert blocked.status_code == 429
+        assert "Retry-After" in blocked.headers
+        assert blocked.json()["detail"]["code"] == "too_many_attempts"
+
+
+def test_login_success_resets_counter(tmp_path):
+    settings = _settings(tmp_path, admin_password="s3cret", login_max_attempts=3)
+    with TestClient(create_app(settings)) as c:
+        # 2 échecs (sous le seuil), puis un succès qui réinitialise le compteur.
+        c.post("/api/auth/login", json={"password": "nope"})
+        c.post("/api/auth/login", json={"password": "nope"})
+        assert c.post("/api/auth/login", json={"password": "s3cret"}).status_code == 200
+        c.post("/api/auth/logout")
+        # Le compteur est reparti de zéro : 2 nouveaux échecs ne bloquent pas.
+        c.post("/api/auth/login", json={"password": "nope"})
+        c.post("/api/auth/login", json={"password": "nope"})
+        assert c.post("/api/auth/login", json={"password": "s3cret"}).status_code == 200
+
+
 def test_status_counters_present(open_client):
     body = open_client.get("/api/status").json()
     assert "llm_calls_total" in body and "cost_eur_last_24h" in body

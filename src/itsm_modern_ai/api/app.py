@@ -16,6 +16,7 @@ from ..config.settings import Settings, get_settings
 from ..persistence import db
 from ..scheduler.poller import TriagePoller
 from ..services.whitelist_cache import WhitelistCache
+from .ratelimit import LoginRateLimiter
 from .runtime import build_connector, build_triage_service, make_secrets_box
 from .security import require_auth
 
@@ -124,6 +125,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+
+    # Limiteur anti brute-force du login (en mémoire, par IP — FR-24 durci).
+    app.state.login_limiter = LoginRateLimiter(
+        max_attempts=settings.login_max_attempts,
+        window_seconds=settings.login_window_seconds,
+        block_seconds=settings.login_block_seconds,
+    )
 
     # Session signée pour l'auth locale (FR-24). Secret = master key si fournie,
     # sinon éphémère (sessions réinitialisées au redémarrage — acceptable en pilote).
