@@ -115,55 +115,58 @@ export function Layout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      {/* Sidebar fixe (224px), bordure droite fine. */}
-      <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar p-3 text-[13px]">
-        <div className="mb-2 flex items-center gap-2 px-2 py-2">
-          <Logo className="h-5 w-5" />
-          <span className="font-semibold tracking-tight">ITSM Modern AI</span>
-        </div>
-
-        {NAV.map((section) => (
-          <div key={section.en} className="flex flex-col gap-0.5">
-            <p
-              className="px-2 pt-4 pb-1 text-[10.5px] font-medium uppercase text-muted-foreground/70"
-              style={{ letterSpacing: "0.12em" }}
-            >
-              {t(section.fr, section.en)}
-            </p>
-            {section.items.map((it) => (
-              <NavLink
-                key={it.to}
-                to={it.to}
-                end={it.end}
-                className={({ isActive }) =>
-                  cn(
-                    "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 transition-colors",
-                    isActive
-                      ? "bg-primary/15 text-accent-indigo"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                  )
-                }
-              >
-                {it.icon && <SidebarIcon name={it.icon} />}
-                {t(it.fr, it.en)}
-              </NavLink>
-            ))}
+    // Fond « backdrop » + padding : la console flotte dans un châssis centré.
+    <div className="app-backdrop flex h-screen overflow-hidden p-3 sm:p-5">
+      <div className="app-shell flex h-full w-full overflow-hidden rounded-xl border border-border bg-background text-foreground">
+        {/* Sidebar fixe (224px), bordure droite fine. */}
+        <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar p-3 text-[13px]">
+          <div className="mb-2 flex items-center gap-2 px-2 py-2">
+            <Logo className="h-5 w-5" />
+            <span className="font-semibold tracking-tight">ITSM Modern AI</span>
           </div>
-        ))}
 
-        <div className="mt-auto flex items-center gap-2 px-2 pt-3 text-[11px] text-muted-foreground">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
-          {t(`Moteur en marche · v${APP_VERSION}`, `Engine running · v${APP_VERSION}`)}
+          {NAV.map((section) => (
+            <div key={section.en} className="flex flex-col gap-0.5">
+              <p
+                className="px-2 pt-4 pb-1 text-[10.5px] font-medium uppercase text-muted-foreground/70"
+                style={{ letterSpacing: "0.12em" }}
+              >
+                {t(section.fr, section.en)}
+              </p>
+              {section.items.map((it) => (
+                <NavLink
+                  key={it.to}
+                  to={it.to}
+                  end={it.end}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 transition-colors",
+                      isActive
+                        ? "bg-primary/15 text-accent-indigo"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                    )
+                  }
+                >
+                  {it.icon && <SidebarIcon name={it.icon} />}
+                  {t(it.fr, it.en)}
+                </NavLink>
+              ))}
+            </div>
+          ))}
+
+          <div className="mt-auto flex items-center gap-2 px-2 pt-3 text-[11px] text-muted-foreground">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
+            {t(`Moteur en marche · v${APP_VERSION}`, `Engine running · v${APP_VERSION}`)}
+          </div>
+        </aside>
+
+        {/* Zone principale : topbar + contenu défilant. */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Topbar onLogout={logout} />
+          <main className="flex-1 overflow-y-auto p-5 sm:p-6">
+            <Outlet />
+          </main>
         </div>
-      </aside>
-
-      {/* Zone principale : topbar + contenu défilant. */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar onLogout={logout} />
-        <main className="flex-1 overflow-y-auto p-5 sm:p-6">
-          <Outlet />
-        </main>
       </div>
     </div>
   );

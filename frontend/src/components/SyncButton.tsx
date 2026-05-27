@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { useT } from "@/lib/i18n";
 import { Api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 
@@ -29,7 +29,8 @@ export function SyncButton({ onSynced }: { onSynced: () => void }) {
     <div className="flex items-center gap-3">
       {msg && <span className="text-xs text-muted-foreground">{msg}</span>}
       <Button variant="outline" onClick={run} disabled={busy}>
-        <RefreshCw className={`h-4 w-4${busy ? " animate-spin" : ""}`} /> {t("Scanner GLPI", "Scan GLPI")}
+        <RefreshCw className={`h-4 w-4${busy ? " animate-spin" : ""}`} />{" "}
+        {t("Scanner GLPI", "Scan GLPI")}
       </Button>
     </div>
   );

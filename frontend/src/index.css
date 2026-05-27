@@ -124,6 +124,26 @@
   }
 }
 
+/* === Châssis « embed » : la console flotte dans un conteneur centré === */
+
+/* Fond derrière le shell : teinte légèrement distincte + halo indigo discret. */
+.app-backdrop {
+  background: radial-gradient(1100px 520px at 50% -8%, hsl(var(--primary) / 0.06), transparent 60%),
+    hsl(var(--muted));
+}
+.dark .app-backdrop {
+  background: radial-gradient(1100px 520px at 50% -8%, hsl(var(--primary) / 0.1), transparent 62%),
+    #060610;
+}
+
+/* Le shell : ombre portée qui le détache du fond (le contour vient de border-border). */
+.app-shell {
+  box-shadow: 0 10px 40px -14px rgb(0 0 0 / 0.22), 0 2px 10px -6px rgb(0 0 0 / 0.14);
+}
+.dark .app-shell {
+  box-shadow: 0 24px 70px -24px rgb(0 0 0 / 0.75), 0 0 0 1px hsl(var(--border));
+}
+
 /* === Atomes visuels portés de la maquette « operator preview » === */
 
 /* Logo bicolore (montagne « M »). */
