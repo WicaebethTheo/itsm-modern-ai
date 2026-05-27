@@ -21,15 +21,34 @@ class AuthStatus(BaseModel):
     auth_configured: bool
 
 
+def _client_key(request: Request) -> str:
+    """Clé de rate-limit = IP du client (pilote réseau interne ; pas de XFF de confiance)."""
+    return request.client.host if request.client else "unknown"
+
+
 @router.post("/login", response_model=AuthStatus)
 def login(
     body: LoginRequest, request: Request, cfg: RuntimeConfigService = Depends(get_config_service)
 ) -> AuthStatus:
+    limiter = request.app.state.login_limiter
+    key = _client_key(request)
+
+    # Anti brute-force : refuser tôt si la clé est bloquée (FR-24 durci).
+    retry_after = limiter.retry_after(key)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": "too_many_attempts", "message": "Trop de tentatives. Réessayez plus tard."},
+            headers={"Retry-After": str(int(retry_after) + 1)},
+        )
+
     if not security.verify_login(cfg, body.password):
+        limiter.record_failure(key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "bad_credentials", "message": "Mot de passe incorrect."},
         )
+    limiter.reset(key)  # succès : on efface le compteur d'échecs de cette IP
     request.session["authenticated"] = True
     return AuthStatus(authenticated=True, auth_configured=True)
 

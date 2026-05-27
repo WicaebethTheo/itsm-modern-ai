@@ -33,5 +33,16 @@ RUN chmod +x ./docker/entrypoint.sh
 # UI buildée (servie en statique par FastAPI à /).
 COPY --from=ui /ui/dist ./frontend/dist
 
+# Utilisateur non-root (durcissement prod). `gosu` permet à l'entrypoint, démarré
+# en root, de fixer l'ownership du volume ./data (root au départ) puis de redescendre
+# en `app` pour exécuter le moteur. Tout /app est donné à `app` (venv inclus).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r app --gid=10001 \
+    && useradd -r -g app --uid=10001 --home-dir=/app --shell=/usr/sbin/nologin app \
+    && mkdir -p /app/data \
+    && chown -R app:app /app
+
 EXPOSE 8000
 ENTRYPOINT ["./docker/entrypoint.sh"]

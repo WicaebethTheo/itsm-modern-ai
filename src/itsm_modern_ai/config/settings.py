@@ -100,6 +100,12 @@ class Settings(BaseSettings):
     # passe n'est configuré → endpoints d'admin OUVERTS (pilote réseau interne) + warning.
     admin_password: str = ""
 
+    # Rate-limiting du login (anti brute-force). Limiteur EN MÉMOIRE par IP — adapté
+    # au mono-process pilote (pas de HA / pas de store partagé). 0 = désactivé.
+    login_max_attempts: int = 5  # échecs tolérés dans la fenêtre avant blocage
+    login_window_seconds: int = 300  # fenêtre glissante d'observation des échecs
+    login_block_seconds: int = 300  # durée du blocage une fois le seuil franchi
+
 
 def get_settings() -> Settings:
     return Settings()
