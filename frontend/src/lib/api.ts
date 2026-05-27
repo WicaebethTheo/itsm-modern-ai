@@ -115,6 +115,10 @@ export interface ConfigView {
   polling_interval_seconds: string | null;
   dashboard_window_days: string | null;
   anomaly_new_age_hours: string | null;
+  mask_email: string | null;
+  mask_phone: string | null;
+  mask_iban: string | null;
+  mask_secret: string | null;
   glpi_verify_tls: string | null;
   glpi_followup_legacy_9x: string | null;
   glpi_user_token_set: boolean;
@@ -148,6 +152,10 @@ export interface ConfigUpdate {
   polling_interval_seconds?: number;
   dashboard_window_days?: number;
   anomaly_new_age_hours?: number;
+  mask_email?: boolean;
+  mask_phone?: boolean;
+  mask_iban?: boolean;
+  mask_secret?: boolean;
   glpi_user_token?: string;
   glpi_app_token?: string;
   llm_api_key?: string;

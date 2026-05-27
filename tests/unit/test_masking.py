@@ -15,6 +15,22 @@ def test_masks_email():
     assert r.counts.get("email") == 1
 
 
+def test_pattern_can_be_disabled_selectively():
+    text = "IBAN FR7630006000011234567890189 et jean@exemple.fr"
+    # IBAN désactivé → reste en clair ; email toujours masqué (indépendance des motifs).
+    r = masking.mask(text, iban=False)
+    assert "FR7630006000011234567890189" in r.text  # non masqué (toggle off)
+    assert "jean@exemple.fr" not in r.text  # masqué (toggle on par défaut)
+    assert masking.EMAIL_PLACEHOLDER in r.text
+
+
+def test_all_patterns_off_leaves_text_intact():
+    text = "IBAN FR7630006000011234567890189, mdp: Secret123, 06 12 34 56 78, a@b.fr"
+    r = masking.mask(text, email=False, phone=False, iban=False, secret=False)
+    assert r.text == text  # aucun masquage
+    assert r.counts == {}
+
+
 def test_masks_french_phone():
     r = masking.mask("mon numéro est 06 12 34 56 78")
     assert "06 12 34 56 78" not in r.text
