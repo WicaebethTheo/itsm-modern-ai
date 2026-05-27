@@ -129,6 +129,18 @@ export function Journal() {
                 ) : (
                   <Tag tone="amber">{d.reason}</Tag>
                 )}
+                {d.mode && (
+                  <div className="mt-1 text-[10.5px] text-muted-foreground">
+                    {d.mode === "full_auto"
+                      ? "full-auto"
+                      : d.mode === "semi_auto"
+                        ? "semi-auto"
+                        : t("suggestion", "suggestion")}
+                    {d.applied
+                      ? ` · ${t("appliqué", "applied")}`
+                      : ` · ${t("proposé", "proposed")}`}
+                  </div>
+                )}
               </td>
               <td className="px-4 py-2">
                 <div className="font-medium">

@@ -190,6 +190,8 @@ export interface DecisionEntry {
   confidence: number | null;
   glpi_link: string;
   annotation: string;
+  mode?: string; // mode d'exécution résolu (suggestion | semi_auto | full_auto)
+  applied?: boolean; // la Décision a-t-elle muté les champs du Ticket GLPI
 }
 
 export type ExecutionMode = "suggestion" | "semi_auto" | "full_auto";
@@ -232,6 +234,7 @@ export interface Anomaly {
   ticket_id: number;
   kind: string;
   detail: string;
+  glpi_link?: string | null; // lien front GLPI vers le ticket (si URL configurée)
 }
 
 export interface OperationalMetrics {

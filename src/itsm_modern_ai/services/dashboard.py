@@ -16,6 +16,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from ..domain.models import TicketStat
+from .links import ticket_web_link
 
 STATUS_NEW = 1
 
@@ -24,6 +25,7 @@ class Anomaly(BaseModel):
     ticket_id: int
     kind: str  # "new_stale" | "sla_breached"
     detail: str
+    glpi_link: str = ""  # lien front GLPI vers le ticket (si l'URL est configurée)
 
 
 class OperationalMetrics(BaseModel):
@@ -43,6 +45,7 @@ def compute(
     window_days: int,
     now: datetime,
     new_age_hours: int = 24,
+    glpi_base_url: str = "",
 ) -> OperationalMetrics:
     # Temps de 1ʳᵉ réponse : médiane des délais de prise en compte connus (> 0).
     responses = [s.first_response_seconds for s in stats if s.first_response_seconds]
@@ -63,11 +66,21 @@ def compute(
             age_h = (now - s.created).total_seconds() / 3600
             if age_h >= new_age_hours:
                 anomalies.append(
-                    Anomaly(ticket_id=s.id, kind="new_stale", detail=f"« New » depuis {int(age_h)} h")
+                    Anomaly(
+                        ticket_id=s.id,
+                        kind="new_stale",
+                        detail=f"« New » depuis {int(age_h)} h",
+                        glpi_link=ticket_web_link(glpi_base_url, s.id),
+                    )
                 )
         if s.time_to_resolve is not None and not s.is_closed and s.time_to_resolve < now:
             anomalies.append(
-                Anomaly(ticket_id=s.id, kind="sla_breached", detail="SLA TTR dépassé, non résolu")
+                Anomaly(
+                    ticket_id=s.id,
+                    kind="sla_breached",
+                    detail="SLA TTR dépassé, non résolu",
+                    glpi_link=ticket_web_link(glpi_base_url, s.id),
+                )
             )
 
     return OperationalMetrics(

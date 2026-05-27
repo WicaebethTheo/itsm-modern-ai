@@ -241,50 +241,85 @@ export function Dashboard() {
             />
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-px bg-border md:grid-cols-4">
-            {[
-              {
-                label: t("Temps 1ʳᵉ réponse", "First response time"),
-                value:
-                  op?.first_response_median_minutes != null
-                    ? `${op.first_response_median_minutes} min`
-                    : "—",
-                hint:
-                  op?.first_response_median_minutes != null
-                    ? t("médian sur la fenêtre", "median in window")
-                    : t("aucune prise en compte horodatée", "no timestamped pickup"),
-              },
-              {
-                label: t("Respect SLA", "SLA compliance"),
-                value:
-                  op?.sla_compliance_rate != null
-                    ? `${Math.round(op.sla_compliance_rate * 100)}%`
-                    : "—",
-                hint:
-                  op && op.sla_evaluated > 0
-                    ? `${op.sla_evaluated} ${t("ticket(s) avec SLA", "ticket(s) with SLA")}`
-                    : t("aucune échéance SLA dans GLPI", "no SLA deadline in GLPI"),
-              },
-              {
-                label: t("Réaffectation", "Reassignment"),
-                value: "n/d",
-                hint: t("historique GLPI requis (Log)", "GLPI history required (Log)"),
-              },
-              {
-                label: t("Anomalies", "Anomalies"),
-                value: op ? String(op.anomalies.length) : "—",
-                hint: op ? t("tickets en alerte sur la fenêtre", "flagged tickets in window") : "",
-              },
-            ].map((s) => (
-              <div key={s.label} className="bg-card p-4">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                  {s.label}
+          <>
+            <div className="grid grid-cols-2 gap-px bg-border md:grid-cols-4">
+              {[
+                {
+                  label: t("Temps 1ʳᵉ réponse", "First response time"),
+                  value:
+                    op?.first_response_median_minutes != null
+                      ? `${op.first_response_median_minutes} min`
+                      : "—",
+                  hint:
+                    op?.first_response_median_minutes != null
+                      ? t("médian sur la fenêtre", "median in window")
+                      : t("aucune prise en compte horodatée", "no timestamped pickup"),
+                },
+                {
+                  label: t("Respect SLA", "SLA compliance"),
+                  value:
+                    op?.sla_compliance_rate != null
+                      ? `${Math.round(op.sla_compliance_rate * 100)}%`
+                      : "—",
+                  hint:
+                    op && op.sla_evaluated > 0
+                      ? `${op.sla_evaluated} ${t("ticket(s) avec SLA", "ticket(s) with SLA")}`
+                      : t("aucune échéance SLA dans GLPI", "no SLA deadline in GLPI"),
+                },
+                {
+                  label: t("Réaffectation", "Reassignment"),
+                  value: "n/d",
+                  hint: t("historique GLPI requis (Log)", "GLPI history required (Log)"),
+                },
+                {
+                  label: t("Anomalies", "Anomalies"),
+                  value: op ? String(op.anomalies.length) : "—",
+                  hint: op
+                    ? t("tickets en alerte sur la fenêtre", "flagged tickets in window")
+                    : "",
+                },
+              ].map((s) => (
+                <div key={s.label} className="bg-card p-4">
+                  <div className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
+                    {s.label}
+                  </div>
+                  <div className="mt-1.5 text-[22px] font-semibold tracking-tight">{s.value}</div>
+                  {s.hint && (
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">{s.hint}</div>
+                  )}
                 </div>
-                <div className="mt-1.5 text-[22px] font-semibold tracking-tight">{s.value}</div>
-                {s.hint && <div className="mt-0.5 text-[11px] text-muted-foreground">{s.hint}</div>}
+              ))}
+            </div>
+            {op && op.anomalies.length > 0 && (
+              <div className="border-t border-border">
+                {op.anomalies.map((a) => (
+                  <div
+                    key={`${a.ticket_id}-${a.kind}`}
+                    className="flex items-center gap-3 border-b border-border/50 px-4 py-2 text-[12.5px] last:border-0"
+                  >
+                    {a.glpi_link ? (
+                      <a
+                        className="font-mono text-primary hover:underline"
+                        href={a.glpi_link}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        #{a.ticket_id}
+                      </a>
+                    ) : (
+                      <span className="font-mono text-muted-foreground">#{a.ticket_id}</span>
+                    )}
+                    <Tag tone={a.kind === "sla_breached" ? "red" : "amber"}>
+                      {a.kind === "sla_breached"
+                        ? t("SLA dépassé", "SLA breached")
+                        : t("« New » ancien", "stale « New »")}
+                    </Tag>
+                    <span className="truncate text-muted-foreground">{a.detail}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </Card>
     </div>

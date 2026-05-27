@@ -138,9 +138,24 @@ export const demo: {
       reassignment_rate: null,
       reassignment_available: false,
       anomalies: [
-        { ticket_id: 48190, kind: "new_stale", detail: "« New » depuis 31 h" },
-        { ticket_id: 48172, kind: "sla_breached", detail: "SLA TTR dépassé, non résolu" },
-        { ticket_id: 48155, kind: "new_stale", detail: "« New » depuis 27 h" },
+        {
+          ticket_id: 48190,
+          kind: "new_stale",
+          detail: "« New » depuis 31 h",
+          glpi_link: "https://glpi.demo.local/front/ticket.form.php?id=48190",
+        },
+        {
+          ticket_id: 48172,
+          kind: "sla_breached",
+          detail: "SLA TTR dépassé, non résolu",
+          glpi_link: "https://glpi.demo.local/front/ticket.form.php?id=48172",
+        },
+        {
+          ticket_id: 48155,
+          kind: "new_stale",
+          detail: "« New » depuis 27 h",
+          glpi_link: "https://glpi.demo.local/front/ticket.form.php?id=48155",
+        },
       ],
     },
   },
@@ -268,6 +283,8 @@ function d(
     confidence,
     glpi_link: `https://glpi.demo.local/front/ticket.form.php?id=${id}`,
     annotation: "", // annotation manuelle (vide en démo)
+    mode: "suggestion", // démo : pilote en mode suggestion (sûr)
+    applied: false,
   };
 }
 
