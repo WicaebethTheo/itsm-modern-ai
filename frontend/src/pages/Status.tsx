@@ -62,7 +62,7 @@ export function Status() {
     {
       name: t("Fournisseur IA", "AI provider"),
       state: h?.llm.configured ? t("Configuré", "Configured") : t("Clé absente", "No key"),
-      meta: t("mode suggestion", "suggestion mode"),
+      meta: t("LLM du moteur (avant garde-fou)", "engine LLM (before guardrail)"),
       tone: h?.llm.configured ? "green" : "amber",
     },
     {

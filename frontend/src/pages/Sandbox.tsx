@@ -120,7 +120,7 @@ export function Sandbox() {
               {result.draft && (
                 <div className="mt-4">
                   <p className="mb-1.5 text-[11px] text-muted-foreground">
-                    {t("Brouillon de réponse (draft_reply)", "Draft reply (draft_reply)")}
+                    {t("Brouillon de réponse (draft)", "Draft reply (draft)")}
                   </p>
                   <p className="whitespace-pre-wrap rounded-md border border-border bg-background p-3 text-[12.5px] leading-relaxed">
                     {result.draft}
