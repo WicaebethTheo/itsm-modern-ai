@@ -1,6 +1,7 @@
 import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dot } from "@/components/ui/dot";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
 import { PanelHead } from "@/components/ui/panel";
@@ -8,6 +9,7 @@ import { Tag } from "@/components/ui/tag";
 import { useResource } from "@/hooks/useResource";
 import { Api, type ConfigUpdate, type LlmProvider, PROVIDER_LABELS } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import { AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -96,6 +98,11 @@ export function AiProvider() {
   const currentBase = (c?.[f.baseKey as keyof typeof c] as string) ?? "";
   const currentModel = (c?.[f.modelKey as keyof typeof c] as string) ?? "";
 
+  // Fournisseur réellement opérationnel = sa clé est configurée (ollama : local, pas de clé).
+  const isOperational = (p: LlmProvider) => (p === "ollama" ? true : fields[p].keySet);
+  // Fournisseur « live » = celui ENREGISTRÉ côté moteur (c.llm_provider), pas l'état du sélecteur.
+  const savedProvider = c?.llm_provider;
+
   return (
     <div className="space-y-4">
       {msg && <Banner kind={msg.kind}>{msg.text}</Banner>}
@@ -103,19 +110,39 @@ export function AiProvider() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {PROVIDERS.map((p) => {
           const on = provider === p;
+          // Le moteur tourne sur ce fournisseur ET sa clé est en place → live.
+          const live = p === savedProvider && isOperational(p);
+          // Enregistré mais clé manquante → actif mais non-opérationnel (amber, discret).
+          const degraded = p === savedProvider && !isOperational(p);
           return (
             <button
               key={p}
               type="button"
               onClick={() => setProvider(p)}
-              className="rounded-lg border p-4 text-left transition-colors"
-              style={{
-                borderColor: on ? "rgba(99,102,241,0.5)" : "hsl(var(--border))",
-                background: on ? "rgba(99,102,241,0.08)" : "transparent",
-              }}
+              className={cn(
+                "rounded-lg border p-4 text-left transition-colors",
+                on
+                  ? "border-primary/50 bg-primary/10"
+                  : "border-border bg-transparent hover:border-primary/30",
+              )}
             >
-              <div className="flex items-center justify-between">
-                <span className="text-[13px] font-medium">{PROVIDER_LABELS[p]}</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium">
+                  {live && (
+                    <span title={t("En service", "In service")} className="flex items-center">
+                      <Dot tone="green" pulse />
+                    </span>
+                  )}
+                  {degraded && (
+                    <span
+                      title={t("Actif — clé manquante", "Active — key missing")}
+                      className="flex items-center"
+                    >
+                      <Dot tone="amber" />
+                    </span>
+                  )}
+                  <span className="truncate">{PROVIDER_LABELS[p]}</span>
+                </span>
                 {on && <Tag tone="indigo">{t("Actif", "Active")}</Tag>}
               </div>
               <div className="mt-1.5 text-[11px] text-muted-foreground">
