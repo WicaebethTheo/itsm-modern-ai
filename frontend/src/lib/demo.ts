@@ -13,6 +13,7 @@ import type {
   Metrics,
   OperationalView,
   RefItem,
+  RetentionView,
   Scope,
 } from "./api";
 
@@ -57,6 +58,7 @@ export const demo: {
   categories: RefItem[];
   entities: RefItem[];
   scope: Scope;
+  retention: RetentionView;
   diagnostics: DebugDiagnostics;
   info: DebugInfo;
 } = {
@@ -251,6 +253,16 @@ export const demo: {
   ],
   entities: [ref(0, "Racine", false, "", true), ref(1, "Siège", false, "", true)],
   scope: { category_ids: [1, 2, 3, 4, 5], entity_ids: [0, 1] },
+  retention: {
+    enabled: true,
+    decisions_days: 365,
+    llm_calls_days: 90,
+    hour_utc: 3,
+    last_run_at: new Date(Date.now() - 18 * 3600 * 1000).toISOString(),
+    last_decisions_deleted: 12,
+    last_llm_calls_deleted: 47,
+    last_run_by: "scheduler",
+  },
 };
 
 function d(
