@@ -6,10 +6,17 @@ import csv
 import io
 from datetime import UTC, datetime, timedelta
 
-from sqlmodel import Session, func, select
+from sqlmodel import Session, delete, func, select
 
 from ..domain.models import TriageOutcome
 from .tables import DecisionLog, LlmCall
+
+
+def _bulk_delete_count(session: Session, stmt) -> int:
+    """Exécute un DELETE en masse et retourne le nombre de lignes supprimées (atomique)."""
+    res = session.exec(stmt)
+    session.commit()
+    return int(res.rowcount or 0)
 
 
 def record_llm_call(
@@ -93,6 +100,16 @@ def set_annotation(session: Session, decision_id: int, annotation: str) -> Decis
 
 def count_llm_calls(session: Session) -> int:
     return int(session.exec(select(func.count()).select_from(LlmCall)).one())
+
+
+def purge_decisions_before(session: Session, cutoff: datetime) -> int:
+    """Supprime les Décisions de Journal antérieures à `cutoff` (atomique, via rowcount)."""
+    return _bulk_delete_count(session, delete(DecisionLog).where(DecisionLog.ts < cutoff))
+
+
+def purge_llm_calls_before(session: Session, cutoff: datetime) -> int:
+    """Supprime les appels LLM antérieurs à `cutoff` (atomique, via rowcount)."""
+    return _bulk_delete_count(session, delete(LlmCall).where(LlmCall.ts < cutoff))
 
 
 def avg_confidence(session: Session) -> float | None:

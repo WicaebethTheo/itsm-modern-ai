@@ -46,6 +46,13 @@ PLAIN_KEYS = frozenset(
         "polling_enabled", "polling_interval_seconds",
         # Dashboard
         "dashboard_window_days", "anomaly_new_age_hours",
+        # Rétention RGPD + état de la dernière purge (lecture seule côté UI pour les last_*).
+        "retention_decisions_days", "retention_llm_calls_days",
+        "automation_purge_enabled", "automation_purge_hour_utc",
+        "automation_purge_last_run_at",
+        "automation_purge_last_decisions_deleted",
+        "automation_purge_last_llm_calls_deleted",
+        "automation_purge_last_run_by",  # audit trail (scheduler | IP de l'admin)
     }
 )
 
@@ -134,6 +141,15 @@ class RuntimeConfigService:
             "mask_phone": str(s.mask_phone).lower(),
             "mask_iban": str(s.mask_iban).lower(),
             "mask_secret": str(s.mask_secret).lower(),
+            "retention_decisions_days": str(s.retention_decisions_days),
+            "retention_llm_calls_days": str(s.retention_llm_calls_days),
+            "automation_purge_enabled": str(s.automation_purge_enabled).lower(),
+            "automation_purge_hour_utc": str(s.automation_purge_hour_utc),
+            # État de la dernière exécution : pas de défaut env (None = jamais exécuté).
+            "automation_purge_last_run_at": None,
+            "automation_purge_last_decisions_deleted": None,
+            "automation_purge_last_llm_calls_deleted": None,
+            "automation_purge_last_run_by": None,
         }
         return defaults.get(key)
 

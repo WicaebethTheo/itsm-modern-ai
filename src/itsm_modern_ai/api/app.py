@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import logging
 import secrets as _secrets
+import time
 from contextlib import asynccontextmanager
+from datetime import UTC
 from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import Depends, FastAPI
 from starlette.middleware.sessions import SessionMiddleware
@@ -68,6 +71,42 @@ async def _run_poll_cycle(app: FastAPI) -> None:
     await poller.poll_once()
 
 
+async def _run_purge_cycle(app: FastAPI) -> None:
+    """Job planifié : purge RGPD du Journal + appels LLM si l'automation est activée.
+
+    Échec encapsulé (`try/except`) pour ne pas casser le scheduler et tracer le contexte
+    métier (fenêtres, durée), conforme à l'observabilité attendue (audit DPO).
+    """
+    from ..persistence import db as _db
+    from ..services import retention
+    from ..services.runtime_config import RuntimeConfigService
+
+    settings: Settings = app.state.settings
+    started = time.perf_counter()
+    try:
+        with _db.session_scope() as session:
+            cfg = RuntimeConfigService(session, app.state.secrets_box, settings)
+            if not cfg.get_bool("automation_purge_enabled", settings.automation_purge_enabled):
+                logger.info("purge: désactivée (automation_purge_enabled=false) — cycle ignoré")
+                return
+            decisions_days = cfg.get_int("retention_decisions_days", settings.retention_decisions_days)
+            llm_days = cfg.get_int("retention_llm_calls_days", settings.retention_llm_calls_days)
+        with _db.session_scope() as session:
+            result = retention.purge_now(
+                session, decisions_days=decisions_days, llm_calls_days=llm_days
+            )
+        with _db.session_scope() as session:
+            cfg = RuntimeConfigService(session, app.state.secrets_box, settings)
+            retention.record_last_run(cfg, result, by="scheduler")
+        logger.info(
+            "purge: %d décision(s), %d appel(s) LLM supprimés (fenêtres %dj/%dj, durée %.2fs)",
+            result.decisions_deleted, result.llm_calls_deleted, decisions_days, llm_days,
+            time.perf_counter() - started,
+        )
+    except Exception:
+        logger.exception("purge: échec après %.2fs", time.perf_counter() - started)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings: Settings = app.state.settings
@@ -80,11 +119,13 @@ async def lifespan(app: FastAPI):
     from ..services.runtime_config import RuntimeConfigService
 
     with db.session_scope() as session:
-        interval = RuntimeConfigService(session, app.state.secrets_box, settings).get_int(
-            "polling_interval_seconds", settings.polling_interval_seconds
-        )
+        cfg = RuntimeConfigService(session, app.state.secrets_box, settings)
+        interval = cfg.get_int("polling_interval_seconds", settings.polling_interval_seconds)
+        purge_hour = cfg.get_int("automation_purge_hour_utc", settings.automation_purge_hour_utc)
 
-    scheduler = AsyncIOScheduler()
+    # Scheduler pinné UTC : cohérent avec `_utcnow` (persistence) et avec le nom
+    # `automation_purge_hour_utc`. Évite tout drift DST si l'hôte n'est pas en UTC.
+    scheduler = AsyncIOScheduler(timezone=UTC)
     # Le job tourne toujours ; l'activation est décidée à l'exécution (_poll_enabled).
     scheduler.add_job(
         _run_poll_cycle,
@@ -95,9 +136,22 @@ async def lifespan(app: FastAPI):
         max_instances=1,
         coalesce=True,
     )
+    # Purge RGPD quotidienne (heure UTC réglable via /api/automations/retention).
+    # `misfire_grace_time=3600` : tolère 1 h de retard après un crash/redémarrage,
+    # sinon `coalesce=True` ne suffit pas et la purge du jour serait silencieusement sautée.
+    scheduler.add_job(
+        _run_purge_cycle,
+        trigger=CronTrigger(hour=max(0, min(23, purge_hour)), minute=0, timezone=UTC),
+        args=[app],
+        id="purge",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
     scheduler.start()
     app.state.scheduler = scheduler
-    logger.info("démarré (interval=%ss)", interval)
+    logger.info("démarré (interval=%ss, purge_hour=%sh UTC)", interval, purge_hour)
     try:
         yield
     finally:
@@ -107,6 +161,7 @@ async def lifespan(app: FastAPI):
 def create_app(settings: Settings | None = None) -> FastAPI:
     from .. import __version__
     from .routes import auth as auth_routes
+    from .routes import automations as automations_routes
     from .routes import config as config_routes
     from .routes import debug as debug_routes
     from .routes import decisions as decisions_routes
@@ -154,6 +209,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(insights_routes.router)
     app.include_router(referentials_routes.router)
     app.include_router(debug_routes.router)
+    app.include_router(automations_routes.router)
 
     # UI web (Phase 2) — SPA React buildée, servie en statique (catch-all en dernier).
     mount_spa(app, Path(settings.frontend_dist))

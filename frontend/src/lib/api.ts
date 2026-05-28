@@ -272,6 +272,31 @@ export interface DebugInfo {
   endpoints: { path: string; methods: string[] }[];
 }
 
+export interface RetentionView {
+  enabled: boolean;
+  decisions_days: number;
+  llm_calls_days: number;
+  hour_utc: number;
+  last_run_at: string | null;
+  last_decisions_deleted: number | null;
+  last_llm_calls_deleted: number | null;
+  last_run_by: string | null; // "scheduler" pour le job auto, sinon IP de l'admin
+}
+
+export interface RetentionUpdate {
+  enabled?: boolean;
+  decisions_days?: number;
+  llm_calls_days?: number;
+  hour_utc?: number;
+}
+
+export interface PurgeRunResult {
+  decisions_deleted: number;
+  llm_calls_deleted: number;
+  ran_at: string;
+  view: RetentionView;
+}
+
 export interface SandboxResult {
   accepted: boolean;
   reason: string;
@@ -358,6 +383,24 @@ export const Api = {
           "/api/debug/purge-users",
           { confirm },
         ),
+
+  // Automatisations — rétention RGPD (Journal + appels LLM).
+  retention: () =>
+    DEMO ? ok(demo.retention) : api.get<RetentionView>("/api/automations/retention"),
+  updateRetention: (body: RetentionUpdate) =>
+    DEMO
+      ? ok({ ...demo.retention, ...body } as RetentionView)
+      : api.patch<RetentionView>("/api/automations/retention", body),
+  runRetention: () =>
+    DEMO
+      ? ok({
+          decisions_deleted: 0,
+          llm_calls_deleted: 0,
+          ran_at: new Date().toISOString(),
+          view: demo.retention,
+        } as PurgeRunResult)
+      : // Garde-fou : le backend exige confirm="PURGER" (action destructive).
+        api.post<PurgeRunResult>("/api/automations/retention/run", { confirm: "PURGER" }),
 
   sandbox: (content: string, title = "") =>
     DEMO

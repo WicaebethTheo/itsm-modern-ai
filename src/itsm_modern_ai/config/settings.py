@@ -83,6 +83,14 @@ class Settings(BaseSettings):
     dashboard_max_tickets: int = 500
     anomaly_new_age_hours: int = 24  # un Ticket « New » plus vieux que ça = anomalie
 
+    # Rétention RGPD : purge périodique du Journal et des appels LLM. Le job tourne
+    # chaque jour à `automation_purge_hour_utc` (UTC) si `automation_purge_enabled`.
+    # `*_days <= 0` désactive la purge pour la table concernée (défaut sûr : conserver).
+    retention_decisions_days: int = 365
+    retention_llm_calls_days: int = 90
+    automation_purge_enabled: bool = True
+    automation_purge_hour_utc: int = 3
+
     # Connexion GLPI legacy apirest.php (FR-1) — base_url non-secret ; tokens via UI/API.
     glpi_base_url: str = ""  # ex. https://glpi.exemple.local/apirest.php
     glpi_verify_tls: bool = True
