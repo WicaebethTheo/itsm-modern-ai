@@ -1,15 +1,52 @@
-"""Tables SQLModel. Noms `snake_case` pluriel, PK `id`, colonnes `snake_case`."""
+"""Tables SQLModel. Noms `snake_case` pluriel, PK `id`, colonnes `snake_case`.
+
+Note timezone : les colonnes `ts` du Journal et des appels LLM sont **timezone-aware**
+(UTC) via `UtcDateTime`. Indispensable pour le portage Postgres futur (audit cybersécu) :
+sans ça, comparer `ts < cutoff` casse avec `TypeError: can't compare offset-naive and
+offset-aware`. Sur SQLite (TEXT), `UtcDateTime` normalise à la lecture (force aware UTC
+même pour les lignes anciennes stockées sans offset).
+"""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import Column, DateTime, UniqueConstraint
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+class UtcDateTime(TypeDecorator):
+    """`DateTime(timezone=True)` qui garantit `tzinfo=UTC` à la lecture.
+
+    Anciennes lignes SQLite stockées en naive (avant ce typage) → réhydratées en aware
+    UTC, transparent pour le moteur. Sur Postgres, équivaut à `timestamp with time zone`.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: Any, dialect: Any) -> Any:
+        # À l'écriture : un naive est supposé UTC (cohérent avec `_utcnow`).
+        if isinstance(value, datetime) and value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value
+
+    def process_result_value(self, value: Any, dialect: Any) -> Any:
+        # À la lecture : si SQLite a relu en naive (anciennes lignes), on force UTC.
+        if isinstance(value, datetime) and value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value
+
+
+def _ts_column(*, index: bool = False) -> Column:
+    """Colonne `ts` partagée Journal / appels LLM (audit UTC strict)."""
+    return Column(UtcDateTime, nullable=False, default=_utcnow, index=index)
 
 
 class ProcessedTicket(SQLModel, table=True):
@@ -40,7 +77,7 @@ class LlmCall(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     ticket_id: int = Field(index=True)
-    ts: datetime = Field(default_factory=_utcnow, index=True)
+    ts: datetime = Field(default_factory=_utcnow, sa_column=_ts_column(index=True))
     model: str = ""
     prompt_sent: str = ""  # contenu masqué envoyé
     response_received: str = ""
@@ -61,7 +98,7 @@ class DecisionLog(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     ticket_id: int = Field(index=True)
-    ts: datetime = Field(default_factory=_utcnow, index=True)
+    ts: datetime = Field(default_factory=_utcnow, sa_column=_ts_column(index=True))
     subject: str = ""  # titre du Ticket GLPI (lisible dans le journal)
     accepted: bool = False
     reason: str = ""  # TriageReason

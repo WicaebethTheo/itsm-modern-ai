@@ -16,9 +16,10 @@ import json
 import httpx
 from pydantic import ValidationError
 
-from ...domain.errors import LlmResponseError, LlmTransportError
+from ...domain.errors import LlmResponseError
 from ...domain.models import Decision
 from ...ports.llm import LlmResult
+from ._http import arequest, healthcheck_get
 
 
 class OpenAiCompatibleLlm:
@@ -41,19 +42,17 @@ class OpenAiCompatibleLlm:
         self._temperature = temperature
         self._client = client
 
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._api_key}"}
+
     async def healthcheck(self) -> bool:
         """Sonde légère (GET /models) — ne consomme pas de tokens. Best-effort."""
-        url = f"{self._base_url}/models"
-        headers = {"Authorization": f"Bearer {self._api_key}"}
-        try:
-            if self._client is not None:
-                resp = await self._client.get(url, headers=headers)
-            else:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    resp = await client.get(url, headers=headers)
-            return resp.status_code < 400
-        except httpx.HTTPError:
-            return False
+        return await healthcheck_get(
+            f"{self._base_url}/models",
+            self._headers(),
+            client=self._client,
+            timeout=self._timeout,
+        )
 
     async def complete(self, system_prompt: str, user_prompt: str) -> LlmResult:
         payload = {
@@ -65,18 +64,14 @@ class OpenAiCompatibleLlm:
             "response_format": {"type": "json_object"},
             "temperature": self._temperature,
         }
-        headers = {"Authorization": f"Bearer {self._api_key}"}
-        url = f"{self._base_url}/chat/completions"
-
-        try:
-            if self._client is not None:
-                resp = await self._client.post(url, json=payload, headers=headers)
-            else:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-        except httpx.HTTPError as exc:  # réseau, timeout, 5xx, etc. (FR-9)
-            raise LlmTransportError(str(exc)) from exc
+        resp = await arequest(
+            "POST",
+            f"{self._base_url}/chat/completions",
+            headers=self._headers(),
+            json=payload,
+            client=self._client,
+            timeout=self._timeout,
+        )
 
         body = resp.json()
         try:

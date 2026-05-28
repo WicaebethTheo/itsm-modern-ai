@@ -19,9 +19,10 @@ import logging
 import httpx
 from pydantic import ValidationError
 
-from ...domain.errors import LlmResponseError, LlmTransportError
+from ...domain.errors import LlmResponseError
 from ...domain.models import Decision
 from ...ports.llm import LlmResult
+from ._http import arequest, healthcheck_get
 
 logger = logging.getLogger("itsm.llm.anthropic")
 
@@ -90,23 +91,13 @@ class AnthropicLlm:
             "content-type": "application/json",
         }
 
-    async def _post(self, url: str, payload: dict) -> httpx.Response:
-        if self._client is not None:
-            return await self._client.post(url, json=payload, headers=self._headers())
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            return await client.post(url, json=payload, headers=self._headers())
-
     async def healthcheck(self) -> bool:
-        url = f"{self._base_url}/v1/models"
-        try:
-            if self._client is not None:
-                resp = await self._client.get(url, headers=self._headers())
-            else:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    resp = await client.get(url, headers=self._headers())
-            return resp.status_code < 400
-        except httpx.HTTPError:
-            return False
+        return await healthcheck_get(
+            f"{self._base_url}/v1/models",
+            self._headers(),
+            client=self._client,
+            timeout=self._timeout,
+        )
 
     async def complete(self, system_prompt: str, user_prompt: str) -> LlmResult:
         # Pas de pré-fill assistant (refusé par Sonnet 4.6+). On rappelle l'exigence JSON
@@ -123,16 +114,14 @@ class AnthropicLlm:
             "system": system_prompt,
             "messages": [{"role": "user", "content": user_with_format}],
         }
-        try:
-            resp = await self._post(f"{self._base_url}/v1/messages", payload)
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            # Sur 4xx/5xx Anthropic renvoie un body JSON `{"error":{"message":...}}` —
-            # essentiel pour diagnostiquer (modèle inconnu, payload mal formé, etc.).
-            body_excerpt = (exc.response.text or "")[:500].replace("\n", " ")
-            raise LlmTransportError(f"{exc} :: body={body_excerpt}") from exc
-        except httpx.HTTPError as exc:
-            raise LlmTransportError(str(exc)) from exc
+        resp = await arequest(
+            "POST",
+            f"{self._base_url}/v1/messages",
+            headers=self._headers(),
+            json=payload,
+            client=self._client,
+            timeout=self._timeout,
+        )
 
         body = resp.json()
         try:
