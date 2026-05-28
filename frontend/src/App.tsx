@@ -1,4 +1,5 @@
 import { RequireAuth } from "@/components/RequireAuth";
+import { ToastProvider } from "@/components/ui/toast";
 import { DEMO } from "@/lib/api";
 import { AiProvider } from "@/pages/AiProvider";
 import { Automations } from "@/pages/Automations";
@@ -19,25 +20,27 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 export default function App() {
   return (
     <BrowserRouter basename={DEMO ? "/demo" : undefined}>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        {/* Routes protégées (Layout rendu par RequireAuth) */}
-        <Route element={<RequireAuth />}>
-          <Route index element={<Dashboard />} />
-          <Route path="status" element={<Status />} />
-          <Route path="journal" element={<Journal />} />
-          <Route path="glpi" element={<GlpiConnection />} />
-          <Route path="ai-provider" element={<AiProvider />} />
-          <Route path="engine" element={<EngineSettings />} />
-          <Route path="scope" element={<Scope />} />
-          <Route path="technicians" element={<Technicians />} />
-          <Route path="groups" element={<Groups />} />
-          <Route path="sandbox" element={<Sandbox />} />
-          <Route path="store" element={<Store />} />
-          <Route path="automations" element={<Automations />} />
-          <Route path="debug" element={<Debug />} />
-        </Route>
-      </Routes>
+      <ToastProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          {/* Routes protégées (Layout rendu par RequireAuth) */}
+          <Route element={<RequireAuth />}>
+            <Route index element={<Dashboard />} />
+            <Route path="status" element={<Status />} />
+            <Route path="journal" element={<Journal />} />
+            <Route path="glpi" element={<GlpiConnection />} />
+            <Route path="ai-provider" element={<AiProvider />} />
+            <Route path="engine" element={<EngineSettings />} />
+            <Route path="scope" element={<Scope />} />
+            <Route path="technicians" element={<Technicians />} />
+            <Route path="groups" element={<Groups />} />
+            <Route path="sandbox" element={<Sandbox />} />
+            <Route path="store" element={<Store />} />
+            <Route path="automations" element={<Automations />} />
+            <Route path="debug" element={<Debug />} />
+          </Route>
+        </Routes>
+      </ToastProvider>
     </BrowserRouter>
   );
 }

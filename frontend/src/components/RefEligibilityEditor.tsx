@@ -1,4 +1,3 @@
-import { Banner } from "@/components/Banner";
 import { EmptyState } from "@/components/EmptyState";
 import { SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
@@ -7,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toast";
 import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type EligibilityItem, type RefItem, type RefKind } from "@/lib/api";
@@ -16,6 +16,19 @@ import { CheckCircle2, Search, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const ALL = "__all__";
+
+/** Préférence UI persistée par RefKind (technicien/groupe) : survit aux changements de page. */
+function eligibleOnlyKey(kind: RefKind) {
+  return `ui.refEditor.${kind}.eligibleOnly`;
+}
+function readEligibleOnly(kind: RefKind): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(eligibleOnlyKey(kind)) === "1";
+  } catch {
+    return false;
+  }
+}
 
 /** Monogramme : initiales dérivées du nom, pour repérer une ligne d'un coup d'œil. */
 function initials(name: string): string {
@@ -37,12 +50,24 @@ export function RefEligibilityEditor({
   save: (items: EligibilityItem[]) => Promise<RefItem[]>;
 }) {
   const t = useT();
+  const toast = useToast();
   const res = useResource(useCallback(() => Api.discovery(kind), [kind]));
   const [draft, setDraft] = useState<Record<number, { eligible: boolean; skills: string }>>({});
-  const [msg, setMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [query, setQuery] = useState("");
   const [profile, setProfile] = useState(ALL);
-  const [eligibleOnly, setEligibleOnly] = useState(false);
+  const [eligibleOnly, setEligibleOnlyState] = useState(() => readEligibleOnly(kind));
+  // Wrapper qui persiste la préférence : survit au démontage et à la navigation.
+  const setEligibleOnly = useCallback(
+    (next: boolean) => {
+      setEligibleOnlyState(next);
+      try {
+        window.localStorage.setItem(eligibleOnlyKey(kind), next ? "1" : "0");
+      } catch {
+        /* localStorage indisponible (mode privé strict, etc.) — comportement par défaut. */
+      }
+    },
+    [kind],
+  );
 
   const title = kind === "technician" ? t("Techniciens", "Technicians") : t("Groupes", "Groups");
   const desc =
@@ -90,13 +115,12 @@ export function RefEligibilityEditor({
   }
 
   async function onSave() {
-    setMsg(null);
     try {
       await save(Object.entries(draft).map(([ext_id, v]) => ({ ext_id: Number(ext_id), ...v })));
       res.reload();
-      setMsg({ kind: "success", text: t("Enregistré.", "Saved.") });
+      toast.success(t("Enregistré.", "Saved."));
     } catch (e: unknown) {
-      setMsg({ kind: "error", text: (e as Error).message });
+      toast.error((e as Error).message);
     }
   }
 
@@ -106,7 +130,6 @@ export function RefEligibilityEditor({
         <p className="max-w-2xl text-[12px] text-muted-foreground">{desc}</p>
         <SyncButton onSynced={res.reload} />
       </div>
-      {msg && <Banner kind={msg.kind}>{msg.text}</Banner>}
 
       {items.length === 0 ? (
         <Card>

@@ -301,9 +301,12 @@ export interface SandboxResult {
   accepted: boolean;
   reason: string;
   category: number | null;
+  category_name?: string | null; // libellé GLPI résolu (sinon on affiche l'id)
   priority: number | null;
   technician_id: number | null;
+  technician_name?: string | null; // nom GLPI du technicien routé
   group_id: number | null;
+  group_name?: string | null; // nom GLPI du groupe routé
   confidence: number | null;
   draft: string | null;
 }
@@ -408,9 +411,12 @@ export const Api = {
           accepted: true,
           reason: "accepted",
           category: 1,
+          category_name: "Compte / Authentification",
           priority: 3,
           technician_id: 11,
+          technician_name: "Sylvain Martin",
           group_id: null,
+          group_name: null,
           confidence: 0.9,
           draft: "Bonjour, nous avons bien reçu votre demande et la prenons en charge.",
         } satisfies SandboxResult)

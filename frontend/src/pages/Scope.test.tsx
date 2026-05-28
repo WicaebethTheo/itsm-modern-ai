@@ -1,5 +1,6 @@
 import { Api, type RefItem } from "@/lib/api";
-import { render, screen, waitFor } from "@testing-library/react";
+import { renderWithToast } from "@/test-utils";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Scope } from "./Scope";
@@ -38,7 +39,7 @@ describe("Scope — périmètre & modes", () => {
   });
 
   it("affiche l'avertissement quand une entité passe en full-auto", async () => {
-    render(<Scope />);
+    renderWithToast(<Scope />);
     const selects = await screen.findAllByRole("combobox");
     await userEvent.selectOptions(selects[0], "full_auto");
     expect(
@@ -47,7 +48,7 @@ describe("Scope — périmètre & modes", () => {
   });
 
   it("enregistre le périmètre et les modes par entité", async () => {
-    render(<Scope />);
+    renderWithToast(<Scope />);
     const selects = await screen.findAllByRole("combobox");
     await userEvent.selectOptions(selects[0], "full_auto"); // entité 0 (Racine)
     await userEvent.click(

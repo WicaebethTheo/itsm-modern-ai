@@ -22,9 +22,12 @@ describe("Sandbox", () => {
       accepted: true,
       reason: "accepted",
       category: 3,
+      category_name: "Poste de travail",
       priority: 2,
       technician_id: 11,
+      technician_name: "Sylvain Martin",
       group_id: null,
+      group_name: null,
       confidence: 0.9,
       draft: "Bonjour, nous avons réinitialisé votre mot de passe.",
     });
@@ -34,9 +37,32 @@ describe("Sandbox", () => {
 
     expect(Api.sandbox).toHaveBeenCalledWith("mdp refusé");
     expect(await screen.findByText("déposable")).toBeInTheDocument();
-    expect(screen.getByText("T#11")).toBeInTheDocument();
+    // Noms résolus affichés avec l'id en discrétion : « Nom (#id) ».
+    expect(screen.getByText("Sylvain Martin (#11)")).toBeInTheDocument();
+    expect(screen.getByText("Poste de travail (#3)")).toBeInTheDocument();
     expect(screen.getByText("90%")).toBeInTheDocument();
     expect(screen.getByText(/réinitialisé votre mot de passe/)).toBeInTheDocument();
+  });
+
+  it("retombe sur T#id si le nom n'est pas résolu (référentiel non scanné)", async () => {
+    vi.mocked(Api.sandbox).mockResolvedValue({
+      accepted: false,
+      reason: "low_confidence",
+      category: 7,
+      category_name: null,
+      priority: 3,
+      technician_id: 42,
+      technician_name: null,
+      group_id: null,
+      group_name: null,
+      confidence: 0.4,
+      draft: "Demande à clarifier.",
+    });
+    render(<Sandbox />);
+    await userEvent.type(screen.getByRole("textbox"), "xx");
+    await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));
+    expect(await screen.findByText("T#42")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
   });
 
   it("affiche le message d'erreur du backend (detail.message)", async () => {

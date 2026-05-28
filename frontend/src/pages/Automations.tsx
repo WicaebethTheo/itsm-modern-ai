@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
+import { useToast } from "@/components/ui/toast";
 import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type RetentionView } from "@/lib/api";
@@ -35,10 +36,10 @@ const PLANNED: { fr: string; en: string; descFr: string; descEn: string }[] = [
 
 function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }) {
   const t = useT();
+  const toast = useToast();
   const [draft, setDraft] = useState<RetentionView>(data);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
-  const [flash, setFlash] = useState<string>("");
 
   useEffect(() => setDraft(data), [data]);
 
@@ -50,7 +51,6 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
 
   async function save() {
     setSaving(true);
-    setFlash("");
     try {
       await Api.updateRetention({
         enabled: draft.enabled,
@@ -59,9 +59,9 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
         hour_utc: draft.hour_utc,
       });
       reload();
-      setFlash(t("Réglages enregistrés.", "Settings saved."));
+      toast.success(t("Réglages enregistrés.", "Settings saved."));
     } catch (e) {
-      setFlash((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -77,18 +77,17 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
     );
     if (!ok) return;
     setRunning(true);
-    setFlash("");
     try {
       const r = await Api.runRetention();
       reload();
-      setFlash(
+      toast.success(
         t(
           `Purge exécutée : ${r.decisions_deleted} décision(s), ${r.llm_calls_deleted} appel(s) LLM supprimés.`,
           `Purge ran: ${r.decisions_deleted} decision(s), ${r.llm_calls_deleted} LLM call(s) deleted.`,
         ),
       );
     } catch (e) {
-      setFlash((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setRunning(false);
     }
@@ -180,7 +179,6 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
           )}
         </div>
         <div className="flex items-center gap-2">
-          {flash && <span className="text-[11px] text-muted-foreground">{flash}</span>}
           <Button size="sm" variant="outline" onClick={runNow} disabled={running}>
             {running ? t("Purge…", "Purging…") : t("Exécuter maintenant", "Run now")}
           </Button>

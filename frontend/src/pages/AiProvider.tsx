@@ -1,4 +1,3 @@
-import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dot } from "@/components/ui/dot";
@@ -6,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
+import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
 import { Api, type ConfigUpdate, type LlmProvider, PROVIDER_LABELS } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -24,10 +24,10 @@ const PROVIDER_DESC: Record<LlmProvider, { fr: string; en: string }> = {
 
 export function AiProvider() {
   const t = useT();
+  const toast = useToast();
   const cfg = useResource(useCallback(() => Api.getConfig(), []));
   const [form, setForm] = useState<ConfigUpdate>({});
   const [provider, setProvider] = useState<LlmProvider>("mistral");
-  const [msg, setMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
   const c = cfg.data;
   useEffect(() => {
@@ -39,14 +39,13 @@ export function AiProvider() {
   }
 
   async function save() {
-    setMsg(null);
     try {
       await Api.updateConfig({ ...form, llm_provider: provider });
       setForm({});
       cfg.reload();
-      setMsg({ kind: "success", text: t("Fournisseur IA enregistré.", "AI provider saved.") });
+      toast.success(t("Fournisseur IA enregistré.", "AI provider saved."));
     } catch (e: unknown) {
-      setMsg({ kind: "error", text: `${t("Erreur", "Error")} : ${(e as Error).message}` });
+      toast.error(`${t("Erreur", "Error")} : ${(e as Error).message}`);
     }
   }
 
@@ -105,8 +104,6 @@ export function AiProvider() {
 
   return (
     <div className="space-y-4">
-      {msg && <Banner kind={msg.kind}>{msg.text}</Banner>}
-
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {PROVIDERS.map((p) => {
           const on = provider === p;

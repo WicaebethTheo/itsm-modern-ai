@@ -29,11 +29,13 @@ def _msg_response(text: str) -> httpx.Response:
 
 
 @respx.mock
-async def test_parses_prefilled_json_decision():
-    # Préremplissage « { » → le texte renvoyé est la suite du JSON.
+async def test_parses_full_json_object_from_response():
+    # Sonnet 4.6+ refuse le pré-fill assistant : on n'envoie plus que le user, l'objet
+    # JSON entier doit être présent dans la réponse (le system_prompt + l'instruction
+    # additionnelle l'imposent).
     route = respx.post(MSG).mock(
         return_value=_msg_response(
-            '"category": 2, "priority": 3, "technician_id": 12, "draft": "Bonjour", "confidence": 0.81}'
+            '{"category": 2, "priority": 3, "technician_id": 12, "draft": "Bonjour", "confidence": 0.81}'
         )
     )
     result = await _adapter().complete("sys", "user")
@@ -43,12 +45,27 @@ async def test_parses_prefilled_json_decision():
     sent = route.calls.last.request
     assert sent.headers["x-api-key"] == "sk-ant"
     assert sent.headers["anthropic-version"]
-    assert b'"content": "{"' in sent.content or b'"content":"{"' in sent.content  # préremplissage
+    # Plus de pré-fill assistant — la conversation doit se terminer par un user message.
+    assert b'"role": "assistant"' not in sent.content and b'"role":"assistant"' not in sent.content
+
+
+@respx.mock
+async def test_extracts_json_from_wrapped_response():
+    # Tolérance : un modèle bavard peut entourer le JSON de texte ou de fences ; on
+    # doit savoir extraire le premier objet équilibré (toléré tant qu'il est valide).
+    respx.post(MSG).mock(
+        return_value=_msg_response(
+            'Voici la décision :\n```json\n{"category": 1, "priority": 4, '
+            '"technician_id": 7, "draft": "ok", "confidence": 0.9}\n```'
+        )
+    )
+    result = await _adapter().complete("sys", "user")
+    assert result.decision.category == 1 and result.decision.technician_id == 7
 
 
 @respx.mock
 async def test_invalid_json_raises_response_error():
-    respx.post(MSG).mock(return_value=_msg_response("pas du json}"))
+    respx.post(MSG).mock(return_value=_msg_response("pas du json"))
     with pytest.raises(LlmResponseError):
         await _adapter().complete("sys", "user")
 

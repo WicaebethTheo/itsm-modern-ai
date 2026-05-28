@@ -29,7 +29,9 @@ def test_rejects_category_out_of_whitelist(refs):
     out = engine.evaluate(_decision(category=999), refs, 0.7)
     assert out.is_a_trier
     assert out.reason is TriageReason.CATEGORY_NOT_IN_WHITELIST
-    assert out.decision is None
+    # La Décision brute est CONSERVÉE même rejetée (visibilité sandbox/journal) ;
+    # `accepted=False` reste l'unique barrière d'écriture.
+    assert out.decision is not None and out.decision.category == 999
 
 
 def test_rejects_technician_out_of_whitelist(refs):

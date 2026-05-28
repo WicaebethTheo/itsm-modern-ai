@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag, type TagTone } from "@/components/ui/tag";
+import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
 import { Api, type ExecutionMode, type RefItem } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, FolderTree, Layers, Save } from "lucide-react";
+import { AlertTriangle, CheckSquare, FolderTree, Layers, Save, Square } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 /** Couleur du badge de mode : neutre → amber → rouge selon l'autonomie accordée. */
@@ -68,6 +69,7 @@ function CheckList({
 
 export function Scope() {
   const t = useT();
+  const toast = useToast();
   const categories = useResource(useCallback(() => Api.discovery("category"), []));
   const entities = useResource(useCallback(() => Api.discovery("entity"), []));
   const [cats, setCats] = useState<Set<number>>(new Set());
@@ -76,7 +78,6 @@ export function Scope() {
   const [modes, setModes] = useState<Map<number, ExecutionMode | "">>(new Map());
   // Seuil de confiance du mode semi-auto, par entité ("" = défaut global).
   const [thresholds, setThresholds] = useState<Map<number, number | "">>(new Map());
-  const [msg, setMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     if (categories.data)
@@ -112,7 +113,6 @@ export function Scope() {
   const hasAuto = [...modes.values()].some((m) => m === "semi_auto" || m === "full_auto");
 
   async function save() {
-    setMsg(null);
     try {
       await Api.setScope({ category_ids: [...cats], entity_ids: [...ents] });
       await Api.saveModes(
@@ -127,13 +127,16 @@ export function Scope() {
           };
         }),
       );
-      setMsg({
-        kind: "success",
-        text: t("Périmètre et modes enregistrés.", "Scope and modes saved."),
-      });
+      toast.success(t("Périmètre et modes enregistrés.", "Scope and modes saved."));
     } catch (e: unknown) {
-      setMsg({ kind: "error", text: (e as Error).message });
+      toast.error((e as Error).message);
     }
+  }
+
+  /** Bascule tout sélectionné / tout désélectionné selon l'état courant. */
+  function toggleAll(ids: number[], current: Set<number>, setter: (s: Set<number>) => void) {
+    const allOn = ids.length > 0 && ids.every((id) => current.has(id));
+    setter(allOn ? new Set() : new Set(ids));
   }
 
   const reload = () => {
@@ -185,7 +188,6 @@ export function Scope() {
         )}
       </Card>
 
-      {msg && <Banner kind={msg.kind}>{msg.text}</Banner>}
       {hasAuto && (
         <Banner kind="error">
           {t(
@@ -200,6 +202,30 @@ export function Scope() {
           <PanelHead
             title={t("Catégories autorisées", "Allowed categories")}
             subtitle={`${cats.size} / ${categories.data?.length ?? 0} ${t("sélectionnée(s)", "selected")}`}
+            right={
+              (categories.data?.length ?? 0) > 0 ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    toggleAll(
+                      (categories.data ?? []).map((c) => c.ext_id),
+                      cats,
+                      setCats,
+                    )
+                  }
+                >
+                  {cats.size === (categories.data?.length ?? 0) ? (
+                    <Square className="h-3.5 w-3.5" />
+                  ) : (
+                    <CheckSquare className="h-3.5 w-3.5" />
+                  )}
+                  {cats.size === (categories.data?.length ?? 0)
+                    ? t("Tout désélectionner", "Deselect all")
+                    : t("Tout sélectionner", "Select all")}
+                </Button>
+              ) : undefined
+            }
           />
           <CheckList
             items={categories.data ?? []}
@@ -212,6 +238,30 @@ export function Scope() {
           <PanelHead
             title={t("Entités du périmètre", "Scope entities")}
             subtitle={`${ents.size} / ${entities.data?.length ?? 0} ${t("sélectionnée(s)", "selected")} · ${t("mode par entité", "mode per entity")}`}
+            right={
+              (entities.data?.length ?? 0) > 0 ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    toggleAll(
+                      (entities.data ?? []).map((e) => e.ext_id),
+                      ents,
+                      setEnts,
+                    )
+                  }
+                >
+                  {ents.size === (entities.data?.length ?? 0) ? (
+                    <Square className="h-3.5 w-3.5" />
+                  ) : (
+                    <CheckSquare className="h-3.5 w-3.5" />
+                  )}
+                  {ents.size === (entities.data?.length ?? 0)
+                    ? t("Tout désélectionner", "Deselect all")
+                    : t("Tout sélectionner", "Select all")}
+                </Button>
+              ) : undefined
+            }
           />
           <CheckList
             items={entities.data ?? []}

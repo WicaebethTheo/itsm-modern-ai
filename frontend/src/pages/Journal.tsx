@@ -4,13 +4,17 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
+import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
 import { Api, type DecisionEntry } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { confidenceTone, priorityLabel, priorityTone } from "@/lib/labels";
 import { ScrollText } from "lucide-react";
 import { useCallback, useState } from "react";
 
 function AnnotationCell({ d, ph }: { d: DecisionEntry; ph: string }) {
+  const t = useT();
+  const toast = useToast();
   const [value, setValue] = useState(d.annotation);
   const [saved, setSaved] = useState<"idle" | "ok">("idle");
   return (
@@ -28,8 +32,13 @@ function AnnotationCell({ d, ph }: { d: DecisionEntry; ph: string }) {
         size="sm"
         variant="outline"
         onClick={async () => {
-          await Api.annotate(d.id, value);
-          setSaved("ok");
+          try {
+            await Api.annotate(d.id, value);
+            setSaved("ok");
+            toast.success(t("Annotation enregistrée.", "Annotation saved."));
+          } catch (e) {
+            toast.error((e as Error).message);
+          }
         }}
       >
         {saved === "ok" ? "✓" : "OK"}
@@ -152,13 +161,26 @@ export function Journal() {
                         ? `G#${d.group_id}`
                         : "—")}
                 </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {d.category_name ?? (d.category != null ? `#${d.category}` : "—")} ·{" "}
-                  {t("urg.", "urg.")} {d.urgency ?? "—"} · {t("prio.", "prio.")} {d.priority ?? "—"}
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span>{d.category_name ?? (d.category != null ? `#${d.category}` : "—")}</span>
+                  <span>·</span>
+                  <span>
+                    {t("urg.", "urg.")} {d.urgency ?? "—"}
+                  </span>
+                  <span>·</span>
+                  {d.priority != null ? (
+                    <Tag tone={priorityTone(d.priority)}>{priorityLabel(d.priority, t)}</Tag>
+                  ) : (
+                    <span>{t("prio.", "prio.")} —</span>
+                  )}
                 </div>
               </td>
-              <td className="px-4 py-2 font-mono">
-                {d.confidence != null ? `${Math.round(d.confidence * 100)}%` : "—"}
+              <td className="px-4 py-2">
+                {d.confidence != null ? (
+                  <Tag tone={confidenceTone(d.confidence)}>{Math.round(d.confidence * 100)}%</Tag>
+                ) : (
+                  <span className="font-mono">—</span>
+                )}
               </td>
               <td className="px-4 py-2">
                 <AnnotationCell d={d} ph={t("juste / faux / signal…", "right / wrong / signal…")} />

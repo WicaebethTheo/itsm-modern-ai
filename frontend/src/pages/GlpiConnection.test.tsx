@@ -1,6 +1,7 @@
 import { Api } from "@/lib/api";
 import { demo } from "@/lib/demo";
-import { render, screen, waitFor } from "@testing-library/react";
+import { renderWithToast } from "@/test-utils";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GlpiConnection } from "./GlpiConnection";
@@ -22,7 +23,7 @@ describe("GlpiConnection", () => {
   });
 
   it("enregistre la connexion (updateConfig + confirmation)", async () => {
-    render(<GlpiConnection />);
+    renderWithToast(<GlpiConnection />);
     await screen.findByText("Paramètres de connexion");
     await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
 
@@ -34,7 +35,7 @@ describe("GlpiConnection", () => {
   });
 
   it("le test de connexion rapporte un GLPI joignable", async () => {
-    render(<GlpiConnection />);
+    renderWithToast(<GlpiConnection />);
     await screen.findByText("Paramètres de connexion");
     await userEvent.click(screen.getByRole("button", { name: "Tester la connexion" }));
     expect(await screen.findByText("Connexion GLPI OK (joignable).")).toBeInTheDocument();
@@ -45,7 +46,7 @@ describe("GlpiConnection", () => {
       ...demo.health,
       glpi: { configured: true, reachable: false },
     });
-    render(<GlpiConnection />);
+    renderWithToast(<GlpiConnection />);
     await screen.findByText("Paramètres de connexion");
     await userEvent.click(screen.getByRole("button", { name: "Tester la connexion" }));
     expect(await screen.findByText(/GLPI injoignable/)).toBeInTheDocument();
