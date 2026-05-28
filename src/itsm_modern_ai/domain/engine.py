@@ -24,11 +24,15 @@ def evaluate(decision: Decision, refs: Referentials, confidence_threshold: float
     Whitelist AVANT le seuil : un ID hors-liste est rejeté quelle que soit la
     confiance auto-déclarée (qui n'est pas calibrée, cf. FR-8).
     """
+    # On porte TOUJOURS la Décision LLM brute dans l'outcome — même rejeté — pour que
+    # la sandbox/journal puissent montrer le brouillon, le routage et la confiance
+    # tentés (utile en pilote pour comprendre POURQUOI ça a été trié à la main).
+    # Le `accepted=False` reste la barrière : aucune écriture GLPI n'est faite sans.
     rejection = whitelist.check(decision, refs)
     if rejection is not None:
-        return TriageOutcome(accepted=False, reason=rejection, decision=None)
+        return TriageOutcome(accepted=False, reason=rejection, decision=decision)
 
     if decision.confidence < confidence_threshold:
-        return TriageOutcome(accepted=False, reason=TriageReason.LOW_CONFIDENCE, decision=None)
+        return TriageOutcome(accepted=False, reason=TriageReason.LOW_CONFIDENCE, decision=decision)
 
     return TriageOutcome(accepted=True, reason=TriageReason.ACCEPTED, decision=decision)

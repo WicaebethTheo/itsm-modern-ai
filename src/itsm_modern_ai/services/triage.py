@@ -141,9 +141,15 @@ class TriageService:
         user = prompting.build_user_prompt(masked.text, refs, self._profiles, self._guidance)
         try:
             result = await self._call_llm(system, user)
-        except LlmResponseError:
+        except LlmResponseError as exc:
+            # Sortie LLM invalide après garde-fous (JSON malformé, schéma KO). Tracé pour
+            # diagnostiquer côté admin sans exposer le détail au client.
+            logger.warning("triage: réponse LLM invalide (ticket=%s): %s", ticket_id, exc)
             return TriageOutcome(accepted=False, reason=TriageReason.INVALID_OUTPUT), None
-        except LlmTransportError:
+        except LlmTransportError as exc:
+            # Réseau/clé/quota : visible dans les logs pour qualifier la panne — la sandbox
+            # ne remontait qu'un `reason=llm_error` opaque sans la cause exacte.
+            logger.warning("triage: appel LLM échoué (ticket=%s): %s", ticket_id, exc)
             return TriageOutcome(accepted=False, reason=TriageReason.LLM_ERROR), None
 
         outcome = engine.evaluate(result.decision, refs, self._settings.confidence_threshold)

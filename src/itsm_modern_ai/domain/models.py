@@ -71,7 +71,10 @@ class Decision(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    category: int = Field(description="ID de catégorie GLPI (itilcategories_id) proposé.")
+    # `None` autorisé : certains LLM (Sonnet 4.6+) expriment leur doute par null ici
+    # malgré le prompt. Le garde-fou (whitelist) considère alors la Décision « à trier »
+    # via `CATEGORY_NOT_IN_WHITELIST` — comportement homogène avec un ID hors périmètre.
+    category: int | None = Field(default=None, description="ID de catégorie GLPI proposé, null si doute.")
     priority: int = Field(description="Priorité GLPI proposée (1-6).")
     technician_id: int | None = Field(
         default=None, description="ID GLPI du technicien (utilisateur) proposé, sinon null."

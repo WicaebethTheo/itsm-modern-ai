@@ -6,10 +6,19 @@ import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { Api, type SandboxResult } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { confidenceTone, priorityLabel, priorityTone } from "@/lib/labels";
 import { FlaskConical } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
-function Row({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
+function Row({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: ReactNode;
+  mono?: boolean;
+}) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-0">
       <span className="text-[12px] text-muted-foreground">{label}</span>
@@ -91,30 +100,59 @@ export function Sandbox() {
               <div className="flex flex-col">
                 <Row
                   label={t("Routage — catégorie", "Routing — category")}
-                  value={result.category ?? "—"}
+                  value={
+                    result.category_name
+                      ? `${result.category_name} (#${result.category})`
+                      : (result.category ?? "—")
+                  }
                 />
-                <Row label={t("Priorité", "Priority")} value={result.priority ?? "—"} />
+                <Row
+                  label={t("Priorité", "Priority")}
+                  value={
+                    result.priority != null ? (
+                      <Tag tone={priorityTone(result.priority)}>
+                        {priorityLabel(result.priority, t)}
+                      </Tag>
+                    ) : (
+                      "—"
+                    )
+                  }
+                />
                 <Row
                   label={t("Routage — technicien / groupe", "Routing — technician / group")}
                   value={
                     result.technician_id != null
-                      ? `T#${result.technician_id}`
+                      ? result.technician_name
+                        ? `${result.technician_name} (#${result.technician_id})`
+                        : `T#${result.technician_id}`
                       : result.group_id != null
-                        ? `G#${result.group_id}`
+                        ? result.group_name
+                          ? `${result.group_name} (#${result.group_id})`
+                          : `G#${result.group_id}`
                         : "—"
                   }
-                  mono
                 />
                 <Row
                   label={t("Confiance", "Confidence")}
                   value={
-                    result.confidence != null ? `${Math.round(result.confidence * 100)}%` : "—"
+                    result.confidence != null ? (
+                      <Tag tone={confidenceTone(result.confidence)}>
+                        {Math.round(result.confidence * 100)}%
+                      </Tag>
+                    ) : (
+                      "—"
+                    )
                   }
-                  mono
                 />
                 <Row
                   label={t("Validation liste blanche", "Whitelist validation")}
-                  value={result.accepted ? "OK" : (result.reason ?? t("à trier", "to triage"))}
+                  value={
+                    result.accepted ? (
+                      <Tag tone="green">OK</Tag>
+                    ) : (
+                      <Tag tone="amber">{result.reason ?? t("à trier", "to triage")}</Tag>
+                    )
+                  }
                 />
               </div>
               {result.draft && (

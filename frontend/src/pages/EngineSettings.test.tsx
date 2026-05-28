@@ -1,6 +1,7 @@
 import { Api } from "@/lib/api";
 import { demo } from "@/lib/demo";
-import { render, screen, waitFor } from "@testing-library/react";
+import { renderWithToast } from "@/test-utils";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EngineSettings } from "./EngineSettings";
@@ -28,13 +29,13 @@ describe("EngineSettings — masquage PII", () => {
   });
 
   it("reflète l'état initial des masques (toggles cochés)", async () => {
-    render(<EngineSettings />);
+    renderWithToast(<EngineSettings />);
     const email = await screen.findByRole("switch", { name: "Masquer les e-mails" });
     expect(email).toHaveAttribute("aria-checked", "true");
   });
 
   it("désactiver un motif et enregistrer envoie mask_email=false", async () => {
-    render(<EngineSettings />);
+    renderWithToast(<EngineSettings />);
     const email = await screen.findByRole("switch", { name: "Masquer les e-mails" });
     await userEvent.click(email); // ON → OFF
     await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
@@ -51,7 +52,7 @@ describe("EngineSettings — masquage PII", () => {
   });
 
   it("affiche un message de confirmation après enregistrement", async () => {
-    render(<EngineSettings />);
+    renderWithToast(<EngineSettings />);
     await screen.findByRole("switch", { name: "Masquer les e-mails" });
     await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
     expect(await screen.findByText("Réglages enregistrés.")).toBeInTheDocument();

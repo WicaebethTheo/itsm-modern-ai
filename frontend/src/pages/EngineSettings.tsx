@@ -6,6 +6,7 @@ import { Field } from "@/components/ui/label";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toast";
 import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type ConfigUpdate, type ExecutionMode, asBool } from "@/lib/api";
@@ -47,6 +48,7 @@ function HeadTitle({ icon, children }: { icon: ReactNode; children: ReactNode })
 
 export function EngineSettings() {
   const t = useT();
+  const toast = useToast();
   const cfg = useResource(useCallback(() => Api.getConfig(), []));
   const [form, setForm] = useState<ConfigUpdate>({});
   const [pollingOn, setPollingOn] = useState(true);
@@ -55,7 +57,6 @@ export function EngineSettings() {
   const [mask, setMask] = useState({ email: true, phone: true, iban: true, secret: true });
   // Mode d'exécution par défaut global (FR-17) — appliqué aux entités sans mode explicite.
   const [modeDefault, setModeDefault] = useState<ExecutionMode>("suggestion");
-  const [msg, setMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const c = cfg.data;
 
   useEffect(() => {
@@ -78,7 +79,6 @@ export function EngineSettings() {
   const num = (v: string) => (v === "" ? undefined : Number(v));
 
   async function save() {
-    setMsg(null);
     try {
       await Api.updateConfig({
         ...form,
@@ -92,9 +92,9 @@ export function EngineSettings() {
       });
       setForm({});
       cfg.reload();
-      setMsg({ kind: "success", text: t("Réglages enregistrés.", "Settings saved.") });
+      toast.success(t("Réglages enregistrés.", "Settings saved."));
     } catch (e: unknown) {
-      setMsg({ kind: "error", text: `${t("Erreur", "Error")} : ${(e as Error).message}` });
+      toast.error(`${t("Erreur", "Error")} : ${(e as Error).message}`);
     }
   }
 
@@ -103,8 +103,6 @@ export function EngineSettings() {
   return (
     <div className="space-y-6">
       <div className="space-y-6">
-        {msg && <Banner kind={msg.kind}>{msg.text}</Banner>}
-
         {/* ── Comportement du moteur ─────────────────────────────────────── */}
         <section className="space-y-3">
           <SectionTitle icon={<Sliders />}>

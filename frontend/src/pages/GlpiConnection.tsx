@@ -1,10 +1,10 @@
-import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dot, type DotTone } from "@/components/ui/dot";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
 import { PanelHead } from "@/components/ui/panel";
+import { useToast } from "@/components/ui/toast";
 import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type ConfigUpdate, asBool } from "@/lib/api";
@@ -13,12 +13,12 @@ import { useCallback, useEffect, useState } from "react";
 
 export function GlpiConnection() {
   const t = useT();
+  const toast = useToast();
   const cfg = useResource(useCallback(() => Api.getConfig(), []));
   const health = useResource(useCallback(() => Api.health(), []));
   const [form, setForm] = useState<ConfigUpdate>({});
   const [verifyTls, setVerifyTls] = useState(true);
   const [legacy9x, setLegacy9x] = useState(false);
-  const [msg, setMsg] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
 
   const c = cfg.data;
@@ -34,7 +34,6 @@ export function GlpiConnection() {
   }
 
   async function save() {
-    setMsg(null);
     try {
       await Api.updateConfig({
         ...form,
@@ -44,29 +43,21 @@ export function GlpiConnection() {
       setForm({});
       cfg.reload();
       health.reload();
-      setMsg({ kind: "success", text: t("Connexion GLPI enregistrée.", "GLPI connection saved.") });
+      toast.success(t("Connexion GLPI enregistrée.", "GLPI connection saved."));
     } catch (e: unknown) {
-      setMsg({ kind: "error", text: `${t("Erreur", "Error")} : ${(e as Error).message}` });
+      toast.error(`${t("Erreur", "Error")} : ${(e as Error).message}`);
     }
   }
 
   async function testConnection() {
     setTesting(true);
-    setMsg(null);
     try {
       const h = await Api.health();
-      if (!h.glpi.configured)
-        setMsg({ kind: "error", text: t("GLPI non configuré.", "GLPI not configured.") });
+      if (!h.glpi.configured) toast.error(t("GLPI non configuré.", "GLPI not configured."));
       else if (h.glpi.reachable)
-        setMsg({
-          kind: "success",
-          text: t("Connexion GLPI OK (joignable).", "GLPI connection OK (reachable)."),
-        });
+        toast.success(t("Connexion GLPI OK (joignable).", "GLPI connection OK (reachable)."));
       else
-        setMsg({
-          kind: "error",
-          text: t("GLPI injoignable (URL/token/SSL ?).", "GLPI unreachable (URL/token/SSL?)."),
-        });
+        toast.error(t("GLPI injoignable (URL/token/SSL ?).", "GLPI unreachable (URL/token/SSL?)."));
       health.reload();
     } finally {
       setTesting(false);
@@ -101,7 +92,6 @@ export function GlpiConnection() {
         }
       />
       <CardContent className="flex flex-col gap-4 p-5">
-        {msg && <Banner kind={msg.kind}>{msg.text}</Banner>}
         <Field label={t("URL de base (apirest.php)", "Base URL (apirest.php)")}>
           <Input
             defaultValue={c?.glpi_base_url ?? ""}

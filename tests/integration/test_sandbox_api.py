@@ -37,12 +37,16 @@ def test_sandbox_requires_llm_configured(client):
 def test_sandbox_returns_decision_without_writing(client):
     # Pousser la clé LLM via l'API (comme le ferait l'UI).
     client.post("/api/config", json={"llm_api_key": "sk-test"})
-    # Charger une whitelist en cache via le câblage interne.
+    # Charger une whitelist en cache via le câblage interne, ET en base — pour que
+    # les noms (catégorie / technicien) soient résolus comme dans le Journal.
     from itsm_modern_ai.domain.models import Referentials
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.services import referentials
 
-    client.app.state.whitelist_cache.refresh(
-        Referentials(categories={1: "Compte"}, technicians={11: "Syl"})
-    )
+    refs = Referentials(categories={1: "Compte"}, technicians={11: "Syl"})
+    client.app.state.whitelist_cache.refresh(refs)
+    with db.session_scope() as s:
+        referentials.sync(s, refs)
     decision_json = (
         '{"category":1,"priority":3,"technician_id":11,"draft":"Bonjour","confidence":0.88}'
     )
@@ -60,3 +64,6 @@ def test_sandbox_returns_decision_without_writing(client):
     body = r.json()
     assert body["accepted"] is True
     assert body["technician_id"] == 11 and body["confidence"] == 0.88
+    # Noms résolus depuis le ReferentialCache (utilisés par l'UI pour afficher « Syl » + #11).
+    assert body["category_name"] == "Compte"
+    assert body["technician_name"] == "Syl"

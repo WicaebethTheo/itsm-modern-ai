@@ -1,5 +1,6 @@
 import { Api, type RefItem } from "@/lib/api";
-import { render, screen, waitFor } from "@testing-library/react";
+import { renderWithToast } from "@/test-utils";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Technicians } from "./Technicians";
@@ -31,14 +32,14 @@ describe("Technicians (éditeur d'éligibilité)", () => {
 
   it("liste les techniciens scannés", async () => {
     vi.mocked(Api.discovery).mockResolvedValue(TECHS);
-    render(<Technicians />);
+    renderWithToast(<Technicians />);
     expect(await screen.findByText("Sylvain Martin")).toBeInTheDocument();
     expect(screen.getByText("Nadia Bouaziz")).toBeInTheDocument();
   });
 
   it("enregistre l'éligibilité (saveTechnicians + confirmation)", async () => {
     vi.mocked(Api.discovery).mockResolvedValue(TECHS);
-    render(<Technicians />);
+    renderWithToast(<Technicians />);
     await screen.findByText("Sylvain Martin");
     await userEvent.click(screen.getByRole("button", { name: "Enregistrer la sélection" }));
 
@@ -54,7 +55,7 @@ describe("Technicians (éditeur d'éligibilité)", () => {
 
   it("affiche l'état vide quand rien n'a été scanné", async () => {
     vi.mocked(Api.discovery).mockResolvedValue([]);
-    render(<Technicians />);
+    renderWithToast(<Technicians />);
     expect(await screen.findByText("Aucun élément")).toBeInTheDocument();
   });
 });
