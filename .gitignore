@@ -29,3 +29,6 @@ spike-report*.md
 # Mockups / images de travail
 Untitled.png
 *.mockup.png
+
+# Notes internes (planning, archives de passation, archives) — non publié
+notes/

@@ -5,6 +5,16 @@ pas SemVer strictement (version d'app dans `pyproject.toml`, actuellement `0.7.0
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-29 — Docs : sortie du planning interne du repo public
+
+Sortie des artefacts internes du repo public vers un dossier `notes/`
+(gitignored) : `HANDOFF.md` (archives de passation IA), `bootstrap-archive.md`
+(archive d'amorçage) et tout `docs/planning/` (PRD, architecture
+détaillée, epics, addendum). Le repo public garde le README pro,
+`docs/install.md`, `docs/dpo.md`, `docs/spike.md`, `docs/project-context.md`
+(invariants), `docs/design/` et les conventions racine (LICENSE,
+SECURITY, CHANGELOG). Refs README et `project-context.md` mises à jour.
+
 ## [Non publié] — 2026-05-29
 
 Toilettage code/archi de fond (5 phases — aucun changement de fonctionnalité visible).

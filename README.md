@@ -163,7 +163,7 @@ frontend/          SPA React 19 + Vite 6 + Tailwind v4 (i18n FR/EN, Biome)
 migrations/        Alembic
 scripts/           spike_routing.py (Epic 1), diagnostics GLPI
 tests/             pytest + respx (unit + integration)
-docs/              project-context, install, dpo, spike, planning/, design/
+docs/              project-context, install, dpo, spike, design/
 ```
 
 Le moteur reste **headless** : la SPA React est servie en statique par le moteur (image Docker multi-stage `node:22 → python:3.13`), aucun serveur Node au runtime. Le contrat REST est l'API publique du moteur — CLI/Slack/batch peuvent s'y brancher demain.
@@ -236,9 +236,7 @@ Chemins critiques couverts : pipeline immuable, masquage PII, whitelist (catégo
 | [`docs/dpo.md`](docs/dpo.md) | Fiche DPO 1 page (validation RGPD) |
 | [`docs/spike.md`](docs/spike.md) | Spike Epic 1 — protocole et résultats |
 | [`docs/project-context.md`](docs/project-context.md) | Invariants non-négociables (à lire avant de coder) |
-| [`docs/planning/`](docs/planning/) | PRD, architecture, epics, addendum (référence figée) |
 | [`docs/design/`](docs/design/) | Specs design (palette de couleurs, cartes) |
-| [`HANDOFF.md`](HANDOFF.md) | Passation active pour le prochain agent |
 | [`CHANGELOG.md`](CHANGELOG.md) | Historique des changements (keep-a-changelog) |
 | [`SECURITY.md`](SECURITY.md) | Politique de sécurité et divulgation |
 
