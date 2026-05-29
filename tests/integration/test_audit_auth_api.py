@@ -24,6 +24,8 @@ def _seed_decision():
 
 
 def _settings(tmp_path, **kw) -> Settings:
+    kw.setdefault("dev_open_admin", True)  # défaut test : admin ouvert sans mot de passe
+    kw.setdefault("session_https_only", False)  # TestClient = http → cookie non-Secure
     return Settings(
         _env_file=None,  # isole du .env ambiant
         database_url=f"sqlite:///{tmp_path / 'a.db'}",
@@ -133,6 +135,16 @@ def test_login_success_resets_counter(tmp_path):
         c.post("/api/auth/login", json={"password": "nope"})
         c.post("/api/auth/login", json={"password": "nope"})
         assert c.post("/api/auth/login", json={"password": "s3cret"}).status_code == 200
+
+
+# ── Fail-closed : aucun mot de passe + dev_open_admin=False → refus (durcissement) ──
+def test_admin_fail_closed_when_no_password_and_not_dev_open(tmp_path):
+    settings = _settings(tmp_path, dev_open_admin=False)  # ni password ni ouverture explicite
+    with TestClient(create_app(settings)) as c:
+        # Routes protégées : refus systématique (401), pas d'accès « ouvert ».
+        assert c.get("/api/decisions").status_code == 401
+        assert c.post("/api/config", json={"llm_model": "x"}).status_code == 401
+        assert c.get("/api/export/decisions.csv").status_code == 401
 
 
 def test_status_counters_present(open_client):

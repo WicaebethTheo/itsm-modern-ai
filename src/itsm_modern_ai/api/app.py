@@ -188,13 +188,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         block_seconds=settings.login_block_seconds,
     )
 
-    # Session signée pour l'auth locale (FR-24). Secret = master key si fournie,
-    # sinon éphémère (sessions réinitialisées au redémarrage — acceptable en pilote).
+    # Session signée pour l'auth locale (FR-24). Durcissement audit 2026-05 :
+    # le secret de session est DÉRIVÉ (HKDF, info=b"session-signing") de la MÊME source
+    # de clé que la boîte à secrets (MASTER_KEY env OU data/master.key persistée). Il est
+    # donc DISTINCT de la clé Fernet ET STABLE entre redémarrages, même si MASTER_KEY est
+    # vide (la clé fichier persiste). `_secrets.token_urlsafe` n'est qu'un ultime filet
+    # (clé éphémère) si la dérivation échoue, jamais le cas nominal.
+    try:
+        session_secret = make_secrets_box(settings).derive_key(b"session-signing").hex()
+    except Exception:  # pragma: no cover - filet défensif
+        logger.warning("dérivation du secret de session échouée — secret éphémère (sessions volatiles)")
+        session_secret = _secrets.token_urlsafe(32)
     app.add_middleware(
         SessionMiddleware,
-        secret_key=settings.master_key or _secrets.token_urlsafe(32),
+        secret_key=session_secret,
+        # `lax` : compromis usuel (le cookie suit les navigations top-level GET, bloque
+        # les POST cross-site → protège contre la plupart des CSRF). `strict` casserait
+        # un éventuel retour de lien externe vers l'admin ; à passer en `strict` si
+        # l'admin n'est jamais atteinte via un lien tiers (durcissement possible).
         same_site="lax",
-        https_only=False,  # TLS terminé par le reverse proxy (FR-26)
+        # TLS terminé par le reverse proxy (FR-26) ; flag Secure pilotable par config
+        # (défaut sûr = True en prod ; mettre False pour dev/tests en HTTP local).
+        https_only=settings.session_https_only,
     )
 
     # Public : health (FR-27), status, auth.

@@ -17,6 +17,7 @@ def client(tmp_path):
         database_url=f"sqlite:///{tmp_path / 'api.db'}",
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
+        dev_open_admin=True,  # admin sans mot de passe (test) — fail-closed désactivé
     )
     with TestClient(create_app(settings)) as c:
         yield c
@@ -62,3 +63,30 @@ def test_push_glpi_config_and_threshold(client):
 def test_invalid_threshold_rejected(client):
     r = client.post("/api/config", json={"confidence_threshold": 1.5})
     assert r.status_code == 422  # validation Pydantic (0..1)
+
+
+# ── Anti-SSRF sur les URLs de base (durcissement audit 2026-05) ──────────────
+def test_ssrf_private_url_rejected(client):
+    # IP privée → refusée (sinon la clé LLM partirait vers un hôte interne).
+    assert client.post("/api/config", json={"llm_base_url": "https://10.0.0.5/v1"}).status_code == 422
+    # Loopback / metadata cloud → refusés.
+    assert client.post("/api/config", json={"openai_base_url": "https://127.0.0.1/v1"}).status_code == 422
+    assert client.post("/api/config", json={"anthropic_base_url": "https://169.254.169.254"}).status_code == 422
+
+
+def test_ssrf_http_public_rejected(client):
+    # http:// non toléré pour une URL publique (clé en clair sur le réseau).
+    assert client.post("/api/config", json={"llm_base_url": "http://api.mistral.ai/v1"}).status_code == 422
+
+
+def test_ssrf_public_https_accepted(client):
+    r = client.post("/api/config", json={"openai_base_url": "https://api.openai.com/v1"})
+    assert r.status_code == 200
+    assert r.json()["openai_base_url"] == "https://api.openai.com/v1"
+
+
+def test_ssrf_ollama_localhost_accepted(client):
+    # Ollama local : http + localhost explicitement autorisés.
+    r = client.post("/api/config", json={"ollama_base_url": "http://localhost:11434/v1"})
+    assert r.status_code == 200
+    assert r.json()["ollama_base_url"] == "http://localhost:11434/v1"

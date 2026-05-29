@@ -104,9 +104,18 @@ class Settings(BaseSettings):
     polling_max_tickets: int = 200  # garde-fou de pagination par cycle
 
     # Authentification locale (FR-24). Bootstrap : si défini et aucun hash stocké,
-    # le mot de passe est hashé (Argon2) et stocké au premier usage. Si AUCUN mot de
-    # passe n'est configuré → endpoints d'admin OUVERTS (pilote réseau interne) + warning.
+    # le mot de passe est hashé (Argon2) et stocké au premier usage.
     admin_password: str = ""
+
+    # Garde-fou FAIL-CLOSED (durcissement audit 2026-05) : par défaut, si AUCUN mot de
+    # passe admin n'est configuré, les endpoints d'admin sont REFUSÉS (401). Mettre ce
+    # flag à True ouvre volontairement l'admin sans mot de passe (ancien comportement
+    # « pilote réseau interne »). À n'activer qu'en labo/dev, jamais en production.
+    dev_open_admin: bool = False
+
+    # Cookie de session : `https_only` (Secure flag). Défaut sûr = True (prod derrière
+    # TLS). À mettre à False pour dev/tests en HTTP local (sinon le cookie est ignoré).
+    session_https_only: bool = True
 
     # Rate-limiting du login (anti brute-force). Limiteur EN MÉMOIRE par IP — adapté
     # au mono-process pilote (pas de HA / pas de store partagé). 0 = désactivé.

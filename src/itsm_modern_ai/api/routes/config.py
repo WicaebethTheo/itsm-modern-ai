@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ...domain import prompting
+from ...domain.url_safety import UrlSafetyError, validate_base_url
 from ...services.runtime_config import PLAIN_KEYS, SECRET_KEYS, RuntimeConfigService
 from ..deps import get_config_service
 
@@ -112,6 +113,32 @@ class ConfigUpdate(BaseModel):
     llm_api_key: str | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
+
+    # ── Validation anti-SSRF des URLs de base (durcissement audit 2026-05) ────────
+    # Les URLs publiques (GLPI, Mistral, OpenAI, Anthropic) exigent https:// et un hôte
+    # routable (rejet loopback/IP privée/metadata cloud). Ollama est local → http +
+    # localhost/IP privée autorisés explicitement.
+    @field_validator(
+        "glpi_base_url", "llm_base_url", "openai_base_url", "anthropic_base_url"
+    )
+    @classmethod
+    def _validate_public_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        try:
+            return validate_base_url(v, allow_local=False)
+        except UrlSafetyError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @field_validator("ollama_base_url")
+    @classmethod
+    def _validate_ollama_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        try:
+            return validate_base_url(v, allow_local=True)
+        except UrlSafetyError as exc:
+            raise ValueError(str(exc)) from exc
 
 
 def _view(cfg: RuntimeConfigService) -> ConfigView:

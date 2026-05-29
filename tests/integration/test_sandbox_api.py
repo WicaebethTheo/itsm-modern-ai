@@ -22,6 +22,7 @@ def client(tmp_path):
         master_key=Fernet.generate_key().decode(),
         llm_base_url=LLM_BASE,
         polling_enabled=False,
+        dev_open_admin=True,  # admin sans mot de passe (test) — fail-closed désactivé
     )
     with TestClient(create_app(settings)) as c:
         yield c

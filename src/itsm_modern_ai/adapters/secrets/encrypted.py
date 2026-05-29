@@ -11,6 +11,8 @@ import logging
 from pathlib import Path
 
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 logger = logging.getLogger("itsm.secrets")
 
@@ -44,8 +46,21 @@ class FernetSecretsBox:
 
     @property
     def key(self) -> bytes:
-        """Clé brute — sert aussi de secret de signature des sessions (FR-24)."""
+        """Clé brute de chiffrement (Fernet). NE PAS réutiliser directement pour
+        signer les sessions : utiliser `derive_key(info=...)` (séparation des usages)."""
         return self._key
+
+    def derive_key(self, info: bytes, length: int = 32) -> bytes:
+        """Dérive une sous-clé DISTINCTE et STABLE depuis la clé maître résolue (HKDF).
+
+        Sécurité (durcissement audit 2026-05) : la clé Fernet ne doit pas servir AUSSI
+        de secret de signature des sessions. On dérive une clé dédiée via HKDF-SHA256 en
+        variant `info` (ex. b"session-signing"). La sortie est déterministe pour une même
+        clé maître → stable entre redémarrages (à condition que MASTER_KEY soit fixé ou
+        que data/master.key persiste, ce que résout `_load_or_create_key`).
+        """
+        hkdf = HKDF(algorithm=hashes.SHA256(), length=length, salt=None, info=info)
+        return hkdf.derive(self._key)
 
     def encrypt(self, plaintext: str) -> str:
         return self._fernet.encrypt(plaintext.encode()).decode()

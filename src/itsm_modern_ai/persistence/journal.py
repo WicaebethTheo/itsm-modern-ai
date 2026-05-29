@@ -14,6 +14,24 @@ from .tables import DecisionLog, LlmCall, _utcnow
 DEFAULT_DECISIONS_LIMIT = 500
 """Limite par défaut pour list_decisions (Journal de Décision). Partagée avec l'API."""
 
+# Caractères qui, en tête de cellule, déclenchent une formule dans Excel/LibreOffice/
+# Google Sheets (CSV injection / formula injection). On les neutralise par préfixe '.
+_CSV_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: object) -> object:
+    """Neutralise l'injection de formule CSV (durcissement audit 2026-05).
+
+    Si la cellule (rendue en str) commence par un caractère déclencheur de formule,
+    on la préfixe d'une apostrophe pour la forcer en texte. Les valeurs non-str
+    (int/float/bool/None) sont renvoyées telles quelles (aucun risque).
+    """
+    if not isinstance(value, str):
+        return value
+    if value and value[0] in _CSV_FORMULA_TRIGGERS:
+        return "'" + value
+    return value
+
 
 def _bulk_delete_count(session: Session, stmt) -> int:
     """Exécute un DELETE en masse et retourne le nombre de lignes supprimées (atomique)."""
@@ -177,8 +195,9 @@ def decisions_csv(session: Session) -> str:
     )
     for d in list_decisions(session, limit=100_000):
         writer.writerow(
-            [d.id, d.ticket_id, d.ts.isoformat(), d.accepted, d.reason, d.category,
-             d.priority, d.technician_id, d.group_id, d.confidence, d.glpi_link, d.annotation]
+            [_csv_safe(c) for c in
+             (d.id, d.ticket_id, d.ts.isoformat(), d.accepted, d.reason, d.category,
+              d.priority, d.technician_id, d.group_id, d.confidence, d.glpi_link, d.annotation)]
         )
     return buf.getvalue()
 
@@ -194,7 +213,8 @@ def llm_calls_csv(session: Session) -> str:
     rows = session.exec(select(LlmCall).order_by(LlmCall.ts.desc())).all()
     for c in rows:
         writer.writerow(
-            [c.id, c.ticket_id, c.ts.isoformat(), c.model, c.prompt_sent, c.response_received,
-             c.prompt_tokens, c.completion_tokens, c.cost_eur]
+            [_csv_safe(v) for v in
+             (c.id, c.ticket_id, c.ts.isoformat(), c.model, c.prompt_sent, c.response_received,
+              c.prompt_tokens, c.completion_tokens, c.cost_eur)]
         )
     return buf.getvalue()

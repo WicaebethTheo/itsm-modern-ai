@@ -39,6 +39,10 @@ logger = logging.getLogger("itsm.triage")
 
 SessionFactory = Callable[[], AbstractContextManager[Session]]
 
+# Garde-fou de longueur du brouillon publié au demandeur (modes auto). Borne défensive
+# contre un draft LLM anormalement long (prompt injection / boucle) posté publiquement.
+PUBLIC_DRAFT_MAX_CHARS = 4000
+
 
 def rules_fully_handled(ticket: Ticket) -> bool:
     """Étage 1 (FR-5) : le Ticket est-il DÉJÀ traité par les règles GLPI ?
@@ -251,6 +255,14 @@ class TriageService:
                 # Appliqué (semi/full-auto) → réponse PUBLIQUE au demandeur (brouillon seul).
                 # Suggestion → Suivi interne PRIVÉ annoté (brouillon jamais envoyé).
                 content = render_followup(outcome, refs, applied=applied)
+                if applied:
+                    # DURCISSEMENT audit 2026-05 : avant toute publication PUBLIQUE, on
+                    # RE-MASQUE le brouillon LLM (le LLM peut recracher une PII présente
+                    # dans le ticket et non détectée à l'entrée, ou injectée) et on borne
+                    # sa longueur. Le mode suggestion (privé) n'est pas concerné.
+                    content = masking.mask(content, **self._mask_flags).text
+                    if len(content) > PUBLIC_DRAFT_MAX_CHARS:
+                        content = content[:PUBLIC_DRAFT_MAX_CHARS].rstrip() + "…"
                 await self._itsm.write_followup(ticket.id, content, private=not applied)
                 wrote = True
 
