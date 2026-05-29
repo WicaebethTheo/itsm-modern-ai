@@ -34,6 +34,15 @@ def test_rejects_category_out_of_whitelist(refs):
     assert out.decision is not None and out.decision.category == 999
 
 
+def test_rejects_category_none_goes_a_trier(refs):
+    # Catégorie absente / non décidée par le LLM (category=None) → « à trier ».
+    # `None not in refs.categories` est vrai, donc rejet whitelist explicite.
+    out = engine.evaluate(_decision(category=None), refs, 0.7)
+    assert out.is_a_trier
+    assert out.reason is TriageReason.CATEGORY_NOT_IN_WHITELIST
+    assert out.decision is not None and out.decision.category is None
+
+
 def test_rejects_technician_out_of_whitelist(refs):
     out = engine.evaluate(_decision(technician_id=999), refs, 0.7)
     assert out.reason is TriageReason.TECHNICIAN_NOT_IN_WHITELIST

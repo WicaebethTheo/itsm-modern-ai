@@ -49,8 +49,13 @@ async def sandbox(body: SandboxRequest, request: Request) -> SandboxResponse:
             detail={"code": "llm_not_configured", "message": "Clé LLM absente : pousser via POST /api/config."},
         )
 
-    refs = request.app.state.whitelist_cache.referentials
     raw = f"{body.title}\n{body.content}".strip()
+    # Périmètre EFFECTIF lu depuis la DB (catégories sélectionnées, techniciens/groupes
+    # éligibles), comme le moteur réel (cf. app.py:_effective_refs). On NE lit PAS le cache
+    # mémoire `whitelist_cache.referentials`, qui n'est peuplé que par le poller : si le
+    # polling est off, ce cache serait vide et la sandbox renverrait « à trier » à tort.
+    with db.session_scope() as session:
+        refs = referentials.effective_referentials(session)
     outcome, _ = await triage.evaluate_text(0, raw, refs)
     d = outcome.decision
     # Résolution des noms via le cache de référentiels (même source que le Journal),

@@ -64,4 +64,21 @@ Par conception (PRD §9.4) :
 
 ## Rétention
 
-En V1, les logs et le journal de décision sont **conservés localement sans purge automatique**. Une politique de rétention configurable reste **à préciser** (hypothèse ouverte, PRD §10) et devra être arrêtée avec le client selon ses obligations.
+Une **purge RGPD automatique** est implémentée (`services/retention.py`). Elle supprime définitivement, en base locale, les lignes plus anciennes que des fenêtres de conservation **configurables** :
+
+- **Journal de décision** : `retention_decisions_days` (défaut **365 jours**) ;
+- **Appels LLM** (masqués) : `retention_llm_calls_days` (défaut **90 jours**).
+
+Une fenêtre **`<= 0` désactive** la purge de la table concernée (défaut sûr : on ne supprime jamais sans réglage explicite).
+
+**Job planifié.** Lorsque `automation_purge_enabled` est actif (défaut `true`), un job quotidien s'exécute à `automation_purge_hour_utc` (défaut **03:00 UTC**), planifié par le scheduler de l'application. La durée et l'heure peuvent être modifiées à chaud via l'UI (le job est re-planifié sans redémarrage).
+
+**Pilotage & audit.** Les endpoints `/api/automations/retention` (authentifiés) permettent de :
+
+- `GET` — consulter l'état (fenêtres, activation, heure, dernière exécution et volumes supprimés) ;
+- `PATCH` — ajuster les fenêtres, l'activation et l'heure ;
+- `POST /retention/run` — déclencher une purge **manuelle immédiate** (garde-fou de confirmation, comme toute action destructive).
+
+Chaque exécution consigne la dernière purge dans la configuration runtime (`automation_purge_last_run_at`, volumes supprimés) et son initiateur (`automation_purge_last_run_by` : `scheduler` pour l'automatique, l'IP/session de l'admin pour un déclenchement manuel), pour traçabilité RGPD.
+
+Les durées par défaut restent à confirmer avec le client selon ses obligations légales, mais le mécanisme de purge lui-même est livré et actif.

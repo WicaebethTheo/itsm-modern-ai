@@ -48,6 +48,12 @@ def test_sandbox_returns_decision_without_writing(client):
     client.app.state.whitelist_cache.refresh(refs)
     with db.session_scope() as s:
         referentials.sync(s, refs)
+        # Le périmètre EFFECTIF (lu par la sandbox) ne retient que les éléments
+        # sélectionnés/éligibles ; on les active explicitement en base.
+        referentials.set_scope(s, category_ids=[1], entity_ids=[])
+        referentials.set_eligibility(
+            s, referentials.KIND_TECHNICIAN, [{"ext_id": 11, "eligible": True}]
+        )
     decision_json = (
         '{"category":1,"priority":3,"technician_id":11,"draft":"Bonjour","confidence":0.88}'
     )
@@ -68,3 +74,47 @@ def test_sandbox_returns_decision_without_writing(client):
     # Noms résolus depuis le ReferentialCache (utilisés par l'UI pour afficher « Syl » + #11).
     assert body["category_name"] == "Compte"
     assert body["technician_name"] == "Syl"
+
+
+@respx.mock
+def test_sandbox_uses_db_scope_even_without_cache(client):
+    """La sandbox doit lire le périmètre EFFECTIF en base, PAS le cache mémoire.
+
+    Le cache `whitelist_cache.referentials` n'est peuplé que par le poller ; ici le
+    polling est désactivé, donc le cache reste VIDE. Sans le correctif, la sandbox
+    verrait une whitelist vide et renverrait « à trier ». On prouve l'acceptation en
+    n'alimentant QUE la base (périmètre effectif : catégorie sélectionnée + tech éligible).
+    """
+    client.post("/api/config", json={"llm_api_key": "sk-test"})
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import ReferentialCache
+    from itsm_modern_ai.services import referentials
+
+    # Cache mémoire volontairement VIDE (jamais peuplé par un poller).
+    assert client.app.state.whitelist_cache.referentials.categories == {}
+
+    # Périmètre en base : catégorie sélectionnée + technicien éligible.
+    with db.session_scope() as s:
+        s.add(ReferentialCache(kind=referentials.KIND_CATEGORY, ext_id=1, name="Compte", selected=True))
+        s.add(ReferentialCache(kind=referentials.KIND_TECHNICIAN, ext_id=11, name="Syl", eligible=True))
+        s.commit()
+
+    decision_json = (
+        '{"category":1,"priority":3,"technician_id":11,"draft":"Bonjour","confidence":0.88}'
+    )
+    respx.post(f"{LLM_BASE}/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": decision_json}}],
+                "usage": {"prompt_tokens": 50, "completion_tokens": 10},
+            },
+        )
+    )
+    r = client.post("/api/sandbox", json={"content": "je n'arrive plus à me connecter"})
+    assert r.status_code == 200
+    body = r.json()
+    # Accepté grâce au seul périmètre DB → preuve que la sandbox n'utilise plus le cache.
+    assert body["accepted"] is True
+    assert body["reason"] == "accepted"
+    assert body["category"] == 1 and body["technician_id"] == 11
