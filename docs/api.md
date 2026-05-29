@@ -7,9 +7,18 @@
 | Endpoint | Méthode | Description |
 |---|---|---|
 | `/health` | `GET` | Healthcheck (statut, version GLPI, statut LLM). |
+| `/metrics` | `GET` | **Métriques Prometheus d'infrastructure** (hors `/api`) : volumétrie + latence HTTP par route templatée. Voir ci-dessous. |
 | `/api/status` | `GET` | Métriques engine (polling, whitelist, compteur LLM, cost cap). |
-| `/api/metrics` | `GET` | KPIs agrégés sur 14 jours. |
+| `/api/metrics` | `GET` | KPIs métier agrégés sur 14 jours (à ne pas confondre avec `/metrics`). |
 | `/api/operational-metrics` | `GET` | Dashboard inversé (équipe, fenêtre glissante 7 j). |
+
+> **`/metrics` (Prometheus)** — endpoint d'**infrastructure**, distinct de `/api/metrics`
+> (KPI métier). Format exposition Prometheus : `itsm_http_requests_total` (compteur) et
+> `itsm_http_request_duration_seconds` (histogramme), labellisés par **route templatée**
+> (ex. `/api/decisions/{id}`) — pas de PII ni d'identifiant concret dans les labels.
+> Activable via `METRICS_ENABLED` (défaut `true`). Si `METRICS_TOKEN` est défini, l'endpoint
+> exige `Authorization: Bearer <jeton>` (ou `X-Metrics-Token`), sinon `401` ; vide = scrape
+> non authentifié (rétrocompatible). Détails : [`docs/install.md`](install.md).
 
 ## Authentification (Argon2 + session signée)
 

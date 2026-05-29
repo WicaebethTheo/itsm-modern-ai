@@ -12,12 +12,16 @@ Ce **n'est pas** une « anonymisation ». Voir la portée du masquage ci-dessous
 
 Avant **tout** appel au LLM, le système masque dans le contenu du ticket (FR-14) :
 
-- adresses **email** ;
-- numéros de **téléphone** ;
-- **IBAN** ;
-- **mots de passe / tokens** (motifs).
+- adresses **email** → `[EMAIL]` ;
+- numéros de **téléphone** (FR **et international E.164**, durcissement audit 2026-05) → `[PHONE]` ;
+- **IBAN** → `[IBAN]` ;
+- **cartes bancaires** (16 chiffres, **validation Luhn** anti faux positifs) → `[CARD]` ;
+- **adresses IP** (IPv4) et **adresses MAC** → `[IP]` / `[MAC]` ;
+- **mots de passe / tokens** (motifs) et **clés cloud** (AWS `AKIA…`, Google `AIza…`) → `[SECRET]` / `[CLOUD_KEY]`.
 
-Le masquage repose sur des **expressions régulières**. En V1, il **NE masque PAS** :
+> Les motifs **CB / IP / MAC / téléphone international / clés cloud** ont été ajoutés lors du durcissement **audit 2026-05** (`domain/masking.py`). De plus, en modes `semi_auto`/`full_auto`, le **brouillon généré par le LLM est re-masqué** avant toute publication publique au demandeur.
+
+Le masquage repose sur des **expressions régulières** (heuristiques). En V1, il **NE masque PAS** :
 
 - les **noms de personnes** ;
 - les **adresses** postales.

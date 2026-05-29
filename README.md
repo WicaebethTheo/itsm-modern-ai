@@ -10,12 +10,12 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.7.0-blueviolet)](pyproject.toml)
-[![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Tailwind v4](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
-[![Tests](https://img.shields.io/badge/tests-180_pytest_%C2%B7_58_vitest_%C2%B7_3_e2e-success)](docs/testing.md)
+[![Tests](https://img.shields.io/badge/tests-244_pytest_%C2%B7_58_vitest_%C2%B7_3_e2e-success)](docs/testing.md)
 [![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_default-6B46C1)](docs/llm-providers.md)
 
 [Démarrage rapide](#démarrage-rapide) · [Fonctionnalités](docs/features.md) · [Architecture](docs/architecture.md) · [Documentation](#documentation)
@@ -67,7 +67,7 @@ Détail des suites de tests et conventions qualité : [`docs/testing.md`](docs/t
 
 | Couche | Technologies |
 |---|---|
-| **Backend** | Python 3.12+, FastAPI, SQLModel (SQLite → Postgres-ready), Alembic, Pydantic v2, APScheduler, cryptography (Fernet), httpx |
+| **Backend** | Python 3.13+, FastAPI, SQLModel (SQLite → Postgres-ready), Alembic, Pydantic v2, APScheduler, cryptography (Fernet), httpx |
 | **Frontend** | React 19, Vite 6, Tailwind v4, React Router 7, i18n FR/EN |
 | **Qualité** | ruff, Biome, pytest + respx, Vitest + Testing Library, Playwright |
 | **Infra** | Docker multi-stage, docker-compose, conteneur non-root, volume `./data` |

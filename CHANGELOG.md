@@ -5,6 +5,82 @@ pas SemVer strictement (version d'app dans `pyproject.toml`, actuellement `0.7.0
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-29 — Vague « audit-2026-05 » : durcissement sécurité, observabilité, build
+
+Audit multi-agents (ancrage **OWASP LLM Top 10 2025**, **AI Agent Security Cheat Sheet**,
+revue *production readiness*) suivi de quatre lots de correctifs. Synthèse complète,
+tableau des vulnérabilités et **risques résiduels** dans [`docs/audit-2026-05.md`](docs/audit-2026-05.md).
+Aucun changement de fonctionnalité métier visible. Tests : **244 pytest** (verts), ruff propre.
+
+### Sécurité
+
+- **Path traversal SPA confiné** (`api/spa.py`) : tout chemin statique est résolu et
+  doit rester **sous `dist/`** (`is_relative_to`). Bloque `..%2f..%2f` → lecture de
+  `master.key` / `itsm.db` / `.env`. Couvert par `tests/integration/test_spa_security.py`.
+- **Séparation des clés de chiffrement et de signature de session (HKDF-SHA256)** :
+  la clé Fernet ne sert plus *aussi* de secret de session. `FernetSecretsBox.derive_key(info=…)`
+  dérive une sous-clé dédiée (`encrypted.py`), et `app.py` l'emploie pour la session
+  (`info=b"session-signing"`). Secret **distinct** et **stable** entre redémarrages.
+- **Authentification fail-closed** (`api/security.py`) : sans mot de passe admin
+  configuré, l'admin est désormais **refusé (401)** par défaut. L'ancien comportement
+  « ouvert » (réseau interne) doit être activé explicitement via le nouveau réglage
+  `dev_open_admin` (dev/labo). Couvert par `tests/integration/test_audit_auth_api.py`.
+- **Anti-SSRF lexical** (`domain/url_safety.py` + validateurs `api/routes/config.py`) :
+  les URLs de base poussées via l'API (GLPI, LLM) exigent `https://` + un hôte routable ;
+  loopback/IP privée/metadata cloud rejetés à l'écriture (Ollama : `http`+local toléré).
+- **Anti-SSRF runtime / anti DNS-rebinding** (`url_safety.assert_resolved_ip_is_public`
+  + hooks httpx `adapters/llm/_http.py`) : avant chaque appel sortant, l'hôte est **résolu**
+  et toute IP interne est **bloquée** (fail-closed sur échec DNS) — *avant* l'envoi du
+  token. Activé par `ssrf_guard_enabled` (défaut `true`). `tests/unit/test_url_safety.py`.
+- **Re-masquage des brouillons en modes auto** (`services/triage.py`) : avant toute
+  publication **publique** (semi_auto/full_auto), le brouillon LLM est **re-masqué** et
+  borné en longueur (`PUBLIC_DRAFT_MAX_CHARS`). Le mode suggestion (privé) est inchangé.
+- **Masquage PII étendu** (`domain/masking.py`) : ajout cartes bancaires (validation
+  **Luhn**), **IPv4**, **MAC**, téléphone **E.164 international**, clés cloud (AWS `AKIA…`,
+  Google `AIza…`) → `[CARD]`/`[IP]`/`[MAC]`/`[PHONE]`/`[CLOUD_KEY]`. `tests/unit/test_masking.py`.
+- **Neutralisation de l'injection de formule CSV** (`persistence/journal.py`) : les
+  cellules d'export commençant par `= + - @ \t \r` sont préfixées d'une apostrophe.
+  `tests/unit/test_cost_cap_journal.py`.
+- **Décryptage fail-safe** : un secret illisible (MASTER_KEY incohérente) lève une
+  `SecretDecryptError` métier (`domain/errors.py`) au lieu d'un 500 qui verrouillait
+  l'admin ; le bootstrap auth la traite comme « non amorcé » (fail-closed propre).
+- **Cookie de session `Secure`** pilotable via `session_https_only` (défaut `true`).
+
+### Observabilité
+
+- **Logging structuré** (`config/logging.py`) : `log_level` + `log_format` (`text`|`json`),
+  init centralisée au démarrage. Le format JSON n'inclut **aucune PII**. `tests/unit/test_logging_config.py`.
+- **Endpoint Prometheus `GET /metrics`** (`api/metrics.py`, hors `/api`) : compteur de
+  requêtes + histogramme de latence, label `path` = **route templatée** (cardinalité
+  bornée, pas de PII). Désactivable (`metrics_enabled`) et **protégeable** par
+  `metrics_token` (Bearer / `X-Metrics-Token`, comparaison à temps constant).
+  `tests/integration/test_metrics_endpoint.py`.
+
+### Build & CI
+
+- **Build reproductible** : `uv.lock` figé, `Dockerfile` installe depuis le lock,
+  Python aligné **3.13** partout (pyproject `requires-python >=3.13`, image, CI).
+- **CI** : nouveau job `package:image` (build/push image) dans `.gitlab-ci.yml`.
+- **Durcissement `docker-compose.yml`**.
+
+### Qualité
+
+- **Sandbox lit le périmètre EFFECTIF en base** (`api/routes/sandbox.py`) et non le
+  cache mémoire (vide si polling off). Garde-fou de non-régression ajouté :
+  `tests/integration/test_sandbox_api.py::test_sandbox_uses_db_scope_even_without_cache`.
+- **Borne de génération LLM** (`max_tokens`, défaut 1024) sur l'adaptateur
+  OpenAI-compatible (aligné sur Anthropic) — plafonne coût/latence (LLM10).
+- **Test d'architecture des ports** : `tests/unit/test_architecture.py::test_ports_depend_only_on_domain`
+  vérifie que `ports/` ne dépend que de `domain` (+ stdlib/typing/pydantic).
+- **Versions unifiées 0.7.0**.
+
+### Documentation
+
+- Nouveau document de synthèse d'audit [`docs/audit-2026-05.md`](docs/audit-2026-05.md).
+- `SECURITY.md`, `docs/llm-providers.md`, `docs/dpo.md`, `docs/install.md`, `docs/api.md`,
+  `README.md`, `docs/project-context.md` mis à jour (nouveaux réglages, `/metrics`,
+  logging, masquage étendu, Python 3.13, compteur de tests **244**).
+
 ## 2026-05-29 — Docs : sortie du planning interne du repo public
 
 Sortie des artefacts internes du repo public vers un dossier `notes/`
