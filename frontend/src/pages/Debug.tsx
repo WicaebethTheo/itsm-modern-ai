@@ -94,7 +94,7 @@ export function Debug() {
       {/* Diagnostics */}
       <Card>
         <PanelHead
-          title="Diagnostics"
+          title={t("Diagnostics", "Diagnostics")}
           subtitle={t(
             "Vérifie GLPI (auth, référentiels, tickets) et le LLM (clé, sonde)",
             "Checks GLPI (auth, referentials, tickets) and the LLM (key, probe)",

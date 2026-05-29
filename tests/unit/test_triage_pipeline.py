@@ -241,3 +241,60 @@ async def test_mode_resolved_per_entity_overrides_default(temp_db):
     svc = _service(FakeLlm(_accepted_decision()), itsm, default_mode=ExecutionMode.SUGGESTION)
     await svc.handle(Ticket(id=24, content="x", entity_id=7), REFS)
     assert itsm.applied  # l'entité force full_auto malgré le défaut suggestion
+
+
+# ── Routage GROUPE (fallback FR-7) ───────────────────────────────────────────
+
+
+def _group_refs() -> Referentials:
+    # Pas de technicien éligible : seul un groupe peut router la Décision.
+    return Referentials(categories={1: "Compte"}, groups={20: "Support N1"})
+
+
+def _group_decision() -> Decision:
+    return Decision(
+        category=1, priority=3, technician_id=None, group_id=20, draft="bonjour", confidence=0.9
+    )
+
+
+async def test_group_routing_writes_followup_and_applies_in_full_auto(temp_db):
+    # Décision routée vers un GROUPE (technician_id=None) en mode full_auto : la
+    # mutation GLPI doit propager `group_id`, et le Suivi public être posté.
+    itsm = FakeItsm()
+    svc = _service(FakeLlm(_group_decision()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=25, content="x"), _group_refs())
+    assert itsm.applied == [(25, 1, 3, None, 20)]  # group_id transmis
+    assert len(itsm.followups) == 1 and itsm.followups[0][2] is False  # public
+    with db.session_scope() as s:
+        row = journal.list_decisions(s)[0]
+    assert row.group_id == 20 and row.applied is True
+
+
+async def test_group_routing_accepted_in_suggestion_mode(temp_db):
+    # Même Décision mais en suggestion : aucune mutation, Suivi privé annoté.
+    itsm = FakeItsm()
+    svc = _service(FakeLlm(_group_decision()), itsm, default_mode=ExecutionMode.SUGGESTION)
+    await svc.handle(Ticket(id=26, content="x"), _group_refs())
+    assert itsm.applied == []  # aucune mutation GLPI
+    assert itsm.followups and itsm.followups[0][2] is True  # Suivi privé
+
+
+async def test_cost_cap_blocks_subsequent_tickets_same_day(temp_db):
+    # Le cap, atteint au 1er ticket, bloque AUSSI les Tickets suivants sur la
+    # même fenêtre 24h (aucun appel LLM facturant n'est lancé).
+    with db.session_scope() as s:
+        s.add(LlmCall(ticket_id=1, model="m", cost_eur=10.0))
+        s.commit()
+    llm = FakeLlm(_accepted_decision())
+    svc = _service(llm, cost_cap_eur_per_day=5.0)
+
+    wrote1 = await svc.handle(Ticket(id=100, content="x"), REFS)
+    assert wrote1 is False and llm.calls == 0
+
+    wrote2 = await svc.handle(Ticket(id=101, content="y"), REFS)
+    assert wrote2 is False and llm.calls == 0  # 2e ticket bloqué aussi
+
+    with db.session_scope() as s:
+        rows = journal.list_decisions(s)
+    assert len(rows) == 2
+    assert all(r.reason == "cost_cap_reached" for r in rows)

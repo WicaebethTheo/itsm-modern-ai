@@ -89,7 +89,7 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
         <span
           className="hidden h-7 w-7 rounded-full sm:block"
           style={{ background: "linear-gradient(135deg,#6366f1,#8b8df7)" }}
-          title="Administrateur"
+          title={t("Administrateur", "Administrator")}
         />
         <LangToggle />
         <ThemeToggle compact />

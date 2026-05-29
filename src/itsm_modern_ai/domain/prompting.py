@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from .models import Referentials
 
+# NB : le prompt demande "JAMAIS null" pour category, mais le schéma Decision accepte null
+# au cas où le LLM ignore la consigne (Sonnet 4.6+ le fait parfois). Dans ce cas, la whitelist
+# rejette en « à trier » via CATEGORY_NOT_IN_WHITELIST. Voir Decision.category dans models.py.
 SYSTEM_PROMPT = (
     "Tu es un assistant de triage de tickets de support informatique pour une PME "
     "française utilisant GLPI. Tu proposes un classement ; tu ne décides jamais seul. "

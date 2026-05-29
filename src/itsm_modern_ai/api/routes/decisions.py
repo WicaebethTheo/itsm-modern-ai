@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from ...persistence import journal
+from ...persistence.journal import DEFAULT_DECISIONS_LIMIT
 from ...persistence.tables import DecisionLog
 from ...services import referentials
 from ..deps import get_session
@@ -79,7 +80,9 @@ def _to_entry(
 
 
 @router.get("/decisions", response_model=list[DecisionEntry])
-def list_decisions(limit: int = 500, session: Session = Depends(get_session)) -> list[DecisionEntry]:
+def list_decisions(
+    limit: int = DEFAULT_DECISIONS_LIMIT, session: Session = Depends(get_session)
+) -> list[DecisionEntry]:
     cats = _name_map(session, referentials.KIND_CATEGORY)
     techs = _name_map(session, referentials.KIND_TECHNICIAN)
     groups = _name_map(session, referentials.KIND_GROUP)

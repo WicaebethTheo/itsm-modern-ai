@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     login_window_seconds: int = 300  # fenêtre glissante d'observation des échecs
     login_block_seconds: int = 300  # durée du blocage une fois le seuil franchi
 
+    # Reverse proxy : si True, on lit la 1ʳᵉ valeur de `X-Forwarded-For` pour
+    # déduire l'IP réelle du client (rate-limit login, audit). Défaut sûr : False
+    # (pilote/labo sans proxy). À mettre à True UNIQUEMENT derrière un proxy fiable.
+    trust_proxy_headers: bool = False
+
 
 def get_settings() -> Settings:
     return Settings()

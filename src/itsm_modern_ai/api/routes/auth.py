@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from ...services.runtime_config import RuntimeConfigService
 from .. import security
+from ..client_ip import client_ip
 from ..deps import get_config_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -22,8 +23,9 @@ class AuthStatus(BaseModel):
 
 
 def _client_key(request: Request) -> str:
-    """Clé de rate-limit = IP du client (pilote réseau interne ; pas de XFF de confiance)."""
-    return request.client.host if request.client else "unknown"
+    """Clé de rate-limit = IP du client (XFF respecté si `trust_proxy_headers=True`)."""
+    trust = bool(getattr(request.app.state.settings, "trust_proxy_headers", False))
+    return client_ip(request, trust)
 
 
 @router.post("/login", response_model=AuthStatus)

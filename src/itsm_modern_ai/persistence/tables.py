@@ -63,7 +63,7 @@ class ProcessedTicket(SQLModel, table=True):
     ticket_id: int = Field(primary_key=True)
     state_fingerprint: str = ""
     followup_written: bool = False
-    processed_at: datetime = Field(default_factory=_utcnow)
+    processed_at: datetime = Field(default_factory=_utcnow, sa_column=_ts_column(index=True))
 
 
 class LlmCall(SQLModel, table=True):
