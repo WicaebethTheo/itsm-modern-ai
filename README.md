@@ -1,138 +1,271 @@
-# ITSM Modern AI — moteur de triage GLPI à garde-fous
+<div align="center">
 
-Assistant IA de triage de tickets pour **GLPI** : application autonome **on-premise** qui
-classe, priorise, route et propose une réponse pour les tickets que les règles GLPI ne
-savent pas traiter (la « Queue longue »), **toujours derrière un garde-fou déterministe**.
-Open-core, souverain (Mistral EU par défaut), français.
+<img src="frontend/public/favicon.svg" width="80" alt="ITSM Modern AI" />
 
-> **Invariant produit :** le LLM **propose**, le code **valide et décide** (whitelist
-> déterministe). **Modes par périmètre** : `suggestion` (défaut sûr — Suivi privé annoté, aucune
-> mutation, brouillon jamais envoyé) · `semi_auto`/`full_auto` (appliquent la Décision **après** le
-> garde-fou **et répondent au demandeur** = Suivi public). Constantes dans tous les modes :
-> masquage PII avant tout appel LLM, garde-fou déterministe, fallback unique « à trier ».
+# ITSM Modern AI
 
-## État du projet — pilote V1 complet (Epics 1→4)
+**Moteur de triage IA des tickets GLPI — souverain, à garde-fous, on-premise.**
 
-Séquençage : `Epic 1 (spike) → [GO humain] → Epic 2 → Epic 3 → Epic 4`.
+*The LLM proposes, the code decides — GLPI ticket triage with deterministic guardrails.*
 
-- ✅ **Epic 1 — Spike de validation** (`scripts/spike_routing.py`) : mesure routage prose + précision LLM. Voir [`docs/spike.md`](docs/spike.md).
-- ✅ **Epic 2 — Fondations & connexion GLPI** : daemon FastAPI headless, connecteur GLPI legacy (`apirest.php`), lecture des Tickets « New », référentiels/Whitelist, écriture de Suivi interne privé (mode suggestion), polling idempotent (APScheduler), healthcheck.
-- ✅ **Epic 3 — Moteur à garde-fous** : pipeline à ordre immuable (étage 1 règles GLPI → cost cap → masquage → LLM JSON mode + retry → Pydantic → whitelist → seuil → Suivi / « à trier »). Mode suggestion, veto implicite. Endpoint `/api/sandbox` (triage à blanc).
-- ✅ **Epic 4 — Audit, conformité & packaging** : log exhaustif des appels LLM (masqué), journal de décision annotable, export CSV DPO, auth locale (Argon2 + session), secrets chiffrés (Fernet), healthcheck GLPI **et** LLM + compteurs, Docker + docs (install, DPO, SECURITY).
-- ✅ **Phase 2 — UI web (SPA React) & connecteurs LLM multiples** : interface **React 19 + Vite + Tailwind v4** (façon shadcn/ui) servie en statique par le moteur à la racine **`/`** : login, dashboard, statut, journal annotable, sandbox, et **toute la configuration dans l'UI** — connexion GLPI, fournisseur IA, seuils, et **gestion du périmètre** (scan GLPI puis sélection des catégories/entités/techniciens/groupes). Clé LLM et tokens GLPI saisis dans l'interface (jamais `.env`), chiffrés au repos.
-  - **Whitelist curée depuis un scan GLPI.** La console scanne GLPI (`POST /api/glpi/sync` → cache des catégories, entités, techniciens, groupes), puis l'admin **sélectionne** ce que l'IA a le droit d'utiliser : catégories autorisées + entités du périmètre (`PUT /api/scope`), techniciens/groupes **éligibles** + leur **fiche en prose** éditée dans l'UI (`PUT /api/technicians`, `PUT /api/groups`). Le moteur n'agit que dans ce **périmètre effectif** (= GLPI ∩ sélections admin) ; le routage vise un **technicien** (préféré) ou, en fallback, un **groupe** éligible. **Les fiches techniciens ne sont plus un YAML** : elles sont stockées en base.
-  - **4 fournisseurs LLM** configurables (clés chiffrées au repos) : **Mistral EU** (défaut souverain) · **OpenAI** (distinct, non-souverain) · **Ollama** (modèle **local**, pas de clé) · **Anthropic / Claude** (non-souverain, FR-12).
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.7.0-blueviolet)](pyproject.toml)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
+[![Tailwind v4](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![Tests](https://img.shields.io/badge/tests-180_pytest_%C2%B7_58_vitest_%C2%B7_3_e2e-success)](#tests--qualité)
+[![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_default-6B46C1)](docs/dpo.md)
 
-UI : **`/`** (SPA). API : `/health` (expose aussi la **version GLPI** + LLM) · `/api/status` · `/api/metrics` · `/api/operational-metrics` (FR-23 dashboard inversé) · `/api/auth/{login,logout,status}` · `/api/config` (GET/POST — secrets via API/UI) · `/api/glpi/sync` · `/api/discovery/{category|entity|technician|group}` · `/api/scope` (`GET`/`PUT`) · `/api/modes` (`PUT` — mode d'exécution par entité) · `/api/technicians` (`PUT`) · `/api/groups` (`PUT`) · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/export/{decisions,llm-calls}.csv` · `/api/automations/retention` (`GET`/`PATCH`) + `/api/automations/retention/run` (`POST`) · `/api/debug/*` (gatés `DEBUG_TOOLS_ENABLED`). OpenAPI sur `/docs`.
+[Pourquoi ?](#pourquoi-) · [Démarrage rapide](#démarrage-rapide) · [Modes](#modes-dexécution) · [Architecture](#architecture) · [Documentation](#documentation)
 
-> **Souveraineté** : le défaut reste Mistral EU. **OpenAI et Anthropic (Claude) sont hors UE** — leur activation est un choix explicite de l'opérateur, à valider avec la DPO (cf. `docs/dpo.md`). **Ollama** tourne en local (aucune donnée ne sort).
+</div>
 
-## Évolutions post-pilote (au-delà du plan initial)
+---
 
-Le planning d'origine (`docs/planning/` : PRD, architecture, epics, addendum) décrit le pilote V1
-en **mode suggestion verrouillé** (FR-17). Depuis, le produit a évolué — ces écarts sont **assumés**
-et priment sur les specs historiques (qui restent comme référence de conception) :
+## Pourquoi ?
 
-- **Modes d'exécution par entité** (remplace le « suggestion hardcodé » de FR-17) : `suggestion`
-  (défaut sûr) · `semi_auto` (applique si confiance ≥ 2ᵉ seuil strict) · `full_auto`. En semi/full-auto,
-  le moteur **mute le Ticket GLPI** (catégorie, **urgence + priorité**, assignation) **et poste une
-  réponse publique au demandeur** — après le garde-fou déterministe. Réglé dans la console (page
-  Périmètre, `PUT /api/modes`) avec bandeau d'avertissement. ⚠️ Lève l'invariant « rien n'est jamais
-  envoyé au demandeur » (vrai uniquement en mode suggestion).
-- **Masquage PII configurable** (FR-14) : email / téléphone / IBAN / mot de passe activables **motif
-  par motif** dans l'UI (page Moteur), tous ON par défaut, avec avertissement DPO si on en désactive un.
-- **Durcissement production** : conteneur **non-root** (utilisateur `app` + `gosu`, le volume `./data`
-  est ré-approprié au démarrage) · **rate-limiting du login** (en mémoire par IP, `429 + Retry-After`) ·
-  **scan de dépendances en CI** (`pip-audit` + `npm audit`).
-- **Version GLPI affichée** dans la topbar (lue via `getGlpiConfig`, exposée par `/health`).
-- **Tests frontend** (absents du plan initial) : **Vitest + Testing Library** (composants & pages) et
-  **E2E Playwright** (parcours login → dashboard / navigation, API mockée).
+GLPI gère bien les tickets **structurés** (catégorie cochée, urgence renseignée, demandeur connu). Mais sa file accumule aussi tout le reste — la **« Queue longue »** : « ça marche plus », « le truc bleu », messages en argot, sans champ posé, sans pièce jointe. Ces tickets bloquent la qualité de service plancher : ils restent en attente, sont mal routés, ou répondus en retard.
 
-## Configuration : secrets poussés via l'API/UI (jamais `.env`)
+**ITSM Modern AI** lit les tickets neufs, masque les données sensibles, propose une décision (catégorie, priorité, technicien/groupe, brouillon de réponse) — puis le **code** valide cette proposition contre une **whitelist déterministe** curée par l'admin avant toute action. Le LLM n'a pas la main : il propose, le code décide.
 
-La **clé API LLM** et les **tokens GLPI** ne se mettent **pas** dans `.env` : ils sont
-poussés au runtime via `POST /api/config` (que l'UI Phase 2 consommera) et stockés
-**chiffrés au repos** (Fernet, FR-25). Le `GET /api/config` ne renvoie jamais la valeur
-d'un secret, seulement un booléen `*_set`. `.env` ne porte que les réglages non-secrets,
-la `MASTER_KEY` de chiffrement et l'URL de base de données.
+Le produit est conçu pour :
 
-```bash
-# Pousser la clé LLM + la connexion GLPI (équivalent de ce que fera l'UI) :
-curl -X POST http://localhost:8000/api/config -H 'Content-Type: application/json' -d '{
-  "glpi_base_url": "https://glpi.exemple.local/apirest.php",
-  "glpi_user_token": "xxxxx",
-  "llm_api_key": "yyyyy"
-}'
+- **DSI françaises de PME** : déploiement on-premise, défaut souverain (Mistral EU), interface FR/EN, validation DPO facile.
+- **Migration douce** : commence en mode `suggestion` (Suivi privé, aucune mutation GLPI) → bascule en `semi_auto`/`full_auto` quand la confiance est calibrée.
+- **Open-core** : code MIT, monétisation par le service (support SLA, install/config, modules Enterprise hors-cible PME).
+
+---
+
+## Comment ça marche
+
+Pipeline à **ordre immuable** — c'est l'ADN du produit, jamais réordonné :
+
 ```
+GLPI poll  →  règles déterministes  →  cost cap  →  masquage PII
+       (étage 1 — pas d'appel LLM si une règle traite déjà le Ticket)
+
+      LLM (JSON mode, retry)  →  validation Pydantic  →  whitelist  →  seuil de confiance
+
+                              ┌─── Décision valide ──→  Suivi GLPI (mode du périmètre)
+                              │
+                              └─── tout échec ─────→  « à trier » (fallback unique)
+```
+
+**Garanties absolues, tous modes confondus :**
+- Aucune écriture GLPI sans validation whitelist + seuil.
+- Aucune PII non masquée n'atteint le LLM (email, téléphone, IBAN, mot de passe/token).
+- Aucune métrique par technicien (anti-mouchard, RGPD).
+- Aucun phone-home (souveraineté).
+- Une seule échappatoire : « à trier » — jamais de crash bloquant la file.
+
+---
+
+## Highlights
+
+| | |
+|---|---|
+| **Whitelist curée depuis GLPI** | Scan GLPI (`POST /api/glpi/sync`) → l'admin sélectionne dans la console les catégories autorisées, les entités du périmètre, et les techniciens/groupes éligibles. Le moteur n'agit que dans ce **périmètre effectif** = GLPI ∩ sélections admin. |
+| **Fiches techniciens en prose, en base** | Plus de YAML — chaque technicien et chaque groupe a une fiche libre éditable depuis l'UI. Le LLM s'en sert pour router ; le code rejette toute proposition hors périmètre. |
+| **Routage technicien (préféré) ou groupe (fallback)** | Préférence pour un technicien nommé ; bascule sur un groupe éligible si aucun technicien ne convient. |
+| **3 modes d'exécution par entité** | `suggestion` (Suivi privé, aucune mutation) · `semi_auto` (applique si confiance ≥ 2ᵉ seuil) · `full_auto` (applique + répond au demandeur en Suivi public). Réglés indépendamment par entité GLPI. |
+| **4 fournisseurs LLM interchangeables** | **Mistral EU** (défaut souverain) · **OpenAI** · **Ollama** (local, sans clé) · **Anthropic / Claude**. Changement de fournisseur sans changement de code. |
+| **Masquage PII configurable** | Email / téléphone / IBAN / mot de passe activables motif par motif (tous ON par défaut), avec avertissement DPO si on en désactive un. |
+| **Cost cap glissant** | Plafond € / jour configurable (défaut 5 €) — au-delà, les Tickets restent « à trier » sans appel facturant. |
+| **Sandbox** | `POST /api/sandbox` permet de tester un texte de ticket sans toucher GLPI. UI dédiée affiche la décision simulée + résolution des noms. |
+| **Journal annotable + export CSV DPO** | Chaque décision est tracée (sans PII), annotable a posteriori. Export RGPD à la demande. |
+| **Durcissement production** | Conteneur non-root (`gosu` + UID 10001), rate-limiting login (avec support `X-Forwarded-For` derrière proxy), scan de dépendances en CI (`pip-audit` + `npm audit`). |
+
+---
 
 ## Démarrage rapide
 
+### Avec Docker (recommandé, on-prem)
+
 ```bash
-make install          # venv (uv) + deps Python
-make lint             # ruff
-make test             # pytest (177 tests : masquage, whitelist, GLPI mocké, modes, rate-limit, API…)
-make migrate          # alembic upgrade head
-make ui               # build de la SPA (npm install + build -> frontend/dist) — requiert Node 22
-make run              # uvicorn + scheduler ; UI sur http://localhost:8000
-
-# Dev UI (hot reload, proxy /api -> :8000) :
-make ui-dev           # http://localhost:5173
-
-# Tests frontend :
-make ui-lint          # Biome + typecheck
-make ui-test          # Vitest + Testing Library (58 tests)
-make ui-e2e           # Playwright E2E (1ère fois : npx playwright install --with-deps chromium)
-
-# Déploiement on-prem (build UI inclus dans l'image multi-stage ; conteneur non-root) :
-cp .env.example .env  # renseigner MASTER_KEY + ADMIN_PASSWORD
-docker compose up -d --build   # NE PAS faire `down -v` : efface le volume ./data (config !)
-
-# Spike Epic 1 (homelab) :
-make spike-mock       # offline ; make spike → vraie mesure (LLM_API_KEY pour le CLI)
+cp .env.example .env             # renseigner MASTER_KEY + ADMIN_PASSWORD
+docker compose up -d --build     # build image multi-stage + démarre le service
+open http://localhost:8000       # console web (SPA React)
 ```
 
-Tout se configure ensuite **dans l'interface** (`/`) : connexion GLPI, fournisseur IA
-(Mistral EU / OpenAI / Ollama / Anthropic), seuils, puis **scan GLPI** et sélection du
-périmètre (catégories/entités/techniciens/groupes + fiches en prose). Rien dans `.env`
-côté secrets.
+> ⚠️ **Ne JAMAIS faire `docker compose down -v`** : `-v` supprime le volume `./data`
+> qui contient la base SQLite + la `master.key` Fernet. La configuration repart à zéro.
 
-## Structure (hexagonale)
+Tout se configure ensuite **dans l'interface** : connexion GLPI, choix du fournisseur LLM, scan GLPI, sélection des catégories/entités/techniciens/groupes du périmètre, fiches en prose, modes par entité. **Aucun secret dans `.env`** — les tokens GLPI et clés LLM sont poussés via l'UI et chiffrés Fernet au repos.
+
+### Développement local
+
+```bash
+make install     # venv (uv) + deps Python
+make migrate     # alembic upgrade head
+make ui          # build SPA (requiert Node 22)
+make run         # uvicorn + scheduler → http://localhost:8000
+
+# Frontend hot-reload (proxy /api → :8000) :
+make ui-dev      # http://localhost:5173
+```
+
+### Test du spike (Epic 1, homelab)
+
+```bash
+make spike-mock  # offline, modèle déterministe
+make spike       # avec un vrai LLM (LLM_API_KEY pour le CLI uniquement)
+```
+
+---
+
+## Modes d'exécution
+
+Réglables **par entité GLPI** dans la console (page Périmètre → `PUT /api/modes`). Défaut global sûr : `suggestion`.
+
+| Mode | Mutation GLPI | Suivi | Réponse au demandeur | Quand l'utiliser |
+|---|:---:|:---:|:---:|---|
+| **`suggestion`** | aucune | **privé** (technicien seulement) | jamais | Démarrage, calibration, périmètres sensibles. |
+| **`semi_auto`** | si confiance ≥ 2ᵉ seuil strict (défaut 0,9) | **public** si appliqué, privé sinon | si appliqué | Périmètres rodés, montée en confiance progressive. |
+| **`full_auto`** | toujours (catégorie, urgence + priorité, assignation) | **public** | toujours | Catégories simples et bien outillées (mots de passe oubliés, etc.). |
+
+Tous les modes appliquent **le même garde-fou** en amont (masquage, whitelist, seuil, fallback « à trier »). Les seuls effets variables sont la mutation et la visibilité du Suivi.
+
+---
+
+## Fournisseurs LLM
+
+| Fournisseur | Souveraineté | Clé requise | Notes |
+|---|---|:---:|---|
+| **Mistral EU** | Souverain UE — **défaut** | oui | DPA signé, pas de Cloud Act. |
+| **Ollama** | 100 % **local** | non | Exécution sur l'infra du client, aucune donnée ne sort. |
+| **OpenAI** | Hors UE | oui | Activation = choix explicite de l'opérateur, validation DPO. |
+| **Anthropic / Claude** | Hors UE | oui | Idem OpenAI ; supporte Sonnet 4.6+. |
+
+Sélection sans code (UI → page IA). Les clés sont **chiffrées Fernet au repos**.
+
+---
+
+## Architecture
+
+Hexagonale stricte (Domain ↔ Ports ↔ Adapters) — le domaine n'importe aucun adaptateur, les invariants tiennent à la frontière.
 
 ```
 src/itsm_modern_ai/
-├── domain/        # cœur : models, engine (whitelist+seuil), masking, prompting — AUCUN adaptateur
-├── ports/         # interfaces (Protocol) : ItsmPort, LlmPort, SecretsPort
+├── domain/        cœur : models, engine (whitelist + seuil), masking, prompting
+├── ports/         interfaces (Protocol) : ItsmPort, LlmPort, SecretsPort
 ├── adapters/
-│   ├── itsm/glpi/ # client apirest.php, mapper (ITILFollowup), connector (ItsmPort)
-│   ├── llm/       # Mistral EU (défaut) / OpenAI / Ollama (local) / Anthropic + mock offline
-│   └── secrets/   # chiffrement Fernet (FR-25)
-├── services/      # referentials (scan GLPI + périmètre/fiches en base), runtime_config, whitelist_cache
-├── scheduler/     # poller APScheduler (idempotent, FR-2)
-├── persistence/   # SQLModel/SQLite, idempotence, journal/audit, tables
-└── api/           # FastAPI : app+lifespan, routes REST, security (Argon2), ratelimit (login), spa.py
-frontend/          # SPA React 19 + Vite + Tailwind v4 (buildée -> frontend/dist) ; e2e/ (Playwright)
-migrations/        # Alembic
-scripts/spike_routing.py        # Spike Epic 1
-tests/             # unit + integration (respx) ; fixtures/tickets_fr.json
-docs/              # project-context, install, dpo, spike, planning/ (specs)
-                   #  + design/ (palette, cards), bootstrap-archive (archive)
+│   ├── itsm/glpi/   client apirest.php + mapper (ITILFollowup 9.x/10.x)
+│   ├── llm/         Mistral EU · OpenAI · Ollama · Anthropic + mock offline
+│   └── secrets/     chiffrement Fernet
+├── services/      référentiels (scan + périmètre), runtime_config, triage
+├── scheduler/     poller APScheduler (idempotent)
+├── persistence/   SQLModel/SQLite, journal, idempotence, UtcDateTime
+├── config/        Settings (pydantic-settings) + credentials GLPI
+└── api/           FastAPI : routes REST, auth (Argon2), rate-limit, SPA static
+frontend/          SPA React 19 + Vite 6 + Tailwind v4 (i18n FR/EN, Biome)
+migrations/        Alembic
+scripts/           spike_routing.py (Epic 1), diagnostics GLPI
+tests/             pytest + respx (unit + integration)
+docs/              project-context, install, dpo, spike, planning/, design/
 ```
 
-## Stack
+Le moteur reste **headless** : la SPA React est servie en statique par le moteur (image Docker multi-stage `node:22 → python:3.13`), aucun serveur Node au runtime. Le contrat REST est l'API publique du moteur — CLI/Slack/batch peuvent s'y brancher demain.
 
-**Backend** : Python 3.12+, FastAPI/uvicorn, SQLModel (SQLite, Postgres-ready) + Alembic, Pydantic v2 +
-pydantic-settings, APScheduler, cryptography (Fernet), **pwdlib/Argon2** (auth locale), httpx. Tests :
-pytest + respx. Lint : ruff. Deps : uv.
-**Frontend** : React 19 + Vite 6 + Tailwind v4, i18n FR/EN. Lint/format : Biome. Tests : **Vitest +
-Testing Library** (composants/pages) et **Playwright** (E2E).
-**Conteneur** : Docker multi-stage (build UI + moteur), **exécution non-root** (`gosu`), docker-compose (on-prem).
+---
+
+## Stack technique
+
+| Couche | Technologies |
+|---|---|
+| **Backend** | Python 3.12+, FastAPI, uvicorn, SQLModel (SQLite → Postgres-ready), Alembic, Pydantic v2, pydantic-settings, APScheduler, cryptography (Fernet), pwdlib/Argon2, httpx |
+| **Frontend** | React 19, Vite 6, Tailwind v4 (façon shadcn/ui), React Router 7, Lucide icons, i18n FR/EN |
+| **Qualité** | ruff (Python), Biome (TS/CSS), pytest + respx, Vitest + Testing Library, Playwright (E2E) |
+| **Infra** | Docker multi-stage, docker-compose, conteneur non-root (`gosu` + UID 10001), volume `./data` (SQLite + master.key), healthcheck HTTP, reverse proxy HTTPS |
+| **CI (GitLab)** | `ruff` · `pytest` · `biome` · `tsc` · `vitest` · `playwright` · `pip-audit` · `npm audit` |
+
+---
+
+## API
+
+Endpoints publics : `GET /health` (avec version GLPI) · `GET /api/status` · `GET /api/metrics` · `GET /api/operational-metrics` (dashboard inversé).
+
+Authentification (Argon2 + session signée) : `POST /api/auth/login` · `POST /api/auth/logout` · `GET /api/auth/status`.
+
+Configuration : `GET/POST /api/config` (secrets via UI, `*_set` booléens en GET) · `POST /api/glpi/sync` (scan référentiels).
+
+Périmètre : `GET /api/discovery/{category|entity|technician|group}` · `GET/PUT /api/scope` · `PUT /api/modes` · `PUT /api/technicians` · `PUT /api/groups`.
+
+Triage : `POST /api/sandbox` (test à blanc) · `GET /api/decisions` · `PATCH /api/decisions/{id}/annotation` · `GET /api/export/{decisions,llm-calls}.csv`.
+
+Automations RGPD : `GET/PATCH /api/automations/retention` · `POST /api/automations/retention/run`.
+
+Debug (gatés par `DEBUG_TOOLS_ENABLED`) : `/api/debug/{status,info,diagnostics,seed,purge-users}`.
+
+Spec OpenAPI complète sur `/docs`.
+
+---
+
+## Tests & qualité
+
+| Suite | Compte | Commande |
+|---|---:|---|
+| **pytest** (unit + integration via `respx`) | **180** | `make test` |
+| **Vitest + Testing Library** (composants + pages) | **58** | `make ui-test` |
+| **Playwright** (E2E, API mockée) | **3 parcours** | `make ui-e2e` |
+| **ruff** (Python) | 0 violation | `make lint` |
+| **Biome + tsc** (TS/JSX) | 0 violation | `make ui-lint` |
+
+Chemins critiques couverts : pipeline immuable, masquage PII, whitelist (catégorie/priorité/technicien/groupe), seuil de confiance, cost cap glissant, 3 modes d'exécution, mode par entité, idempotence du polling, secrets Fernet, rate-limit login, retentions RGPD.
+
+---
+
+## Sécurité & RGPD
+
+- **On-premise**, aucun phone-home, aucun appel sortant hors fournisseur LLM configuré.
+- **Secrets chiffrés Fernet** au repos ; `master.key` montée comme volume Docker, mode `0600`.
+- **Pas de PII en clair** envoyée au LLM (masquage avant l'appel ; logs reflètent le masquage).
+- **Pas de métrique nominative** par technicien (anti-mouchard).
+- **Conteneur non-root**, rate-limit login en mémoire (`429 + Retry-After`), `X-Forwarded-For` honoré derrière reverse proxy si `TRUST_PROXY_HEADERS=true`.
+- **Export CSV DPO** à la demande ; rétention RGPD automatisée (purge périodique du Journal et des appels LLM, fenêtres configurables).
+- Voir [`SECURITY.md`](SECURITY.md) (politique de divulgation) et [`docs/dpo.md`](docs/dpo.md) (fiche DPO 1 page).
+
+---
 
 ## Documentation
 
-- [`docs/install.md`](docs/install.md) — installation on-prem (½ page). [`docs/dpo.md`](docs/dpo.md) — fiche DPO. [`SECURITY.md`](SECURITY.md). [`CHANGELOG.md`](CHANGELOG.md) — historique des changements.
-- [`docs/spike.md`](docs/spike.md) — spike Epic 1. [`HANDOFF.md`](HANDOFF.md) — passation active. [`docs/bootstrap-archive.md`](docs/bootstrap-archive.md) — archive du démarrage.
-- [`docs/planning/`](docs/planning/) — PRD, architecture, epics, addendum. [`docs/design/`](docs/design/) — specs design (palette, cards). [`docs/project-context.md`](docs/project-context.md) — règles & invariants.
+| | |
+|---|---|
+| [`docs/install.md`](docs/install.md) | Installation on-prem en ½ page |
+| [`docs/dpo.md`](docs/dpo.md) | Fiche DPO 1 page (validation RGPD) |
+| [`docs/spike.md`](docs/spike.md) | Spike Epic 1 — protocole et résultats |
+| [`docs/project-context.md`](docs/project-context.md) | Invariants non-négociables (à lire avant de coder) |
+| [`docs/planning/`](docs/planning/) | PRD, architecture, epics, addendum (référence figée) |
+| [`docs/design/`](docs/design/) | Specs design (palette de couleurs, cartes) |
+| [`HANDOFF.md`](HANDOFF.md) | Passation active pour le prochain agent |
+| [`CHANGELOG.md`](CHANGELOG.md) | Historique des changements (keep-a-changelog) |
+| [`SECURITY.md`](SECURITY.md) | Politique de sécurité et divulgation |
+
+---
+
+## Roadmap
+
+**Pilote V1 livré** — Epics 1 → 4 + Phase 2 UI (cf. [`CHANGELOG.md`](CHANGELOG.md)).
+
+**Pistes ouvertes** :
+
+- Portage **PostgreSQL** (le code est déjà `Postgres-ready` ; toutes les colonnes `ts` sont timezone-aware via `UtcDateTime`).
+- **Store / Automations marketplace** (placeholders UI ; backing en cours pour la rétention RGPD).
+- **Modules Enterprise** (multi-tenant, SSO SAML, audit log signé) — open-core, hors cible PME.
+- Couverture **E2E** étendue (Scope/Modes, EngineSettings, Technicians en parcours réel).
+- Connecteur **GLPI API V2** (le seam est prêt, l'API legacy `apirest.php` reste la source de vérité).
+
+---
 
 ## Licence
 
-MIT (cf. `LICENSE`).
+[MIT](LICENSE) — open-core, monétisation par le service (support SLA, install/config, prestations, modules Enterprise). 
+
+---
+
+<div align="center">
+
+Conçu pour les DSI qui veulent **garder la main** : le LLM propose, le code décide.
+
+</div>
