@@ -174,7 +174,7 @@ export function AiProvider() {
           subtitle={PROVIDER_LABELS[provider]}
         />
         <CardContent className="flex flex-col gap-4 p-5">
-          <Field label="Base URL">
+          <Field label={t("URL de base", "Base URL")}>
             <Input
               key={`${provider}-base`}
               defaultValue={currentBase}

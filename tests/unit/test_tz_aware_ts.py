@@ -13,8 +13,8 @@ from datetime import UTC, datetime, timedelta, timezone
 from sqlmodel import select
 
 from itsm_modern_ai.domain.models import Decision, TriageOutcome, TriageReason
-from itsm_modern_ai.persistence import db, journal
-from itsm_modern_ai.persistence.tables import DecisionLog, LlmCall
+from itsm_modern_ai.persistence import db, idempotency, journal
+from itsm_modern_ai.persistence.tables import DecisionLog, LlmCall, ProcessedTicket
 
 
 def test_decision_log_ts_is_aware_on_read(temp_db):
@@ -101,3 +101,15 @@ def test_record_decision_with_offset_other_than_utc_is_normalized(temp_db):
     with db.session_scope() as s:
         row = s.exec(select(DecisionLog).where(DecisionLog.ticket_id == 99)).one()
         assert row.ts.tzinfo is not None
+
+
+def test_processed_ticket_processed_at_is_aware_on_read(temp_db):
+    """Idempotence du polling (FR-2) : `processed_at` doit ressortir aware UTC
+    (cohérence avec `decisions.ts` / `llm_calls.ts`, audit cybersécu)."""
+    with db.session_scope() as s:
+        idempotency.mark_processed(s, ticket_id=1, state_fingerprint="fp")
+    with db.session_scope() as s:
+        row = s.get(ProcessedTicket, 1)
+        assert row is not None
+        assert row.processed_at.tzinfo is not None
+        assert row.processed_at.utcoffset() == timedelta(0)

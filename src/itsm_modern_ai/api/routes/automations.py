@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from ...persistence import db
 from ...services import retention
 from ...services.runtime_config import RuntimeConfigService
+from ..client_ip import client_ip
 from ..deps import get_config_service
 from ..security import require_auth
 
@@ -121,7 +122,8 @@ def run_retention(
     s = cfg.settings
     decisions_days = cfg.get_int("retention_decisions_days", s.retention_decisions_days)
     llm_days = cfg.get_int("retention_llm_calls_days", s.retention_llm_calls_days)
-    initiator = request.client.host if request.client else "unknown"
+    trust = bool(getattr(request.app.state.settings, "trust_proxy_headers", False))
+    initiator = client_ip(request, trust)
     with db.session_scope() as session:
         result = retention.purge_now(
             session, decisions_days=decisions_days, llm_calls_days=llm_days

@@ -6,6 +6,7 @@
  * 3 s puis disparaît. Cliquer dessus le ferme tout de suite.
  */
 
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, Info, X, XCircle } from "lucide-react";
 import {
@@ -113,6 +114,7 @@ function ToastViewport({
 
 function ToastItem({ entry, onClose }: { entry: ToastEntry; onClose: () => void }) {
   const [visible, setVisible] = useState(false);
+  const t = useT();
   useEffect(() => {
     // Tick d'animation à l'arrivée (slide-in).
     const id = requestAnimationFrame(() => setVisible(true));
@@ -132,7 +134,7 @@ function ToastItem({ entry, onClose }: { entry: ToastEntry; onClose: () => void 
       <span className="flex-1 leading-snug">{entry.message}</span>
       <button
         type="button"
-        aria-label="Fermer"
+        aria-label={t("Fermer", "Close")}
         onClick={onClose}
         className="shrink-0 rounded p-0.5 opacity-70 hover:opacity-100"
       >

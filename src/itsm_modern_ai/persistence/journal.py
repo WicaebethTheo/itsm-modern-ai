@@ -9,7 +9,10 @@ from datetime import UTC, datetime, timedelta
 from sqlmodel import Session, delete, func, select
 
 from ..domain.models import TriageOutcome
-from .tables import DecisionLog, LlmCall
+from .tables import DecisionLog, LlmCall, _utcnow
+
+DEFAULT_DECISIONS_LIMIT = 500
+"""Limite par défaut pour list_decisions (Journal de Décision). Partagée avec l'API."""
 
 
 def _bulk_delete_count(session: Session, stmt) -> int:
@@ -81,7 +84,7 @@ def record_decision(
     return row.id  # type: ignore[return-value]
 
 
-def list_decisions(session: Session, *, limit: int = 500) -> list[DecisionLog]:
+def list_decisions(session: Session, *, limit: int = DEFAULT_DECISIONS_LIMIT) -> list[DecisionLog]:
     return list(
         session.exec(select(DecisionLog).order_by(DecisionLog.ts.desc()).limit(limit)).all()
     )
@@ -125,7 +128,7 @@ def daily_series(session: Session, days: int = 14) -> list[dict]:
 
     Renvoie une entrée par jour (zéros inclus), du plus ancien au plus récent.
     """
-    now = datetime.now(UTC)
+    now = _utcnow()
     start_day = (now - timedelta(days=days - 1)).date()
     buckets = {(start_day + timedelta(days=i)).isoformat(): [0, 0] for i in range(days)}
     rows = session.exec(

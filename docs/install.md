@@ -91,6 +91,12 @@ GLPI_USER_TOKEN="…" GLPI_APP_TOKEN="…" \
 
 La terminaison **TLS est déléguée à un reverse proxy** (nginx, Caddy, …) placé devant le service sur le port `8000`. Le service ne sert pas TLS lui-même. Configurez le proxy pour **rediriger ou refuser le HTTP nu** et ne servir qu'en HTTPS.
 
+> ⚠️ **IP réelle du client derrière le proxy** — par défaut, `request.client.host` vaut l'IP du proxy, ce qui rend le rate-limit du login (FR-24) contournable. Pour rétablir l'IP d'origine :
+>
+> 1. Activez `TRUST_PROXY_HEADERS=true` dans le `.env` (lecture de la 1ʳᵉ valeur de `X-Forwarded-For`).
+> 2. Lancez `uvicorn` avec `--proxy-headers --forwarded-allow-ips=<IP du proxy>` (ou `*` si le proxy est seul devant). En conteneur, l'entrypoint le fait automatiquement quand `TRUST_PROXY_HEADERS=true` est exporté.
+> 3. N'activez ces options **que** derrière un proxy fiable — sans ça, n'importe quel client peut forger l'IP via le header.
+
 ## Sauvegarde
 
 Sauvegardez régulièrement le volume **`./data`** : il contient à la fois la **base SQLite** (`itsm.db`) **et** la **master key** (`data/master.key`).

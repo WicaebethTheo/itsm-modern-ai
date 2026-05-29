@@ -16,5 +16,14 @@ fi
 echo "[entrypoint] alembic upgrade head"
 alembic upgrade head
 
+# Reverse proxy : si TRUST_PROXY_HEADERS=true, on active la lecture de XFF côté
+# uvicorn (cf. docs/install.md §5). `--forwarded-allow-ips=*` car le moteur n'est
+# joignable que via le proxy en pilote conteneurisé.
+if [ "${TRUST_PROXY_HEADERS:-false}" = "true" ]; then
+  PROXY_ARGS="--proxy-headers --forwarded-allow-ips=*"
+else
+  PROXY_ARGS=""
+fi
+
 echo "[entrypoint] démarrage uvicorn"
-exec uvicorn itsm_modern_ai.main:app --host 0.0.0.0 --port 8000
+exec uvicorn itsm_modern_ai.main:app --host 0.0.0.0 --port 8000 $PROXY_ARGS

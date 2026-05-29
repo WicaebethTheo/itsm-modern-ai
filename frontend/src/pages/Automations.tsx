@@ -223,7 +223,7 @@ export function Automations() {
 
       <Card className="overflow-hidden">
         <PanelHead
-          title="Automations"
+          title={t("Automatisations", "Automations")}
           subtitle={t(
             `${total} prévues · ${activeCount} active`,
             `${total} planned · ${activeCount} active`,

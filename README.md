@@ -23,7 +23,7 @@ Séquençage : `Epic 1 (spike) → [GO humain] → Epic 2 → Epic 3 → Epic 4`
   - **Whitelist curée depuis un scan GLPI.** La console scanne GLPI (`POST /api/glpi/sync` → cache des catégories, entités, techniciens, groupes), puis l'admin **sélectionne** ce que l'IA a le droit d'utiliser : catégories autorisées + entités du périmètre (`PUT /api/scope`), techniciens/groupes **éligibles** + leur **fiche en prose** éditée dans l'UI (`PUT /api/technicians`, `PUT /api/groups`). Le moteur n'agit que dans ce **périmètre effectif** (= GLPI ∩ sélections admin) ; le routage vise un **technicien** (préféré) ou, en fallback, un **groupe** éligible. **Les fiches techniciens ne sont plus un YAML** : elles sont stockées en base.
   - **4 fournisseurs LLM** configurables (clés chiffrées au repos) : **Mistral EU** (défaut souverain) · **OpenAI** (distinct, non-souverain) · **Ollama** (modèle **local**, pas de clé) · **Anthropic / Claude** (non-souverain, FR-12).
 
-UI : **`/`** (SPA). API : `/health` (expose aussi la **version GLPI**) · `/api/status` · `/api/metrics` · `/api/auth/*` · `/api/config` · `/api/glpi/sync` · `/api/discovery/{category|entity|technician|group}` · `/api/scope` (`GET`/`PUT`) · `/api/modes` (`PUT` — mode d'exécution par entité) · `/api/technicians` (`PUT`) · `/api/groups` (`PUT`) · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/export/{decisions,llm-calls}.csv`. OpenAPI sur `/docs`.
+UI : **`/`** (SPA). API : `/health` (expose aussi la **version GLPI** + LLM) · `/api/status` · `/api/metrics` · `/api/operational-metrics` (FR-23 dashboard inversé) · `/api/auth/{login,logout,status}` · `/api/config` (GET/POST — secrets via API/UI) · `/api/glpi/sync` · `/api/discovery/{category|entity|technician|group}` · `/api/scope` (`GET`/`PUT`) · `/api/modes` (`PUT` — mode d'exécution par entité) · `/api/technicians` (`PUT`) · `/api/groups` (`PUT`) · `/api/sandbox` · `/api/decisions` (+ `PATCH .../annotation`) · `/api/export/{decisions,llm-calls}.csv` · `/api/automations/retention` (`GET`/`PATCH`) + `/api/automations/retention/run` (`POST`) · `/api/debug/*` (gatés `DEBUG_TOOLS_ENABLED`). OpenAPI sur `/docs`.
 
 > **Souveraineté** : le défaut reste Mistral EU. **OpenAI et Anthropic (Claude) sont hors UE** — leur activation est un choix explicite de l'opérateur, à valider avec la DPO (cf. `docs/dpo.md`). **Ollama** tourne en local (aucune donnée ne sort).
 
@@ -70,7 +70,7 @@ curl -X POST http://localhost:8000/api/config -H 'Content-Type: application/json
 ```bash
 make install          # venv (uv) + deps Python
 make lint             # ruff
-make test             # pytest (145 tests : masquage, whitelist, GLPI mocké, modes, rate-limit, API…)
+make test             # pytest (177 tests : masquage, whitelist, GLPI mocké, modes, rate-limit, API…)
 make migrate          # alembic upgrade head
 make ui               # build de la SPA (npm install + build -> frontend/dist) — requiert Node 22
 make run              # uvicorn + scheduler ; UI sur http://localhost:8000
@@ -80,7 +80,7 @@ make ui-dev           # http://localhost:5173
 
 # Tests frontend :
 make ui-lint          # Biome + typecheck
-make ui-test          # Vitest + Testing Library (42 tests)
+make ui-test          # Vitest + Testing Library (58 tests)
 make ui-e2e           # Playwright E2E (1ère fois : npx playwright install --with-deps chromium)
 
 # Déploiement on-prem (build UI inclus dans l'image multi-stage ; conteneur non-root) :
@@ -114,7 +114,8 @@ frontend/          # SPA React 19 + Vite + Tailwind v4 (buildée -> frontend/dis
 migrations/        # Alembic
 scripts/spike_routing.py        # Spike Epic 1
 tests/             # unit + integration (respx) ; fixtures/tickets_fr.json
-docs/              # install, dpo, spike, handoff, project-context, planning/ (specs)
+docs/              # project-context, install, dpo, spike, planning/ (specs)
+                   #  + design/ (palette, cards), bootstrap-archive (archive)
 ```
 
 ## Stack
@@ -128,9 +129,9 @@ Testing Library** (composants/pages) et **Playwright** (E2E).
 
 ## Documentation
 
-- [`docs/install.md`](docs/install.md) — installation on-prem (½ page). [`docs/dpo.md`](docs/dpo.md) — fiche DPO. [`SECURITY.md`](SECURITY.md).
-- [`docs/spike.md`](docs/spike.md) — spike Epic 1. [`docs/handoff.md`](docs/handoff.md) — passation.
-- [`docs/planning/`](docs/planning/) — PRD, architecture, epics, addendum. [`docs/project-context.md`](docs/project-context.md) — règles & invariants.
+- [`docs/install.md`](docs/install.md) — installation on-prem (½ page). [`docs/dpo.md`](docs/dpo.md) — fiche DPO. [`SECURITY.md`](SECURITY.md). [`CHANGELOG.md`](CHANGELOG.md) — historique des changements.
+- [`docs/spike.md`](docs/spike.md) — spike Epic 1. [`HANDOFF.md`](HANDOFF.md) — passation active. [`docs/bootstrap-archive.md`](docs/bootstrap-archive.md) — archive du démarrage.
+- [`docs/planning/`](docs/planning/) — PRD, architecture, epics, addendum. [`docs/design/`](docs/design/) — specs design (palette, cards). [`docs/project-context.md`](docs/project-context.md) — règles & invariants.
 
 ## Licence
 
