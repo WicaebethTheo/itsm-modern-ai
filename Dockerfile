@@ -19,10 +19,14 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
+# Build REPRODUCTIBLE : on installe depuis uv.lock (versions épinglées + hashes),
+# pas une résolution libre. `uv sync --frozen` échoue si le lock est incohérent
+# avec pyproject (garde-fou CI). `--no-dev` exclut les deps de dev (pytest, ruff…).
 # hatchling (editable) a besoin du package et du README dès l'install.
-COPY pyproject.toml uv.lock* README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN uv venv && uv pip install -e .
+RUN uv sync --frozen --no-dev --no-install-project \
+    && uv pip install --no-deps -e .
 
 # Migrations + entrypoint.
 COPY migrations ./migrations

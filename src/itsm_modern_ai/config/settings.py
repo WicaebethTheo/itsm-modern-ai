@@ -128,6 +128,18 @@ class Settings(BaseSettings):
     # (pilote/labo sans proxy). À mettre à True UNIQUEMENT derrière un proxy fiable.
     trust_proxy_headers: bool = False
 
+    # Observabilité — logging structuré (durcissement audit 2026-05). `log_level`
+    # pilote le seuil racine ; `log_format=json` produit un log structuré (1 ligne =
+    # 1 objet JSON) pour l'agrégation (Loki/ELK), `text` reste lisible en dev.
+    # ⚠️ Le format n'inclut AUCUNE PII (pas de corps de requête, pas de query string).
+    log_level: str = "INFO"  # DEBUG | INFO | WARNING | ERROR | CRITICAL
+    log_format: str = "text"  # text | json
+
+    # Observabilité — métriques Prometheus exposées à GET /metrics (NON authentifié,
+    # comme un scrape classique côté réseau interne). Mettre à False pour désactiver
+    # complètement l'endpoint et l'instrumentation (défaut : activé).
+    metrics_enabled: bool = True
+
 
 def get_settings() -> Settings:
     return Settings()

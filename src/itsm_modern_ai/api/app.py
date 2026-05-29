@@ -174,6 +174,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .spa import mount_spa
 
     settings = settings or get_settings()
+
+    # Observabilité : init logging centralisée AVANT toute autre chose, pour que les
+    # logs de démarrage (lifespan, scheduler) sortent au format/niveau configurés.
+    from ..config.logging import configure_logging
+
+    configure_logging(level=settings.log_level, fmt=settings.log_format)
+
     app = FastAPI(
         title="ITSM Modern AI — moteur de triage (headless)",
         version=__version__,
@@ -225,6 +232,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(referentials_routes.router)
     app.include_router(debug_routes.router)
     app.include_router(automations_routes.router)
+
+    # Observabilité : métriques Prometheus d'infra à GET /metrics (NON authentifié,
+    # scrape interne). Branché AVANT le catch-all SPA pour que /metrics ne soit pas
+    # capté par le mount statique. Désactivable via settings.metrics_enabled.
+    if settings.metrics_enabled:
+        from .metrics import install_metrics
+
+        install_metrics(app)
 
     # UI web (Phase 2) — SPA React buildée, servie en statique (catch-all en dernier).
     mount_spa(app, Path(settings.frontend_dist))

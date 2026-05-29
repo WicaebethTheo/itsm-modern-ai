@@ -24,9 +24,54 @@ services:
       # Persistance : base SQLite + master key. Les fiches techniciens, la clé LLM
       # et la connexion GLPI se configurent dans l'interface web (rien à monter).
       - ./data:/app/data
+    # ── Durcissement (audit 2026-05) ────────────────────────────────────────────
+    # Pas d'escalade de privilèges, puis abandon de TOUTES les capabilities Linux
+    # SAUF le strict minimum requis par l'entrypoint au démarrage (VALIDÉ par un run
+    # réel : un `cap_drop:[ALL]` total fait échouer le boot) :
+    #   - CHOWN + DAC_OVERRIDE : l'entrypoint (root) ajuste l'ownership du volume
+    #     /app/data au 1er démarrage (volume parfois root sur déploiement existant) ;
+    #   - SETUID + SETGID : `gosu` redescend ensuite en utilisateur non-root `app`.
+    # Une fois en `app`, le process moteur ne détient plus aucun privilège.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
+    # read_only : système de fichiers racine en lecture seule (anti-tamper). L'app
+    # n'écrit QUE dans le volume /app/data (DB SQLite + master.key) ; tout le reste
+    # (code, venv) est immuable. /tmp est fourni en tmpfs car SQLite/Python peuvent
+    # y créer des fichiers temporaires, et le venv uv (UV_LINK_MODE=copy) n'écrit
+    # plus après le build. VALIDÉ par run réel : alembic + SQLite n'écrivent que
+    # dans /app/data, le boot reste vert (/health=200) en read_only.
+    read_only: true
+    tmpfs:
+      - /tmp
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      # Sonde RÉELLE de l'état (probe=true → sonde aussi le LLM si configuré) ;
+      # 503 si dégradé → le healthcheck échoue vraiment. urlopen lève sur 503,
+      # donc le `except`/code de sortie non nul marque le conteneur unhealthy.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health?probe=true').status==200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+    # Limites de ressources (compatible `docker compose up` via le runtime, et
+    # `docker stack deploy` via deploy.resources). Bornage mémoire/CPU = garde-fou
+    # anti-emballement (boucle LLM, fuite) sur un hôte mutualisé.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M
+    # Rotation des logs JSON du conteneur (évite le remplissage disque de l'hôte).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
