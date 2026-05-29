@@ -14,17 +14,55 @@ from typing import Any
 import httpx
 
 from ...domain.errors import LlmTransportError
+from ...domain.url_safety import UrlSafetyError, assert_resolved_ip_is_public
+
+
+def ssrf_request_hook(*, allow_local: bool = False) -> Callable[[httpx.Request], Awaitable[None]]:
+    """Construit un event hook httpx « request » qui bloque tout appel sortant vers une
+    IP interne (résolution DNS au runtime → anti DNS rebinding, audit 2026-05).
+
+    À installer sur le client (`event_hooks={"request": [hook]}`) UNIQUEMENT en production
+    (cf. `settings.ssrf_guard_enabled`). En test, on ne l'installe pas → respx intercepte.
+    """
+
+    async def _hook(request: httpx.Request) -> None:
+        assert_resolved_ip_is_public(request.url.host or "", allow_local=allow_local)
+
+    return _hook
+
+
+def make_guarded_event_hooks(
+    *, guard: bool, allow_local: bool = False
+) -> dict[str, list] | None:
+    """Renvoie le mapping `event_hooks` httpx avec le garde anti-SSRF si `guard`, sinon None."""
+    if not guard:
+        return None
+    return {"request": [ssrf_request_hook(allow_local=allow_local)]}
+
+
+__all__ = [
+    "arequest",
+    "healthcheck_get",
+    "ssrf_request_hook",
+    "make_guarded_event_hooks",
+    "UrlSafetyError",
+]
 
 
 async def _with_client(
     injected: httpx.AsyncClient | None,
     timeout: float,
     op: Callable[[httpx.AsyncClient], Awaitable[httpx.Response]],
+    event_hooks: dict[str, list] | None = None,
 ) -> httpx.Response:
-    """Exécute `op(client)` en réutilisant le client injecté, sinon en en créant un."""
+    """Exécute `op(client)` en réutilisant le client injecté, sinon en en créant un.
+
+    `event_hooks` (anti-SSRF) ne s'applique qu'au client éphémère créé ici : un client
+    injecté (tests) conserve sa propre configuration.
+    """
     if injected is not None:
         return await op(injected)
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, event_hooks=event_hooks or {}) as client:
         return await op(client)
 
 
@@ -37,6 +75,7 @@ async def arequest(
     client: httpx.AsyncClient | None = None,
     timeout: float = 60.0,
     raise_status: bool = True,
+    event_hooks: dict[str, list] | None = None,
 ) -> httpx.Response:
     """Effectue une requête HTTP en mutualisant le cycle de vie client + erreurs.
 
@@ -49,9 +88,12 @@ async def arequest(
         return await c.request(method, url, headers=headers, json=json)
 
     try:
-        resp = await _with_client(client, timeout, do)
+        resp = await _with_client(client, timeout, do, event_hooks=event_hooks)
         if raise_status:
             resp.raise_for_status()
+    except UrlSafetyError as exc:
+        # Anti-SSRF : l'hôte résout vers une IP interne → on bloque AVANT toute fuite.
+        raise LlmTransportError(f"Appel sortant bloqué (anti-SSRF): {exc}") from exc
     except httpx.HTTPStatusError as exc:
         # Body JSON typique : {"error": {"message": "..."}} — essentiel pour qualifier.
         body_excerpt = (exc.response.text or "")[:500].replace("\n", " ")
@@ -67,11 +109,13 @@ async def healthcheck_get(
     *,
     client: httpx.AsyncClient | None = None,
     timeout: float = 60.0,
+    event_hooks: dict[str, list] | None = None,
 ) -> bool:
     """Sonde légère partagée : True si status < 400, False sur toute erreur réseau."""
     try:
         resp = await arequest(
-            "GET", url, headers=headers, client=client, timeout=timeout, raise_status=False
+            "GET", url, headers=headers, client=client, timeout=timeout,
+            raise_status=False, event_hooks=event_hooks,
         )
     except LlmTransportError:
         return False

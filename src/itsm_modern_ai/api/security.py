@@ -17,6 +17,7 @@ import logging
 from fastapi import HTTPException, Request, status
 from pwdlib import PasswordHash
 
+from ..domain.errors import SecretDecryptError
 from ..services.runtime_config import RuntimeConfigService
 
 logger = logging.getLogger("itsm.security")
@@ -30,8 +31,20 @@ def hash_password(plaintext: str) -> str:
 
 
 def _ensure_bootstrapped(cfg: RuntimeConfigService) -> str | None:
-    """Renvoie le hash admin courant, en l'amorçant depuis l'env si nécessaire."""
-    stored = cfg.get_secret(HASH_KEY)
+    """Renvoie le hash admin courant, en l'amorçant depuis l'env si nécessaire.
+
+    Fail-safe (audit 2026-05) : si le hash stocké est illisible (MASTER_KEY incohérente),
+    on NE crashe PAS en 500 — on traite l'admin comme non amorcé (→ fail-closed 401 clair),
+    ce qui évite de verrouiller le login derrière une erreur serveur opaque.
+    """
+    try:
+        stored = cfg.get_secret(HASH_KEY)
+    except SecretDecryptError:
+        logger.error(
+            "hash admin illisible (MASTER_KEY incohérente) — login impossible jusqu'à "
+            "reconfiguration du mot de passe admin. Vérifiez MASTER_KEY / data/master.key."
+        )
+        return None
     if stored:
         return stored
     bootstrap = cfg.settings.admin_password

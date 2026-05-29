@@ -45,11 +45,13 @@ class GlpiConnector:
         *,
         max_tickets: int = 200,
         stats_max: int = 500,
+        ssrf_guard: bool = False,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._creds = creds
         self._max_tickets = max_tickets
         self._stats_max = stats_max
+        self._ssrf_guard = ssrf_guard
         self._http_client = http_client
 
     def _client(self) -> GlpiClient:
@@ -59,6 +61,7 @@ class GlpiConnector:
             app_token=self._creds.app_token,
             verify_tls=self._creds.verify_tls,
             timeout=self._creds.timeout_seconds,
+            ssrf_guard=self._ssrf_guard,
             client=self._http_client,
         )
 

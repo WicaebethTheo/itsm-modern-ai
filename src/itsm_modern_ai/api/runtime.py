@@ -34,7 +34,11 @@ def build_connector(settings: Settings, secrets: SecretsPort) -> GlpiConnector |
         creds = RuntimeConfigService(session, secrets, settings).glpi_credentials()
     if not creds.is_configured:
         return None
-    return GlpiConnector(creds, max_tickets=settings.polling_max_tickets)
+    return GlpiConnector(
+        creds,
+        max_tickets=settings.polling_max_tickets,
+        ssrf_guard=settings.ssrf_guard_enabled,
+    )
 
 
 def build_llm(settings: Settings, secrets: SecretsPort) -> LlmPort | None:
@@ -74,6 +78,7 @@ def build_llm(settings: Settings, secrets: SecretsPort) -> LlmPort | None:
         api_key=api_key,
         model=model,
         anthropic_version=settings.anthropic_version,
+        ssrf_guard=settings.ssrf_guard_enabled,
     )
 
 

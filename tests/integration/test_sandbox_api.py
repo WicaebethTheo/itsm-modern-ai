@@ -23,6 +23,7 @@ def client(tmp_path):
         llm_base_url=LLM_BASE,
         polling_enabled=False,
         dev_open_admin=True,  # admin sans mot de passe (test) — fail-closed désactivé
+        ssrf_guard_enabled=False,  # respx mocke llm.test (pas de DNS réel) — garde off en test
     )
     with TestClient(create_app(settings)) as c:
         yield c

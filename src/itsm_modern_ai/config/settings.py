@@ -139,6 +139,20 @@ class Settings(BaseSettings):
     # comme un scrape classique côté réseau interne). Mettre à False pour désactiver
     # complètement l'endpoint et l'instrumentation (défaut : activé).
     metrics_enabled: bool = True
+    # Jeton de scrape OPTIONNEL pour `/metrics` (durcissement audit 2026-05). Vide (défaut)
+    # → endpoint non authentifié (scrape Prometheus classique, rétrocompatible). Si défini,
+    # `/metrics` exige `Authorization: Bearer <token>` (ou en-tête `X-Metrics-Token`) ;
+    # toute requête sans le bon jeton reçoit 401. Permet de fermer l'exposition de la
+    # volumétrie/latence par route sans casser le scrape par défaut.
+    metrics_token: str = ""
+
+    # Garde anti-SSRF au RUNTIME (durcissement audit 2026-05). La validation lexicale des
+    # URLs (à l'écriture de config) ne protège pas du DNS rebinding : un hostname public
+    # peut résoudre vers une IP interne (169.254.169.254, 10.x, loopback…). Quand activé,
+    # chaque appel sortant (LLM, GLPI) résout l'hôte et BLOQUE toute IP privée/loopback/
+    # link-local/réservée avant d'émettre la requête (et donc avant toute fuite de token).
+    # Localhost reste toléré pour Ollama (allow_local). Défaut sûr : True.
+    ssrf_guard_enabled: bool = True
 
 
 def get_settings() -> Settings:

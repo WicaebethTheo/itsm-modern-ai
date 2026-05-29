@@ -17,6 +17,7 @@ littérale, ce qui suffit pour bloquer les saisies évidentes au point de config
 from __future__ import annotations
 
 import ipaddress
+import socket
 from urllib.parse import urlparse
 
 _LOCAL_HOSTNAMES = {"localhost", "ip6-localhost", "ip6-loopback"}
@@ -74,3 +75,65 @@ def validate_base_url(url: str, *, allow_local: bool = False) -> str:
             "Utilisez une URL publique en https://."
         )
     return url
+
+
+def _ip_is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True si l'IP résolue doit être bloquée (privée/loopback/link-local/réservée…)."""
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def assert_resolved_ip_is_public(host: str, *, allow_local: bool = False) -> None:
+    """Anti-SSRF AU RUNTIME (anti DNS rebinding) : résout `host` et vérifie CHAQUE IP.
+
+    Contrairement à `validate_base_url` (purement lexicale, au point de configuration),
+    cette fonction effectue la résolution DNS réelle juste avant l'appel sortant : un
+    hostname public qui résout vers une IP interne (rebinding) est ainsi bloqué AVANT
+    l'émission de la requête — donc avant toute fuite de token (clé LLM / token GLPI).
+
+    `allow_local=True` (cas Ollama localhost) tolère les IP locales/privées.
+    Lève `UrlSafetyError` si une IP résolue est interne (et non tolérée), ou si la
+    résolution échoue (fail-closed).
+    """
+    if not host:
+        return
+    h = host.strip("[]").lower()
+    # IP littérale : pas de DNS, on vérifie directement.
+    try:
+        literal = ipaddress.ip_address(h)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        if _ip_is_blocked(literal) and not allow_local:
+            raise UrlSafetyError(
+                f"IP interne refusée (anti-SSRF) : {host}."
+            )
+        return
+
+    if h in _LOCAL_HOSTNAMES:
+        if not allow_local:
+            raise UrlSafetyError(f"Hôte local refusé (anti-SSRF) : {host}.")
+        return
+
+    try:
+        infos = socket.getaddrinfo(h, None)
+    except OSError as exc:
+        # Fail-closed : on ne laisse pas partir un appel vers un hôte non résolvable.
+        raise UrlSafetyError(f"Résolution DNS impossible pour {host} (anti-SSRF).") from exc
+
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr.split("%")[0])  # retire un éventuel scope IPv6
+        except ValueError:
+            continue
+        if _ip_is_blocked(ip) and not allow_local:
+            raise UrlSafetyError(
+                f"L'hôte {host} résout vers une IP interne ({ip}) — bloqué (anti-SSRF / DNS rebinding)."
+            )

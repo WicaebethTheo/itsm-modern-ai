@@ -76,3 +76,80 @@ def test_masking_is_idempotent():
     once = masking.mask("email a@b.fr tel 06 12 34 56 78").text
     twice = masking.mask(once).text
     assert once == twice
+
+
+# ── Motifs étendus (durcissement audit 2026-05, LLM02) ────────────────────────
+def test_masks_credit_card_luhn_valid():
+    # 4242 4242 4242 4242 = numéro de test valide Luhn.
+    r = masking.mask("paiement par carte 4242 4242 4242 4242 merci")
+    assert "4242" not in r.text
+    assert masking.CARD_PLACEHOLDER in r.text
+    assert r.counts.get("card") == 1
+
+
+def test_masks_credit_card_with_dashes():
+    r = masking.mask("CB 4242-4242-4242-4242")
+    assert masking.CARD_PLACEHOLDER in r.text
+
+
+def test_non_luhn_16_digits_not_masked_as_card():
+    """Anti faux positif : un nombre à 16 chiffres non-Luhn n'est PAS une carte."""
+    text = "numéro de dossier 1234567890123456 interne"
+    r = masking.mask(text)
+    assert "1234567890123456" in r.text  # laissé en clair
+    assert masking.CARD_PLACEHOLDER not in r.text
+    assert "card" not in r.counts
+
+
+def test_masks_ipv4():
+    r = masking.mask("serveur 192.168.1.10 et dns 8.8.8.8")
+    assert "192.168.1.10" not in r.text
+    assert "8.8.8.8" not in r.text
+    assert r.text.count(masking.IP_PLACEHOLDER) == 2
+    assert r.counts.get("ip") == 2
+
+
+def test_invalid_ipv4_octet_not_masked():
+    """Anti faux positif : 999.1.1.1 n'est pas une IPv4 valide."""
+    r = masking.mask("version 999.1.1.1 du firmware")
+    assert masking.IP_PLACEHOLDER not in r.text
+
+
+def test_masks_mac_address():
+    assert masking.MAC_PLACEHOLDER in masking.mask("MAC 00:1A:2B:3C:4D:5E").text
+    assert masking.MAC_PLACEHOLDER in masking.mask("MAC AA-BB-CC-DD-EE-FF").text
+
+
+def test_masks_e164_international_phone():
+    r = masking.mask("appelle le +14155552671 stp")
+    assert "+14155552671" not in r.text
+    assert masking.PHONE_PLACEHOLDER in r.text
+
+
+def test_masks_cloud_access_key():
+    r = masking.mask("ma clé AWS est AKIAIOSFODNN7EXAMPLE pour info")
+    assert "AKIAIOSFODNN7EXAMPLE" not in r.text
+    assert masking.CLOUD_KEY_PLACEHOLDER in r.text
+    # Une clé cloud lève le flag interne « secret détecté ».
+    assert r.secret_found is True
+
+
+def test_extended_patterns_idempotent():
+    text = (
+        "carte 4242 4242 4242 4242 ip 192.168.1.10 "
+        "mac 00:1A:2B:3C:4D:5E tel +14155552671 clé AKIAIOSFODNN7EXAMPLE"
+    )
+    once = masking.mask(text).text
+    twice = masking.mask(once).text
+    assert once == twice
+    # Plus aucune donnée sensible en clair après masquage.
+    for leak in ("4242", "192.168.1.10", "00:1A:2B", "+14155552671", "AKIAIOSFODNN7EXAMPLE"):
+        assert leak not in once
+
+
+def test_card_and_ip_follow_toggles():
+    text = "carte 4242 4242 4242 4242 ip 192.168.1.10"
+    # iban=False désactive aussi la carte (donnée bancaire) ; phone=False l'IP.
+    r = masking.mask(text, iban=False, phone=False)
+    assert "4242 4242 4242 4242" in r.text
+    assert "192.168.1.10" in r.text

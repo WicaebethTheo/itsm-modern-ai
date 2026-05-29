@@ -56,3 +56,19 @@ def test_metrics_can_be_disabled(tmp_path):
     (tmp_path / "dist").mkdir(parents=True, exist_ok=True)
     with TestClient(create_app(_settings(tmp_path, metrics_enabled=False))) as c:
         assert c.get("/metrics").status_code == 404
+
+
+def test_metrics_token_required_when_set(tmp_path):
+    """Si `metrics_token` est défini, /metrics exige le jeton (401 sinon)."""
+    (tmp_path / "dist").mkdir(parents=True, exist_ok=True)
+    with TestClient(create_app(_settings(tmp_path, metrics_token="scrape-secret"))) as c:
+        # Sans jeton → 401.
+        assert c.get("/metrics").status_code == 401
+        # Mauvais jeton → 401.
+        assert c.get("/metrics", headers={"Authorization": "Bearer nope"}).status_code == 401
+        # Bon jeton via Bearer → 200.
+        r = c.get("/metrics", headers={"Authorization": "Bearer scrape-secret"})
+        assert r.status_code == 200 and "itsm_http_requests_total" in r.text
+        # Bon jeton via X-Metrics-Token → 200.
+        r2 = c.get("/metrics", headers={"X-Metrics-Token": "scrape-secret"})
+        assert r2.status_code == 200

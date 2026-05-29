@@ -147,6 +147,31 @@ def test_admin_fail_closed_when_no_password_and_not_dev_open(tmp_path):
         assert c.get("/api/export/decisions.csv").status_code == 401
 
 
+# ── Fail-safe déchiffrement : hash admin illisible (MASTER_KEY incohérente) ──────
+def test_login_does_not_500_when_admin_hash_unreadable(tmp_path):
+    """Si le hash admin a été chiffré avec une autre MASTER_KEY (rotation/perte de clé),
+    le login NE doit PAS crasher en 500 : il retombe en fail-closed 401 clair."""
+    from itsm_modern_ai.adapters.secrets.encrypted import FernetSecretsBox
+    from itsm_modern_ai.api import security
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.services.runtime_config import RuntimeConfigService
+
+    settings = _settings(tmp_path, dev_open_admin=False)
+    app = create_app(settings)
+    with TestClient(app) as c:
+        # Stocke un hash admin chiffré avec une clé DIFFÉRENTE de celle de l'app.
+        foreign_box = FernetSecretsBox(master_key=Fernet.generate_key().decode())
+        with db.session_scope() as s:
+            RuntimeConfigService(s, foreign_box, settings).set_secret(
+                security.HASH_KEY, "fake-argon2-hash"
+            )
+        # Login : le hash est illisible → 401 (fail-closed), jamais 500.
+        r = c.post("/api/auth/login", json={"password": "whatever"})
+        assert r.status_code == 401
+        # Les routes protégées restent refusées proprement (pas de 500).
+        assert c.get("/api/decisions").status_code == 401
+
+
 def test_status_counters_present(open_client):
     body = open_client.get("/api/status").json()
     assert "llm_calls_total" in body and "cost_eur_last_24h" in body

@@ -10,9 +10,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+from ...domain.errors import SecretDecryptError
 
 logger = logging.getLogger("itsm.secrets")
 
@@ -66,4 +68,16 @@ class FernetSecretsBox:
         return self._fernet.encrypt(plaintext.encode()).decode()
 
     def decrypt(self, token: str) -> str:
-        return self._fernet.decrypt(token.encode()).decode()
+        """Déchiffre un token. Fail-safe : un token illisible (clé incohérente / token
+        corrompu) lève `SecretDecryptError` (erreur métier) plutôt qu'un `InvalidToken`
+        brut → évite un HTTP 500 qui verrouillerait l'admin (audit 2026-05)."""
+        try:
+            return self._fernet.decrypt(token.encode()).decode()
+        except (InvalidToken, ValueError, TypeError) as exc:
+            logger.warning(
+                "secret illisible : déchiffrement Fernet échoué (MASTER_KEY incohérente "
+                "ou token corrompu). Le secret doit être reconfiguré."
+            )
+            raise SecretDecryptError(
+                "Secret illisible (clé de chiffrement incohérente). Reconfigurez ce secret."
+            ) from exc
