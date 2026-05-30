@@ -34,9 +34,12 @@ Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `
 
 | Endpoint | Méthode | Description |
 |---|---|---|
-| `/api/config` | `GET` | Réglages non-secrets + booléens `*_set` pour les secrets. |
-| `/api/config` | `POST` | Pousse les réglages (tokens GLPI, clé LLM chiffrés Fernet au repos). |
+| `/api/config` | `GET` | Réglages non-secrets + booléens `*_set` pour les secrets. Inclut le choix d'API (`glpi_api_version` legacy/v2), les deux URL de base (`glpi_base_url`, `glpi_v2_base_url`) et les identifiants OAuth V2 non-secrets. |
+| `/api/config` | `POST` | Pousse les réglages (tokens GLPI, clé LLM, **client_secret/mot de passe OAuth V2** chiffrés Fernet au repos). |
 | `/api/glpi/sync` | `POST` | Scan GLPI → cache des référentiels (catégories, entités, techniciens, groupes). |
+| `/api/glpi/whoami` | `GET` | Compte GLPI sous lequel le bot agit (aperçu UI) : nom, login, profil, email, `has_picture`, API active. |
+| `/api/glpi/avatar` | `GET` | Photo de profil du compte bot (proxy GLPI, V2) ; 404 si absente → l'UI affiche des initiales. |
+| `/api/glpi/reset` | `POST` | Réinitialise toute la connexion GLPI (URLs, tokens, identifiants OAuth ; retour en mode `legacy`). |
 
 ## Périmètre & whitelist curée
 
