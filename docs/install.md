@@ -147,9 +147,31 @@ scrape_configs:
 `LOG_FORMAT=json` produit un log **structuré** (une ligne = un objet JSON) directement
 agrégeable (Loki/ELK). Aucune PII n'est émise (pas de corps de requête, pas de query string).
 
+## Mise à jour
+
+```bash
+./update.sh
+```
+
+Le script **sauvegarde d'abord** `./data` (base + master key, horodaté sous `backups/`),
+récupère la nouvelle version (`git pull` si dépôt présent), **reconstruit et redémarre**, puis
+attend que le moteur soit sain. Les **migrations Alembic s'appliquent automatiquement** au
+démarrage (entrypoint), et les **données sont préservées** (le volume `./data` n'est jamais
+touché — **ne JAMAIS faire `docker compose down -v`**).
+
+- `./update.sh --no-pull` : met à jour sans `git pull` (sources/image déjà à jour).
+- En cas d'échec (ex. migration KO), le script affiche la procédure de **rollback** : restaurer
+  la sauvegarde `backups/<horodatage>/` dans `data/`, revenir à la version précédente
+  (`git checkout <tag>` en build local), puis `docker compose up -d --build`.
+
+> **Variante registry (recommandée à terme)** : la CI publie une image
+> (`$CI_REGISTRY_IMAGE:latest` + `:<sha>`). Une instance basée sur cette image se met à jour
+> sans rebuild local : `docker compose pull && docker compose up -d` (migrations auto). Le tag
+> `:<sha>` permet d'**épingler** une version et de revenir en arrière proprement.
+
 ## Sauvegarde
 
-Sauvegardez régulièrement le volume **`./data`** : il contient à la fois la **base SQLite** (`itsm.db`) **et** la **master key** (`data/master.key`).
+Sauvegardez régulièrement le volume **`./data`** : il contient à la fois la **base SQLite** (`itsm.db`) **et** la **master key** (`data/master.key`). Raccourci : `make backup` (copie horodatée dans `backups/`).
 
 > ⚠️ Sans la master key, **les secrets chiffrés sont irrécupérables**.
 

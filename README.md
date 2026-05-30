@@ -57,6 +57,9 @@ docker compose exec itsm python -m itsm_modern_ai.admin_setup   # mot de passe a
 > ⚠️ **Ne JAMAIS faire `docker compose down -v`** : `-v` supprime le volume `./data`
 > qui contient la base SQLite + la `master.key` Fernet. La configuration repart à zéro.
 
+**Mise à jour** : `./update.sh` (sauvegarde `./data` → récupère la nouvelle version → recrée →
+migrations auto, données préservées ; rollback affiché si besoin). Détails : [`docs/install.md`](docs/install.md#mise-à-jour).
+
 Tout se configure ensuite **dans l'interface** : connexion GLPI, choix du fournisseur LLM, scan GLPI, sélection des catégories/entités/techniciens/groupes du périmètre, fiches en prose, modes par entité. **Aucun secret dans `.env`** — les tokens GLPI et clés LLM sont poussés via l'UI et chiffrés Fernet au repos.
 
 ### Développement local
