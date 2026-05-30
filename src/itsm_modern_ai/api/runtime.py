@@ -137,6 +137,9 @@ def build_triage_service(
         # URL GLPI résolue runtime (UI > .env) : sinon le lien du Journal resterait figé à ""
         # quand GLPI est configuré via l'UI et non dans .env.
         glpi_base_url = cfg.get("glpi_base_url") or settings.glpi_base_url
+        # Seuil de confiance + plafond de coût : valeurs runtime (réglables via l'UI).
+        confidence_threshold = cfg.get_float("confidence_threshold", settings.confidence_threshold)
+        cost_cap_eur_per_day = cfg.get_float("cost_cap_eur_per_day", settings.cost_cap_eur_per_day)
     return TriageService(
         itsm=itsm,
         llm=llm,
@@ -150,6 +153,8 @@ def build_triage_service(
         auto_min_confidence=auto_min_confidence,
         mask_flags=mask_flags,
         glpi_base_url=glpi_base_url,
+        confidence_threshold=confidence_threshold,
+        cost_cap_eur_per_day=cost_cap_eur_per_day,
     )
 
 

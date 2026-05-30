@@ -109,10 +109,20 @@ class TriageService:
         auto_min_confidence: float | None = None,
         mask_flags: dict[str, bool] | None = None,
         glpi_base_url: str | None = None,
+        confidence_threshold: float | None = None,
+        cost_cap_eur_per_day: float | None = None,
     ) -> None:
         self._itsm = itsm
         self._llm = llm
         self._settings = settings
+        # Seuil de confiance (FR-8) et plafond de coût/jour (FR-10) résolus runtime (UI > .env) :
+        # sinon une modification depuis la console serait ignorée par le moteur.
+        self._confidence_threshold = (
+            settings.confidence_threshold if confidence_threshold is None else confidence_threshold
+        )
+        self._cost_cap_eur_per_day = (
+            settings.cost_cap_eur_per_day if cost_cap_eur_per_day is None else cost_cap_eur_per_day
+        )
         # URL GLPI courante (config runtime via l'UI ; .env n'est qu'un repli). Sert à figer
         # le lien front du Ticket dans le Journal au moment de la décision.
         self._glpi_base_url = settings.glpi_base_url if glpi_base_url is None else glpi_base_url
@@ -160,7 +170,7 @@ class TriageService:
             logger.warning("triage: appel LLM échoué (ticket=%s): %s", ticket_id, exc)
             return TriageOutcome(accepted=False, reason=TriageReason.LLM_ERROR), None
 
-        outcome = engine.evaluate(result.decision, refs, self._settings.confidence_threshold)
+        outcome = engine.evaluate(result.decision, refs, self._confidence_threshold)
         return outcome, result
 
     async def handle(self, ticket: Ticket, refs: Referentials) -> bool:
@@ -189,7 +199,7 @@ class TriageService:
     def _cost_cap_reached(self, ticket: Ticket) -> bool:
         """Cost cap (FR-10) : True si atteint. Journalise alors « à trier »."""
         with self._session_factory() as session:
-            if cost_cap.is_over_cap(session, self._settings.cost_cap_eur_per_day):
+            if cost_cap.is_over_cap(session, self._cost_cap_eur_per_day):
                 journal.record_decision(
                     session, ticket.id,
                     TriageOutcome(accepted=False, reason=TriageReason.COST_CAP_REACHED),

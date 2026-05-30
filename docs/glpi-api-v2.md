@@ -38,7 +38,8 @@ officielle. C'est la base d'implémentation de `adapters/itsm/glpi/v2/`.
 
 Le routeur GLPI résout `v2` → dernière mineure stable, `v2.3` → dernier patch de 2.3,
 `v2.3.0` → version exacte. Le connecteur utilise le préfixe configuré tel quel
-(`GLPI_BASE_URL` doit pointer sur `…/api.php/v2.3`).
+(**`GLPI_V2_BASE_URL`** doit pointer sur `…/api.php/v2.3` ; `GLPI_BASE_URL` reste l'URL
+legacy `apirest.php`, les deux coexistent).
 
 **Spec OpenAPI de l'instance** (source de vérité par instance) :
 `GET https://<glpi>/api.php/doc` (HTML) ou `…/api.php/v2.3/doc.json` (JSON).
@@ -190,9 +191,13 @@ vise la sous-propriété en **dot-notation** (`status.id`), pas `status` à plat
 | `GLPI_API_VERSION=legacy` *(défaut)* | connecteur `apirest.php` (V1) — inchangé |
 | `GLPI_API_VERSION=v2` | connecteur **OAuth2 high-level (Beta)** |
 
-Réglages V2 (poussés via l'UI/`POST /api/config`, **secrets chiffrés** au repos) :
-`GLPI_OAUTH_CLIENT_ID`, `GLPI_OAUTH_CLIENT_SECRET`, `GLPI_OAUTH_USERNAME`,
-`GLPI_OAUTH_PASSWORD`. `GLPI_BASE_URL` doit pointer sur `…/api.php/v2.3`.
+Réglages V2 (poussés via l'UI/`POST /api/config`) :
+- **`GLPI_V2_BASE_URL`** — URL de base V2 dédiée (`…/api.php/v2.3`), distincte de `GLPI_BASE_URL`
+  (legacy `apirest.php`) ; les deux coexistent.
+- **`GLPI_OAUTH_SCOPE`** — scopes demandés, séparés par un espace (défaut `api user` ; `api`
+  couvre tickets/référentiels, `user` requis pour l'aperçu du compte `User/Me`).
+- `GLPI_OAUTH_CLIENT_ID`, `GLPI_OAUTH_USERNAME` — non-secrets (visibles dans l'UI).
+- `GLPI_OAUTH_CLIENT_SECRET`, `GLPI_OAUTH_PASSWORD` — **secrets chiffrés** Fernet, write-only.
 
 ---
 
