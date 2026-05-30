@@ -78,6 +78,21 @@ describe("GlpiConnection", () => {
     );
   });
 
+  it("ne renvoie pas de scope en mode legacy même après être passé par V2", async () => {
+    renderWithToast(<GlpiConnection />);
+    await screen.findByText("Paramètres de connexion");
+    // V2 → modifier un scope (entre dans `form`) → revenir en legacy → Enregistrer.
+    await userEvent.click(screen.getByRole("button", { name: /API V2/ }));
+    await screen.findByText("Client ID");
+    await userEvent.click(screen.getByRole("switch", { name: "email" }));
+    await userEvent.click(screen.getByRole("button", { name: /Legacy/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(Api.updateConfig).toHaveBeenCalledTimes(1));
+    const payload = vi.mocked(Api.updateConfig).mock.calls[0][0];
+    expect(payload.glpi_api_version).toBe("legacy");
+    expect("glpi_oauth_scope" in payload).toBe(false); // pas de scope orphelin en legacy
+  });
+
   it("le test de connexion rapporte un GLPI joignable", async () => {
     renderWithToast(<GlpiConnection />);
     await screen.findByText("Paramètres de connexion");

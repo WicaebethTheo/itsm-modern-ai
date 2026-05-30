@@ -52,13 +52,11 @@ export function GlpiConnection() {
   const isV2 = apiVersion === "v2";
 
   function toggleScope(scope: string, next: boolean) {
-    setScopes((prev) => {
-      const ns = new Set(prev);
-      if (next) ns.add(scope);
-      else ns.delete(scope);
-      set("glpi_oauth_scope", [...ns].sort().join(" "));
-      return ns;
-    });
+    const ns = new Set(scopes);
+    if (next) ns.add(scope);
+    else ns.delete(scope);
+    setScopes(ns); // updater pur ; l'effet de bord `set(...)` est sorti de setScopes
+    set("glpi_oauth_scope", [...ns].sort().join(" "));
   }
 
   function set<K extends keyof ConfigUpdate>(k: K, v: ConfigUpdate[K]) {
@@ -67,9 +65,11 @@ export function GlpiConnection() {
 
   async function save() {
     try {
+      // On retire un éventuel scope « orphelin » du form (saisi en V2 puis bascule legacy)
+      // et on ne le renvoie QUE si l'on est réellement en V2.
+      const { glpi_oauth_scope: _scope, ...rest } = form;
       await Api.updateConfig({
-        ...form,
-        // En V2, persiste toujours la sélection de scopes courante.
+        ...rest,
         ...(isV2 ? { glpi_oauth_scope: [...scopes].sort().join(" ") } : {}),
         glpi_api_version: apiVersion,
         glpi_verify_tls: verifyTls,

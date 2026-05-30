@@ -15,7 +15,10 @@ SQLite **et** Postgres) — aucun SQL spécifique SQLite.
 
 ## 1. Installer le driver
 
-Le driver Postgres est un **extra** optionnel (n'alourdit pas l'install SQLite par défaut) :
+**Docker** : l'**image embarque déjà le driver `psycopg`** (build `uv sync … --extra postgres`) —
+rien à installer, le profile `postgres` fonctionne directement.
+
+**Install locale (hors Docker)** : le driver est un **extra** optionnel :
 
 ```bash
 uv sync --extra postgres      # ajoute psycopg[binary]

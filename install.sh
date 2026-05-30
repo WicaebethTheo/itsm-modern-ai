@@ -29,25 +29,36 @@ fi
 say "Build de l'image et démarrage du service"
 docker compose up -d --build
 
-# 4. Attente que le moteur soit prêt (migrations terminées + API up)
+# 4. Attente que le moteur soit prêt (migrations terminées + API up), robuste au nom de projet
 say "Attente du démarrage du moteur…"
-for _ in $(seq 1 60); do
-  st="$(docker inspect --format '{{.State.Health.Status}}' itsm-modern-ai 2>/dev/null || echo starting)"
+cid="$(docker compose ps -q itsm 2>/dev/null || true)"
+st="starting"
+for _ in $(seq 1 "${HEALTH_TIMEOUT_TRIES:-150}"); do
+  st="$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo starting)"
   [ "$st" = "healthy" ] && break
   sleep 2
 done
-[ "${st:-}" = "healthy" ] || die "Le moteur n'est pas devenu sain à temps (voir: docker compose logs)."
+[ "$st" = "healthy" ] || die "Le moteur n'est pas devenu sain à temps (voir: docker compose logs)."
 
-# 5. Compte administrateur
+# 5. Compte administrateur. Interactif (getpass) si TTY, sinon ITSM_ADMIN_PASSWORD (CI).
+admin_setup() {  # "$@" → flags passés à la CLI
+  if [ -t 0 ]; then
+    docker compose exec itsm python -m itsm_modern_ai.admin_setup "$@"
+  elif [ -n "${ITSM_ADMIN_PASSWORD:-}" ]; then
+    docker compose exec -T -e ITSM_ADMIN_PASSWORD itsm python -m itsm_modern_ai.admin_setup "$@"
+  else
+    die "Pas de terminal interactif : définissez ITSM_ADMIN_PASSWORD pour une install non-interactive."
+  fi
+}
 if [ "$RESET" = true ]; then
   say "Réinitialisation du mot de passe administrateur"
-  docker compose exec itsm python -m itsm_modern_ai.admin_setup --force
+  admin_setup --force
 elif docker compose exec -T itsm python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1; then
   say "Un mot de passe administrateur est déjà configuré — inchangé."
   echo "   (pour le changer : ./install.sh --reset-password)"
 else
   say "Création du compte administrateur"
-  docker compose exec itsm python -m itsm_modern_ai.admin_setup
+  admin_setup
 fi
 
 printf '\033[1;32m✅ Installation terminée — console : http://localhost:8000\033[0m\n'

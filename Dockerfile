@@ -22,10 +22,12 @@ WORKDIR /app
 # Build REPRODUCTIBLE : on installe depuis uv.lock (versions épinglées + hashes),
 # pas une résolution libre. `uv sync --frozen` échoue si le lock est incohérent
 # avec pyproject (garde-fou CI). `--no-dev` exclut les deps de dev (pytest, ruff…).
+# `--extra postgres` embarque le driver psycopg : l'image supporte ainsi SQLite (défaut)
+# ET PostgreSQL (profile compose `postgres`) sans rebuild dédié.
 # hatchling (editable) a besoin du package et du README dès l'install.
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN uv sync --frozen --no-dev --no-install-project \
+RUN uv sync --frozen --no-dev --no-install-project --extra postgres \
     && uv pip install --no-deps -e .
 
 # Migrations + entrypoint.
