@@ -5,6 +5,19 @@ pas SemVer strictement (version d'app dans `pyproject.toml`, actuellement `0.7.0
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-30 — Installation en une commande + mot de passe admin sans clair
+
+- **`./install.sh`** : build + démarrage + création du compte admin en une commande. Le mot
+  de passe est saisi à l'écran (masqué) et stocké **uniquement en hash Argon2 chiffré** —
+  plus besoin de `ADMIN_PASSWORD` en clair dans `.env`. `./install.sh --reset-password` pour
+  le rotationner.
+- **CLI `python -m itsm_modern_ai.admin_setup`** (`--force`, `--check`) : amorçage/rotation du
+  mot de passe admin (prompt masqué, ou `ITSM_ADMIN_PASSWORD`/stdin en non-interactif).
+  Cible `make set-admin-password`. Comble le manque de rotation (jusqu'ici uniquement via `.env`).
+- `ADMIN_PASSWORD` (`.env`) rétrogradé en **fallback optionnel** (CI/non-interactif), commenté
+  par défaut dans `.env.example` ; ignoré dès qu'un hash existe.
+- Tests : **276 pytest · 62 vitest** (`tests/unit/test_admin_setup.py`).
+
 ## 2026-05-30 — Audit multi-agents : correctifs moteur + cohérence
 
 Vérification complète du projet (5 agents : backend/archi, sécurité, frontend, docs, live).
