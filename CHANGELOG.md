@@ -5,6 +5,23 @@ pas SemVer strictement (version d'app dans `pyproject.toml`, actuellement `0.7.0
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-30 — Audit multi-agents (6) : correctifs ops & frontend
+
+Seconde passe d'audit complet (backend, sécurité, frontend, devops, docs, live). Backend,
+sécurité et live confirmés sains. Correctifs des risques trouvés côté ops/frontend :
+
+- **`update.sh` sûr en PostgreSQL** : détecte le moteur (profile `postgres` actif / `ITSM_DATABASE_URL`)
+  et fait un **`pg_dump` avant migration** (avant : sauvegarde SQLite vide → migration Postgres
+  **sans backup**). Copie SQLite WAL-safe (`itsm.db*`), conscience du profile au redémarrage,
+  refus si modifs git locales, attente santé par ID conteneur (timeout configurable).
+- **Image Docker PostgreSQL-ready** : `uv sync … --extra postgres` → `psycopg` embarqué, le
+  profile `postgres` fonctionne sans rebuild dédié (avant : `ModuleNotFoundError`).
+- **Frontend** : plus de **scope OAuth orphelin** envoyé en mode legacy après bascule V2→legacy
+  (`GlpiConnection.save()` purge la clé hors V2) ; effet de bord sorti de l'updater `setScopes`.
+  Test de régression ajouté.
+- `install.sh` : attente santé robuste (par ID) + support non-interactif (`ITSM_ADMIN_PASSWORD`).
+- Tests : **276 pytest · 63 vitest**.
+
 ## 2026-05-30 — Mise à jour on-premise sûre (`update.sh`)
 
 - **`./update.sh`** : met à jour l'instance avec **sauvegarde préalable** de `./data` (base +
