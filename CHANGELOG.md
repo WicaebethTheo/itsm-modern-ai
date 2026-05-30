@@ -5,6 +5,20 @@ pas SemVer strictement (version d'app dans `pyproject.toml`, actuellement `0.7.0
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-30 — Audit multi-agents : correctifs moteur + cohérence
+
+Vérification complète du projet (5 agents : backend/archi, sécurité, frontend, docs, live).
+Sécurité : aucun finding critique/élevé (durcissements intacts, secrets OK, endpoints auth OK).
+
+- **Correctif (moteur)** : `confidence_threshold` (FR-8) et `cost_cap_eur_per_day` (FR-10)
+  étaient réglables dans l'UI mais le moteur lisait la valeur `.env` figée → réglages
+  **silencieusement ignorés**. Désormais résolus en config runtime (UI > `.env`) dans
+  `build_triage_service` et utilisés par `TriageService`. Régression couverte
+  (`test_runtime_confidence_threshold_is_honored`).
+- **Cohérence doc** : `docs/glpi-api-v2.md` + `.env.example` documentent les deux URL de base
+  distinctes (`GLPI_BASE_URL` legacy / `GLPI_V2_BASE_URL` v2) et `GLPI_OAUTH_SCOPE`.
+- Tests : **272 pytest · 62 vitest** verts.
+
 ## 2026-05-30 — UX connexion GLPI + durcissement V2 (Beta)
 
 - **Scopes OAuth** : le connecteur V2 demande désormais `api user` par défaut (configurable,
@@ -32,7 +46,7 @@ Les entrées les plus récentes sont en haut.
   `server_version` (11.0.7), référentiels (cat:8/tech:63/grp:2/ent:1 + 15 profils), tickets
   « New », tickets récents. Écritures (suivi, assignation) couvertes par tests/contrat, non
   exécutées en live (mutation de tickets réels).
-- Tests : **269 pytest · 62 vitest**.
+- Tests : **271 pytest · 62 vitest**.
 
 ## 2026-05-30 — Moyen terme : PostgreSQL + connecteur GLPI API V2 (**Beta**)
 

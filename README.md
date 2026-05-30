@@ -15,7 +15,7 @@
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Tailwind v4](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
-[![Tests](https://img.shields.io/badge/tests-271_pytest_%C2%B7_62_vitest_%C2%B7_3_e2e-success)](docs/testing.md)
+[![Tests](https://img.shields.io/badge/tests-272_pytest_%C2%B7_62_vitest_%C2%B7_3_e2e-success)](docs/testing.md)
 [![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_default-6B46C1)](docs/llm-providers.md)
 
 [Démarrage rapide](#démarrage-rapide) · [Fonctionnalités](docs/features.md) · [Architecture](docs/architecture.md) · [Documentation](#documentation)

@@ -60,7 +60,10 @@ class FakeItsm:
         return True
 
 
-def _service(llm, itsm=None, *, default_mode=None, auto_min_confidence=None, **overrides) -> TriageService:
+def _service(
+    llm, itsm=None, *, default_mode=None, auto_min_confidence=None,
+    confidence_threshold=None, **overrides,
+) -> TriageService:
     from itsm_modern_ai.domain.modes import ExecutionMode
 
     settings = Settings(glpi_base_url="https://glpi.local/apirest.php", **overrides)
@@ -72,6 +75,7 @@ def _service(llm, itsm=None, *, default_mode=None, auto_min_confidence=None, **o
         session_factory=db.session_scope,
         default_mode=default_mode or ExecutionMode.SUGGESTION,
         auto_min_confidence=auto_min_confidence,
+        confidence_threshold=confidence_threshold,
     )
 
 
@@ -100,6 +104,18 @@ async def test_low_confidence_goes_a_trier_no_write(temp_db):
     svc = _service(FakeLlm(d), itsm)
     wrote = await svc.handle(Ticket(id=11, content="flou"), REFS)
     assert wrote is False and itsm.followups == []
+    with db.session_scope() as s:
+        assert journal.list_decisions(s)[0].reason == "low_confidence"
+
+
+async def test_runtime_confidence_threshold_is_honored(temp_db):
+    """Le seuil runtime (réglé via l'UI) prime sur le défaut .env (0.7), pas ignoré.
+
+    Décision à 0.9 : acceptée au seuil par défaut, mais doit partir « à trier » si l'admin
+    relève le seuil à 0.95 depuis la console (régression : le moteur lisait le .env figé)."""
+    svc = _service(FakeLlm(_accepted_decision()), confidence_threshold=0.95)
+    wrote = await svc.handle(Ticket(id=77, content="x"), REFS)
+    assert wrote is False
     with db.session_scope() as s:
         assert journal.list_decisions(s)[0].reason == "low_confidence"
 
