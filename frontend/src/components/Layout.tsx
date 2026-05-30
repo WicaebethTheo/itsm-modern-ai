@@ -110,6 +110,9 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
 export function Layout() {
   const navigate = useNavigate();
   const t = useT();
+  // API GLPI réellement configurée (affichée en pied de sidebar).
+  const cfg = useResource(useCallback(() => Api.getConfig(), []));
+  const isV2 = cfg.data?.glpi_api_version === "v2";
 
   async function logout() {
     await Api.logout().catch(() => undefined);
@@ -156,9 +159,24 @@ export function Layout() {
             </div>
           ))}
 
-          <div className="mt-auto flex items-center gap-2 px-2 pt-3 text-[11px] text-muted-foreground">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
-            {t(`Moteur en marche · v${APP_VERSION}`, `Engine running · v${APP_VERSION}`)}
+          <div className="mt-auto flex flex-col gap-1.5 px-2 pt-3 text-[11px] text-muted-foreground">
+            {cfg.data ? (
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                    isV2 ? "bg-accent-indigo" : "bg-muted-foreground/50",
+                  )}
+                />
+                {isV2
+                  ? t("API GLPI : V2 (OAuth2)", "GLPI API: V2 (OAuth2)")
+                  : t("API GLPI : apirest", "GLPI API: apirest")}
+              </div>
+            ) : null}
+            <div className="flex items-center gap-2">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
+              {t(`Moteur en marche · v${APP_VERSION}`, `Engine running · v${APP_VERSION}`)}
+            </div>
           </div>
         </aside>
 

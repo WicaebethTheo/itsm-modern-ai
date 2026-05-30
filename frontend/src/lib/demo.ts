@@ -9,6 +9,7 @@ import type {
   DebugInfo,
   DecisionEntry,
   EngineStatus,
+  GlpiAccount,
   Health,
   Metrics,
   OperationalView,
@@ -53,6 +54,7 @@ export const demo: {
   operational: OperationalView;
   decisions: DecisionEntry[];
   config: ConfigView;
+  glpiAccount: GlpiAccount;
   technicians: RefItem[];
   groups: RefItem[];
   categories: RefItem[];
@@ -214,9 +216,25 @@ export const demo: {
     mask_secret: "true",
     glpi_user_token_set: true,
     glpi_app_token_set: false,
+    glpi_api_version: "legacy",
+    glpi_v2_base_url: "",
+    glpi_oauth_client_id: "",
+    glpi_oauth_username: "",
+    glpi_oauth_scope: "api user",
+    glpi_oauth_client_secret_set: false,
+    glpi_oauth_password_set: false,
     llm_api_key_set: true,
     openai_api_key_set: false,
     anthropic_api_key_set: true,
+  },
+  glpiAccount: {
+    api_version: "legacy",
+    configured: true,
+    account: "Bot Triage IT",
+    username: "svc_triage",
+    profile: "Technician",
+    email: "bot.triage@demo.local",
+    has_picture: false,
   },
   technicians: [
     ref(

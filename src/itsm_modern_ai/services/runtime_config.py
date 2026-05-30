@@ -12,7 +12,10 @@ from __future__ import annotations
 
 from sqlmodel import Session
 
-from ..config.credentials import GlpiCredentials  # value object réutilisé par glpi_credentials()
+from ..config.credentials import (  # value objects réutilisés par glpi_credentials()
+    GlpiCredentials,
+    GlpiV2Credentials,
+)
 from ..config.settings import Settings
 from ..persistence.tables import RuntimeConfig
 from ..ports.secrets import SecretsPort
@@ -21,6 +24,8 @@ from ..ports.secrets import SecretsPort
 SECRET_KEYS = frozenset(
     {
         "glpi_user_token", "glpi_app_token",
+        # GLPI API V2 (Beta) — secrets OAuth2 (client_secret + mot de passe du compte technique).
+        "glpi_oauth_client_secret", "glpi_oauth_password",
         "llm_api_key", "openai_api_key", "anthropic_api_key",
         "admin_password_hash",
     }
@@ -30,6 +35,9 @@ PLAIN_KEYS = frozenset(
     {
         # GLPI
         "glpi_base_url", "glpi_verify_tls", "glpi_followup_legacy_9x",
+        # GLPI API V2 (Beta) — non-secrets : bascule + URL V2 + identifiants OAuth non sensibles.
+        "glpi_api_version", "glpi_v2_base_url",
+        "glpi_oauth_client_id", "glpi_oauth_username", "glpi_oauth_scope",
         # Fournisseur LLM
         "llm_provider", "llm_base_url", "llm_model",
         "openai_base_url", "openai_model",
@@ -115,6 +123,11 @@ class RuntimeConfigService:
             "glpi_base_url": s.glpi_base_url,
             "glpi_verify_tls": str(s.glpi_verify_tls).lower(),
             "glpi_followup_legacy_9x": str(s.glpi_followup_legacy_9x).lower(),
+            "glpi_api_version": s.glpi_api_version,
+            "glpi_v2_base_url": s.glpi_v2_base_url,
+            "glpi_oauth_client_id": s.glpi_oauth_client_id,
+            "glpi_oauth_username": s.glpi_oauth_username,
+            "glpi_oauth_scope": s.glpi_oauth_scope,
             "llm_provider": s.llm_provider,
             "llm_base_url": s.llm_base_url,
             "llm_model": s.llm_model,
@@ -186,4 +199,26 @@ class RuntimeConfigService:
             followup_legacy_9x=self.get_bool(
                 "glpi_followup_legacy_9x", self._settings.glpi_followup_legacy_9x
             ),
+        )
+
+    def active_glpi_base_url(self) -> str:
+        """URL de base GLPI du mode ACTIF (v2 → glpi_v2_base_url, sinon legacy glpi_base_url).
+
+        Sert à dériver le lien web du ticket (Journal/Dashboard) quel que soit le mode.
+        """
+        if (self.get("glpi_api_version") or "legacy").strip().lower() == "v2":
+            return self.get("glpi_v2_base_url") or self.get("glpi_base_url") or ""
+        return self.get("glpi_base_url") or ""
+
+    def glpi_v2_credentials(self) -> GlpiV2Credentials:
+        """Identifiants de l'API haut-niveau GLPI 11 (OAuth2) — Beta. Cf. docs/glpi-api-v2.md."""
+        return GlpiV2Credentials(
+            base_url=self.get("glpi_v2_base_url") or self.get("glpi_base_url") or "",
+            client_id=self.get("glpi_oauth_client_id") or "",
+            client_secret=self.get_secret("glpi_oauth_client_secret") or "",
+            username=self.get("glpi_oauth_username") or "",
+            password=self.get_secret("glpi_oauth_password") or "",
+            verify_tls=self.get_bool("glpi_verify_tls", self._settings.glpi_verify_tls),
+            timeout_seconds=self._settings.glpi_timeout_seconds,
+            scope=self.get("glpi_oauth_scope") or "api user",
         )

@@ -17,8 +17,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # Persistance (SQLite en pilote, Postgres-ready)
+    # Persistance (SQLite en pilote ; PostgreSQL en option — Beta, cf. docs/postgresql.md).
+    # Postgres : DATABASE_URL=postgresql+psycopg://user:pwd@host:5432/itsm (driver psycopg 3,
+    # extra `postgres`). Le code est Postgres-ready (UtcDateTime tz-aware, migrations batch).
     database_url: str = "sqlite:///./data/itsm.db"
+    # Pool de connexions — appliqué UNIQUEMENT aux bases réseau (non-SQLite). Ignorés en SQLite.
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_pre_ping: bool = True
+
+    @property
+    def is_sqlite(self) -> bool:
+        return self.database_url.startswith("sqlite")
 
     # Chiffrement des secrets au repos (FR-25). Si absent, une clé est générée et
     # persistée dans data/master.key (durci en Epic 4 : secret monté).
@@ -97,6 +107,23 @@ class Settings(BaseSettings):
     glpi_timeout_seconds: float = 30.0
     # Rename TicketFollowup→ITILFollowup (9.x→10.x). True = GLPI 9.x (legacy).
     glpi_followup_legacy_9x: bool = False
+
+    # Choix de l'API GLPI (Beta) : "legacy" = apirest.php (défaut, éprouvé) ;
+    # "v2" = API haut-niveau OAuth2 de GLPI 11 (cf. docs/glpi-api-v2.md). En mode v2,
+    # GLPI_BASE_URL pointe sur …/api.php/v2.3 et l'auth se fait par client OAuth + compte
+    # technique (secrets poussés via l'UI). Le client_secret et le mot de passe sont des
+    # secrets chiffrés ; client_id et username sont non-secrets (visibles dans l'UI).
+    glpi_api_version: str = "legacy"  # legacy | v2
+    # URL de base DISTINCTE pour l'API V2 (ex. https://glpi.exemple.local/api.php/v2.3).
+    # Séparée de glpi_base_url (legacy apirest.php) pour que les deux coexistent proprement ;
+    # à défaut, on retombe sur glpi_base_url.
+    glpi_v2_base_url: str = ""
+    glpi_oauth_client_id: str = ""
+    glpi_oauth_username: str = ""
+    # Scopes OAuth demandés (séparés par un espace). `api` couvre les opérations ITSM
+    # (tickets, suivis, référentiels) ; `user` est requis EN PLUS pour /Administration/User/Me
+    # (aperçu du compte). Le client OAuth GLPI doit autoriser les scopes demandés.
+    glpi_oauth_scope: str = "api user"
 
     # Polling (FR-2)
     polling_interval_seconds: int = 60

@@ -190,3 +190,30 @@ async def test_server_version_none_on_error():
     _session_routes()
     respx.get(f"{BASE}/getGlpiConfig").mock(return_value=httpx.Response(403, text="forbidden"))
     assert await (await _connector()).server_version() is None
+
+
+@respx.mock
+async def test_whoami_returns_session_account():
+    _session_routes()
+    respx.get(f"{BASE}/getFullSession").mock(
+        return_value=httpx.Response(200, json={"session": {
+            "glpifriendlyname": "Bot Triage", "glpiname": "svc_triage",
+            "glpiactiveprofile": {"id": 6, "name": "Technician"},
+        }})
+    )
+    ident = await (await _connector()).whoami()
+    assert ident is not None
+    assert ident.account == "Bot Triage" and ident.username == "svc_triage"
+    assert ident.profile == "Technician" and ident.has_picture is False
+
+
+@respx.mock
+async def test_whoami_none_on_error():
+    _session_routes()
+    respx.get(f"{BASE}/getFullSession").mock(return_value=httpx.Response(403, text="forbidden"))
+    assert await (await _connector()).whoami() is None
+
+
+async def test_avatar_none_in_legacy():
+    # Legacy : pas d'endpoint photo → None (l'UI retombe sur un avatar à initiales).
+    assert await (await _connector()).avatar() is None

@@ -8,8 +8,8 @@ import httpx
 
 from ....config.credentials import GlpiCredentials
 from ....domain.errors import ItsmError, ItsmUnavailableError
+from ....domain.models import GlpiIdentity, Referentials, Ticket, TicketStat
 from ....domain.models import Priority as _Priority
-from ....domain.models import Referentials, Ticket, TicketStat
 from . import mapper
 from .client import GlpiClient
 
@@ -178,6 +178,35 @@ class GlpiConnector:
         except ItsmError:
             # Auth/permission KO mais GLPI répond → considéré non sain pour le pilote.
             return False
+
+    async def whoami(self) -> GlpiIdentity | None:
+        """Compte GLPI du token (via `getFullSession`) — aperçu UI. None si indéterminé."""
+        if not self._creds.is_configured:
+            return None
+        try:
+            async with self._client() as gc:
+                data = (await gc.get("getFullSession")).json()
+        except (ItsmError, ItsmUnavailableError):
+            return None
+        session = data.get("session") if isinstance(data, dict) else None
+        if not isinstance(session, dict):
+            return None
+        name = session.get("glpifriendlyname") or session.get("glpiname")
+        if not name:
+            return None
+        prof = session.get("glpiactiveprofile")
+        profile = str(prof.get("name")) if isinstance(prof, dict) and prof.get("name") else ""
+        return GlpiIdentity(
+            account=str(name),
+            username=str(session.get("glpiname") or ""),
+            profile=profile,
+            email=str(session.get("glpiemail") or session.get("glpidefault_email") or ""),
+            has_picture=False,  # legacy : pas d'endpoint binaire propre → avatar à initiales
+        )
+
+    async def avatar(self) -> tuple[bytes, str] | None:
+        """Legacy : pas d'endpoint photo fiable via apirest.php → None (UI = initiales)."""
+        return None
 
     @property
     def base_url(self) -> str:

@@ -1,4 +1,4 @@
-"""Moteur & sessions SQLModel (SQLite en pilote, Postgres-ready)."""
+"""Moteur & sessions SQLModel (SQLite en pilote ; PostgreSQL en option — Beta)."""
 
 from __future__ import annotations
 
@@ -21,12 +21,31 @@ def _ensure_sqlite_dir(database_url: str) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def init_engine(database_url: str) -> Engine:
-    """Crée (une fois) le moteur. SQLite : check_same_thread=False pour l'async."""
+def init_engine(
+    database_url: str,
+    *,
+    pool_size: int = 5,
+    max_overflow: int = 10,
+    pool_pre_ping: bool = True,
+) -> Engine:
+    """Crée (une fois) le moteur.
+
+    - **SQLite** (défaut pilote) : `check_same_thread=False` pour l'usage async, pas de pool
+      réseau (les options `pool_*` sont ignorées).
+    - **PostgreSQL** (Beta) : pool de connexions (`pool_pre_ping` anti-coupure + `pool_size`
+      / `max_overflow`) — adapté au multi-utilisateurs / à la prod.
+    """
     global _engine
     _ensure_sqlite_dir(database_url)
-    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
-    _engine = create_engine(database_url, connect_args=connect_args)
+    if database_url.startswith("sqlite"):
+        _engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    else:
+        _engine = create_engine(
+            database_url,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_pre_ping=pool_pre_ping,
+        )
     return _engine
 
 

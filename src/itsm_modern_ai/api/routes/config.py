@@ -33,6 +33,12 @@ class ConfigView(BaseModel):
     glpi_base_url: str | None = None
     glpi_verify_tls: str | None = None
     glpi_followup_legacy_9x: str | None = None
+    # GLPI API V2 (Beta)
+    glpi_api_version: str | None = None
+    glpi_v2_base_url: str | None = None
+    glpi_oauth_client_id: str | None = None
+    glpi_oauth_username: str | None = None
+    glpi_oauth_scope: str | None = None
     # LLM
     llm_provider: str | None = None
     llm_base_url: str | None = None
@@ -70,6 +76,8 @@ class ConfigView(BaseModel):
     # Secrets : présence seulement.
     glpi_user_token_set: bool
     glpi_app_token_set: bool
+    glpi_oauth_client_secret_set: bool
+    glpi_oauth_password_set: bool
     llm_api_key_set: bool
     openai_api_key_set: bool
     anthropic_api_key_set: bool
@@ -81,6 +89,12 @@ class ConfigUpdate(BaseModel):
     glpi_base_url: str | None = None
     glpi_verify_tls: bool | None = None
     glpi_followup_legacy_9x: bool | None = None
+    # GLPI API V2 (Beta)
+    glpi_api_version: str | None = Field(default=None, pattern="^(legacy|v2)$")
+    glpi_v2_base_url: str | None = None
+    glpi_oauth_client_id: str | None = Field(default=None, max_length=500)
+    glpi_oauth_username: str | None = Field(default=None, max_length=255)
+    glpi_oauth_scope: str | None = Field(default=None, max_length=200)
     llm_provider: str | None = Field(default=None, pattern=PROVIDER_PATTERN)
     llm_base_url: str | None = None
     llm_model: str | None = None
@@ -110,6 +124,9 @@ class ConfigUpdate(BaseModel):
     # Secrets (write-only) — Ollama n'a pas de clé.
     glpi_user_token: str | None = None
     glpi_app_token: str | None = None
+    # GLPI API V2 (Beta) — secrets OAuth2.
+    glpi_oauth_client_secret: str | None = None
+    glpi_oauth_password: str | None = None
     llm_api_key: str | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
@@ -119,7 +136,7 @@ class ConfigUpdate(BaseModel):
     # routable (rejet loopback/IP privée/metadata cloud). Ollama est local → http +
     # localhost/IP privée autorisés explicitement.
     @field_validator(
-        "glpi_base_url", "llm_base_url", "openai_base_url", "anthropic_base_url"
+        "glpi_base_url", "glpi_v2_base_url", "llm_base_url", "openai_base_url", "anthropic_base_url"
     )
     @classmethod
     def _validate_public_url(cls, v: str | None) -> str | None:
@@ -147,6 +164,8 @@ def _view(cfg: RuntimeConfigService) -> ConfigView:
         system_prompt_default=prompting.SYSTEM_PROMPT,
         glpi_user_token_set=cfg.is_secret_set("glpi_user_token"),
         glpi_app_token_set=cfg.is_secret_set("glpi_app_token"),
+        glpi_oauth_client_secret_set=cfg.is_secret_set("glpi_oauth_client_secret"),
+        glpi_oauth_password_set=cfg.is_secret_set("glpi_oauth_password"),
         llm_api_key_set=cfg.is_secret_set("llm_api_key"),
         openai_api_key_set=cfg.is_secret_set("openai_api_key"),
         anthropic_api_key_set=cfg.is_secret_set("anthropic_api_key"),

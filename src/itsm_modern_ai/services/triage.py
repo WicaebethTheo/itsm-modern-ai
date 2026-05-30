@@ -108,10 +108,14 @@ class TriageService:
         default_mode: ExecutionMode = ExecutionMode.SUGGESTION,
         auto_min_confidence: float | None = None,
         mask_flags: dict[str, bool] | None = None,
+        glpi_base_url: str | None = None,
     ) -> None:
         self._itsm = itsm
         self._llm = llm
         self._settings = settings
+        # URL GLPI courante (config runtime via l'UI ; .env n'est qu'un repli). Sert à figer
+        # le lien front du Ticket dans le Journal au moment de la décision.
+        self._glpi_base_url = settings.glpi_base_url if glpi_base_url is None else glpi_base_url
         self._profiles = tech_profiles_prose
         self._session_factory = session_factory
         self._guidance = guidance
@@ -224,7 +228,7 @@ class TriageService:
         Le garde-fou (whitelist + seuil) a déjà tranché en amont ; ici on ne fait
         QUE dispatcher l'action d'une Décision acceptée. « à trier » ne fait rien.
         """
-        glpi_link = _web_link(self._settings.glpi_base_url, ticket.id)
+        glpi_link = _web_link(self._glpi_base_url, ticket.id)
         mode = self._default_mode
         applied = False
         wrote = False

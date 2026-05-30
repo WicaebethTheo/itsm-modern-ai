@@ -16,8 +16,11 @@ services:
     env_file:
       - .env
     environment:
-      # La DB et la master key vivent dans le volume monté.
-      DATABASE_URL: sqlite:////app/data/itsm.db
+      # La DB et la master key vivent dans le volume monté. Défaut = SQLite (pilote).
+      # Pour PostgreSQL (Beta) : définir ITSM_DATABASE_URL dans .env, p.ex.
+      #   ITSM_DATABASE_URL=postgresql+psycopg://itsm:itsm@postgres:5432/itsm
+      # puis lancer `docker compose --profile postgres up -d --build`.
+      DATABASE_URL: ${ITSM_DATABASE_URL:-sqlite:////app/data/itsm.db}
     ports:
       - "8000:8000"
     volumes:
@@ -70,6 +73,33 @@ services:
         reservations:
           memory: 128M
     # Rotation des logs JSON du conteneur (évite le remplissage disque de l'hôte).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── PostgreSQL (Beta) — service OPTIONNEL, activé par le profile `postgres` ─────
+  # NON lancé par défaut → `docker compose up` reste en SQLite (comportement inchangé).
+  # Activer : `docker compose --profile postgres up -d --build` (+ ITSM_DATABASE_URL dans
+  # .env pointant sur `postgres`). Au 1er boot, l'app peut redémarrer (restart) le temps
+  # que Postgres soit prêt — `pool_pre_ping` + restart:unless-stopped rattrapent la course.
+  postgres:
+    image: postgres:16-alpine
+    container_name: itsm-postgres
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-itsm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-itsm}
+      POSTGRES_DB: ${POSTGRES_DB:-itsm}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-itsm} -d ${POSTGRES_DB:-itsm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     logging:
       driver: json-file
       options:

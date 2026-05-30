@@ -22,6 +22,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# PostgreSQL (Beta, cf. docs/postgresql.md) — driver psycopg 3. Optionnel : l'install
+# SQLite par défaut n'embarque PAS ce driver. `uv sync --extra postgres` pour l'activer.
+postgres = [
+    "psycopg[binary]>=3.1",
+]
 dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",

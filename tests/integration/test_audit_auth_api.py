@@ -69,6 +69,62 @@ def test_decisions_resolve_names_and_urgency(open_client):
     assert entry["group_name"] is None
 
 
+def test_journal_link_rebuilt_from_runtime_glpi_url(open_client):
+    """Régression : le SUJET du Journal doit être cliquable en prod.
+
+    En prod, l'URL GLPI est posée via l'UI (config runtime), pas dans `.env`. Le lien
+    front du Ticket doit être reconstruit à la lecture depuis cette URL — y compris pour
+    une décision dont le lien figé était vide (cas du ticket triagé avant configuration).
+    """
+    from itsm_modern_ai.persistence import db, journal
+    from itsm_modern_ai.services.runtime_config import RuntimeConfigService
+
+    # Décision enregistrée AVEC un lien figé vide (reproduit le bug de prod).
+    outcome = TriageOutcome(
+        accepted=True,
+        reason=TriageReason.ACCEPTED,
+        decision=Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.9),
+    )
+    with db.session_scope() as s:
+        journal.record_decision(s, 100, outcome, glpi_link="")
+
+    # Avant config GLPI : lien absent (repli sur le lien stocké, vide ici).
+    assert open_client.get("/api/decisions").json()[0]["glpi_link"] == ""
+
+    # L'admin configure l'URL GLPI via l'UI (config runtime).
+    box = open_client.app.state.secrets_box
+    settings = open_client.app.state.settings
+    with db.session_scope() as s:
+        RuntimeConfigService(s, box, settings).set(
+            "glpi_base_url", "https://glpi.local/apirest.php"
+        )
+
+    # Le lien est désormais reconstruit → sujet cliquable, même pour la décision déjà loggée.
+    entry = open_client.get("/api/decisions").json()[0]
+    assert entry["glpi_link"] == "https://glpi.local/front/ticket.form.php?id=100"
+
+
+def test_glpi_reset_clears_connection(open_client):
+    """Le bouton « Réinitialiser » efface toute la connexion GLPI (legacy + V2)."""
+    open_client.post(
+        "/api/config",
+        json={
+            "glpi_base_url": "https://glpi.example.com/apirest.php",
+            "glpi_api_version": "v2",
+            "glpi_v2_base_url": "https://glpi.example.com/api.php/v2.3",
+            "glpi_oauth_client_id": "cid",
+            "glpi_user_token": "tok",
+            "glpi_oauth_client_secret": "secret",
+        },
+    )
+    assert open_client.post("/api/glpi/reset").json()["ok"] is True
+    cfg = open_client.get("/api/config").json()
+    assert (cfg["glpi_base_url"] or "") == "" and (cfg["glpi_v2_base_url"] or "") == ""
+    assert cfg["glpi_api_version"] == "legacy"  # repassé au défaut sûr
+    assert (cfg["glpi_oauth_client_id"] or "") == ""
+    assert cfg["glpi_user_token_set"] is False and cfg["glpi_oauth_client_secret_set"] is False
+
+
 def test_export_csv_open(open_client):
     _seed_decision()
     r = open_client.get("/api/export/decisions.csv")

@@ -110,7 +110,12 @@ async def _run_purge_cycle(app: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings: Settings = app.state.settings
-    db.init_engine(settings.database_url)
+    db.init_engine(
+        settings.database_url,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_pre_ping=settings.db_pool_pre_ping,
+    )
     db.create_all()  # Alembic reste la source de vérité pour les évolutions
     app.state.secrets_box = make_secrets_box(settings)
     app.state.whitelist_cache = WhitelistCache()
@@ -166,6 +171,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .routes import debug as debug_routes
     from .routes import decisions as decisions_routes
     from .routes import export as export_routes
+    from .routes import glpi as glpi_routes
     from .routes import health as health_routes
     from .routes import insights as insights_routes
     from .routes import referentials as referentials_routes
@@ -230,6 +236,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(export_routes.router)
     app.include_router(insights_routes.router)
     app.include_router(referentials_routes.router)
+    app.include_router(glpi_routes.router)
     app.include_router(debug_routes.router)
     app.include_router(automations_routes.router)
 
