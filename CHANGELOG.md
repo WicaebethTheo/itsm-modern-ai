@@ -5,6 +5,17 @@ pas SemVer strictement (version d'app dans `pyproject.toml`, actuellement `0.7.0
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-30 — Mise à jour on-premise sûre (`update.sh`)
+
+- **`./update.sh`** : met à jour l'instance avec **sauvegarde préalable** de `./data` (base +
+  master key, horodatée sous `backups/`), `git pull`, rebuild + redémarrage, attente santé, et
+  **procédure de rollback** affichée en cas d'échec de migration. Les migrations Alembic
+  s'appliquent automatiquement au boot ; les données sont préservées (jamais `down -v`).
+  `--no-pull` pour ne pas tirer le code. Cibles `make update` / `make backup`.
+- Doc « Mise à jour » dans `docs/install.md`, incluant la variante **registry** (image CI
+  `:latest`/`:<sha>` → `docker compose pull && up -d`, épinglage/rollback par tag).
+- `backups/` ajouté au `.gitignore`.
+
 ## 2026-05-30 — Installation en une commande + mot de passe admin sans clair
 
 - **`./install.sh`** : build + démarrage + création du compte admin en une commande. Le mot

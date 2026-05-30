@@ -32,3 +32,6 @@ Untitled.png
 
 # Notes internes (planning, archives de passation, archives) — non publié
 notes/
+
+# Sauvegardes locales créées par update.sh (base + master.key)
+backups/

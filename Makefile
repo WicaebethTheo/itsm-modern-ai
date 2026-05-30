@@ -1,8 +1,18 @@
-.PHONY: install lint test fmt run migrate set-admin-password ui ui-dev ui-lint ui-test ui-e2e spike spike-mock glpi-diagnose
+.PHONY: install update backup lint test fmt run migrate set-admin-password ui ui-dev ui-lint ui-test ui-e2e spike spike-mock glpi-diagnose
 
 install:
 	uv venv --python 3.13
 	uv pip install -e ".[dev]"
+
+# Déploiement on-prem (Docker) : mise à jour avec sauvegarde préalable.
+update:
+	./update.sh
+
+# Sauvegarde horodatée du volume ./data (base SQLite + master.key).
+backup:
+	@ts=$$(date +%Y%m%d-%H%M%S); mkdir -p backups/$$ts; \
+	cp -a data/itsm.db data/master.key backups/$$ts/ 2>/dev/null || true; \
+	echo "Sauvegarde → backups/$$ts"
 
 lint:
 	uv run ruff check .
