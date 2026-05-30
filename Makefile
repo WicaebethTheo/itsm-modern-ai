@@ -1,4 +1,4 @@
-.PHONY: install lint test fmt run migrate ui ui-dev ui-lint ui-test ui-e2e spike spike-mock glpi-diagnose
+.PHONY: install lint test fmt run migrate set-admin-password ui ui-dev ui-lint ui-test ui-e2e spike spike-mock glpi-diagnose
 
 install:
 	uv venv --python 3.13
@@ -20,6 +20,11 @@ run:
 # Applique les migrations Alembic
 migrate:
 	uv run alembic upgrade head
+
+# Définit / change le mot de passe admin (hash Argon2 chiffré ; jamais en clair).
+# `make migrate` au préalable si la base n'existe pas encore.
+set-admin-password:
+	uv run python -m itsm_modern_ai.admin_setup --force
 
 # UI (SPA React) : build de production -> frontend/dist (servi par le moteur)
 ui:

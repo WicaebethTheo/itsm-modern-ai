@@ -9,6 +9,20 @@
 - Une instance **GLPI joignable** depuis la VM, avec un **`user_token` API** (auth `apirest.php`, plus un `App-Token` si la config serveur GLPI l'exige).
 - Accès réseau sortant vers le **fournisseur LLM** configuré (Mistral EU par défaut).
 
+## Installation rapide (recommandé)
+
+```bash
+./install.sh
+```
+
+Le script vérifie Docker, crée `.env`, génère la clé de chiffrement, **build + démarre**
+(migrations incluses), attend que le moteur soit sain, puis **demande un mot de passe
+administrateur** (saisie masquée + confirmation). Ce mot de passe est stocké **uniquement
+en hash Argon2 chiffré** (jamais en clair). Pour le changer ensuite :
+`./install.sh --reset-password`. Puis ouvrez `http://<vm>:8000/`.
+
+Les sections ci-dessous détaillent l'équivalent manuel et la configuration applicative.
+
 ## 1. Récupérer le projet et créer le `.env`
 
 ```bash
@@ -42,8 +56,9 @@ monter : la base SQLite et la master key vivent dans le volume `./data`.
 ## 3. Tout configurer dans l'interface web
 
 Ouvrez l'**interface** sur **`http://<vm>:8000/`** (derrière le reverse proxy HTTPS en prod).
-Connectez-vous avec le mot de passe `ADMIN_PASSWORD` (si défini). Toute la configuration se
-fait ici — **aucun fichier à éditer** :
+Connectez-vous avec le **mot de passe administrateur** défini à l'install (via `install.sh`
+ou `python -m itsm_modern_ai.admin_setup`). Toute la configuration se fait ici — **aucun
+fichier à éditer** :
 
 - **Connexion GLPI** : base URL `apirest.php`, **user token** (et app token si requis).
 - **Fournisseur IA** : choisissez parmi **Mistral EU** (souverain, défaut), **OpenAI** (hors UE — à valider DPO), **Ollama** (modèle **local**, **pas de clé**) ou **Anthropic / Claude** (hors UE — à valider DPO) ; saisir la **clé API** (sauf Ollama).

@@ -15,7 +15,7 @@
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Tailwind v4](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
-[![Tests](https://img.shields.io/badge/tests-272_pytest_%C2%B7_62_vitest_%C2%B7_3_e2e-success)](docs/testing.md)
+[![Tests](https://img.shields.io/badge/tests-276_pytest_%C2%B7_62_vitest_%C2%B7_3_e2e-success)](docs/testing.md)
 [![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_default-6B46C1)](docs/llm-providers.md)
 
 [Démarrage rapide](#démarrage-rapide) · [Fonctionnalités](docs/features.md) · [Architecture](docs/architecture.md) · [Documentation](#documentation)
@@ -37,10 +37,22 @@ GLPI gère bien les tickets structurés. **ITSM Modern AI** prend en charge le r
 ### Avec Docker (recommandé, on-prem)
 
 ```bash
-cp .env.example .env             # renseigner MASTER_KEY + ADMIN_PASSWORD
-docker compose up -d --build     # build image multi-stage + démarre le service
+./install.sh                     # build + démarre + demande un mot de passe admin (masqué)
 open http://localhost:8000       # console web (SPA React)
 ```
+
+Le script génère la clé de chiffrement, applique les migrations, démarre le service et
+crée le compte administrateur — le mot de passe est saisi à l'écran et stocké **uniquement
+en hash Argon2 chiffré** (jamais en clair). Pour le changer : `./install.sh --reset-password`.
+
+<details><summary>Install manuelle (équivalent)</summary>
+
+```bash
+cp .env.example .env                                    # MASTER_KEY auto-générée dans ./data
+docker compose up -d --build                            # build + démarre (migrations incluses)
+docker compose exec itsm python -m itsm_modern_ai.admin_setup   # mot de passe admin (masqué)
+```
+</details>
 
 > ⚠️ **Ne JAMAIS faire `docker compose down -v`** : `-v` supprime le volume `./data`
 > qui contient la base SQLite + la `master.key` Fernet. La configuration repart à zéro.
