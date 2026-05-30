@@ -7,6 +7,16 @@ class DomainError(Exception):
     """Base des erreurs métier."""
 
 
+class SecretDecryptError(DomainError):
+    """Un secret stocké est illisible (clé de chiffrement incohérente / token corrompu).
+
+    Cas typique : la MASTER_KEY courante ne correspond pas à celle ayant chiffré le
+    secret (rotation/perte de `data/master.key`). On lève une erreur MÉTIER claire
+    (reconfigurer le secret) plutôt qu'un `InvalidToken` brut → 500 qui verrouillerait
+    l'admin (ex. login dont le hash est chiffré). Durcissement audit 2026-05.
+    """
+
+
 class LlmResponseError(DomainError):
     """Réponse LLM non parsable / non conforme au schéma Décision (FR-6).
 

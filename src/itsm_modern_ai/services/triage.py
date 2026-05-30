@@ -39,6 +39,10 @@ logger = logging.getLogger("itsm.triage")
 
 SessionFactory = Callable[[], AbstractContextManager[Session]]
 
+# Garde-fou de longueur du brouillon publié au demandeur (modes auto). Borne défensive
+# contre un draft LLM anormalement long (prompt injection / boucle) posté publiquement.
+PUBLIC_DRAFT_MAX_CHARS = 4000
+
 
 def rules_fully_handled(ticket: Ticket) -> bool:
     """Étage 1 (FR-5) : le Ticket est-il DÉJÀ traité par les règles GLPI ?
@@ -104,10 +108,14 @@ class TriageService:
         default_mode: ExecutionMode = ExecutionMode.SUGGESTION,
         auto_min_confidence: float | None = None,
         mask_flags: dict[str, bool] | None = None,
+        glpi_base_url: str | None = None,
     ) -> None:
         self._itsm = itsm
         self._llm = llm
         self._settings = settings
+        # URL GLPI courante (config runtime via l'UI ; .env n'est qu'un repli). Sert à figer
+        # le lien front du Ticket dans le Journal au moment de la décision.
+        self._glpi_base_url = settings.glpi_base_url if glpi_base_url is None else glpi_base_url
         self._profiles = tech_profiles_prose
         self._session_factory = session_factory
         self._guidance = guidance
@@ -220,7 +228,7 @@ class TriageService:
         Le garde-fou (whitelist + seuil) a déjà tranché en amont ; ici on ne fait
         QUE dispatcher l'action d'une Décision acceptée. « à trier » ne fait rien.
         """
-        glpi_link = _web_link(self._settings.glpi_base_url, ticket.id)
+        glpi_link = _web_link(self._glpi_base_url, ticket.id)
         mode = self._default_mode
         applied = False
         wrote = False
@@ -251,6 +259,14 @@ class TriageService:
                 # Appliqué (semi/full-auto) → réponse PUBLIQUE au demandeur (brouillon seul).
                 # Suggestion → Suivi interne PRIVÉ annoté (brouillon jamais envoyé).
                 content = render_followup(outcome, refs, applied=applied)
+                if applied:
+                    # DURCISSEMENT audit 2026-05 : avant toute publication PUBLIQUE, on
+                    # RE-MASQUE le brouillon LLM (le LLM peut recracher une PII présente
+                    # dans le ticket et non détectée à l'entrée, ou injectée) et on borne
+                    # sa longueur. Le mode suggestion (privé) n'est pas concerné.
+                    content = masking.mask(content, **self._mask_flags).text
+                    if len(content) > PUBLIC_DRAFT_MAX_CHARS:
+                        content = content[:PUBLIC_DRAFT_MAX_CHARS].rstrip() + "…"
                 await self._itsm.write_followup(ticket.id, content, private=not applied)
                 wrote = True
 

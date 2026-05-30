@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from ..adapters.itsm.glpi.connector import GlpiConnector
+from ..adapters.itsm.glpi.v2.connector import GlpiV2Connector
 from ..adapters.llm.registry import build_llm as _build_llm_adapter
 from ..adapters.secrets.encrypted import FernetSecretsBox
 from ..config.settings import Settings
@@ -28,13 +29,36 @@ def make_secrets_box(settings: Settings) -> FernetSecretsBox:
     return FernetSecretsBox(master_key=settings.master_key)
 
 
-def build_connector(settings: Settings, secrets: SecretsPort) -> GlpiConnector | None:
-    """Construit un GlpiConnector si GLPI est configuré, sinon None."""
+def build_connector(
+    settings: Settings, secrets: SecretsPort
+) -> GlpiConnector | GlpiV2Connector | None:
+    """Construit le connecteur GLPI selon `glpi_api_version` (legacy | v2), sinon None.
+
+    - `legacy` (défaut, éprouvé) → `GlpiConnector` (apirest.php).
+    - `v2` (Beta) → `GlpiV2Connector` (API haut-niveau OAuth2, cf. docs/glpi-api-v2.md).
+    Les deux implémentent `ItsmPort` : le reste du moteur est agnostique.
+    """
     with db.session_scope() as session:
-        creds = RuntimeConfigService(session, secrets, settings).glpi_credentials()
+        cfg = RuntimeConfigService(session, secrets, settings)
+        api_version = (cfg.get("glpi_api_version") or "legacy").strip().lower()
+        if api_version == "v2":
+            v2_creds = cfg.glpi_v2_credentials()
+            if not v2_creds.is_configured:
+                return None
+            return GlpiV2Connector(
+                v2_creds,
+                max_tickets=settings.polling_max_tickets,
+                stats_max=settings.dashboard_max_tickets,
+                ssrf_guard=settings.ssrf_guard_enabled,
+            )
+        creds = cfg.glpi_credentials()
     if not creds.is_configured:
         return None
-    return GlpiConnector(creds, max_tickets=settings.polling_max_tickets)
+    return GlpiConnector(
+        creds,
+        max_tickets=settings.polling_max_tickets,
+        ssrf_guard=settings.ssrf_guard_enabled,
+    )
 
 
 def build_llm(settings: Settings, secrets: SecretsPort) -> LlmPort | None:
@@ -74,6 +98,7 @@ def build_llm(settings: Settings, secrets: SecretsPort) -> LlmPort | None:
         api_key=api_key,
         model=model,
         anthropic_version=settings.anthropic_version,
+        ssrf_guard=settings.ssrf_guard_enabled,
     )
 
 
@@ -109,6 +134,9 @@ def build_triage_service(
             "iban": cfg.get_bool("mask_iban", settings.mask_iban),
             "secret": cfg.get_bool("mask_secret", settings.mask_secret),
         }
+        # URL GLPI résolue runtime (UI > .env) : sinon le lien du Journal resterait figé à ""
+        # quand GLPI est configuré via l'UI et non dans .env.
+        glpi_base_url = cfg.get("glpi_base_url") or settings.glpi_base_url
     return TriageService(
         itsm=itsm,
         llm=llm,
@@ -121,6 +149,7 @@ def build_triage_service(
         default_mode=default_mode,
         auto_min_confidence=auto_min_confidence,
         mask_flags=mask_flags,
+        glpi_base_url=glpi_base_url,
     )
 
 

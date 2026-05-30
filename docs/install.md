@@ -97,6 +97,41 @@ La terminaison **TLS est déléguée à un reverse proxy** (nginx, Caddy, …) p
 > 2. Lancez `uvicorn` avec `--proxy-headers --forwarded-allow-ips=<IP du proxy>` (ou `*` si le proxy est seul devant). En conteneur, l'entrypoint le fait automatiquement quand `TRUST_PROXY_HEADERS=true` est exporté.
 > 3. N'activez ces options **que** derrière un proxy fiable — sans ça, n'importe quel client peut forger l'IP via le header.
 
+## 6. Réglages de durcissement & observabilité (durcissement audit 2026-05)
+
+Tous **optionnels** dans le `.env` (valeurs par défaut sûres). Détails dans
+[`docs/audit-2026-05.md`](audit-2026-05.md) et [`SECURITY.md`](../SECURITY.md).
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `DEV_OPEN_ADMIN` | `false` | **Fail-closed** : sans mot de passe admin, l'admin est refusée (401). Mettre `true` rouvre l'admin **sans** mot de passe — **dev/labo uniquement, jamais en prod**. |
+| `SESSION_HTTPS_ONLY` | `true` | Flag `Secure` du cookie de session. Mettre `false` **seulement** pour du dev/test en HTTP local (sinon le cookie est ignoré). |
+| `SSRF_GUARD_ENABLED` | `true` | Garde anti-SSRF au runtime : résout chaque hôte sortant (LLM, GLPI) et **bloque les IP internes** avant l'appel. Ne désactiver qu'en réseau de confiance. |
+| `LOG_LEVEL` | `INFO` | Seuil de log racine (`DEBUG`…`CRITICAL`). |
+| `LOG_FORMAT` | `text` | `text` (dev) ou `json` (1 ligne = 1 objet JSON pour Loki/ELK ; **sans PII**). |
+| `METRICS_ENABLED` | `true` | Active l'instrumentation + l'endpoint `GET /metrics`. `false` → endpoint absent. |
+| `METRICS_TOKEN` | *(vide)* | Si défini, `/metrics` exige `Authorization: Bearer <jeton>` (ou `X-Metrics-Token`), sinon 401. Vide = scrape non authentifié (rétrocompatible). |
+
+### Métriques Prometheus
+
+Quand `METRICS_ENABLED=true` (défaut), le service expose **`GET /metrics`** (hors `/api`,
+format Prometheus) : compteur de requêtes (`itsm_http_requests_total`) et histogramme de
+latence par **route templatée** (pas de PII dans les labels). Exemple de scrape :
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: itsm-modern-ai
+    static_configs: [{ targets: ["itsm:8000"] }]
+    # si METRICS_TOKEN est défini :
+    # authorization: { credentials: "<le jeton>" }
+```
+
+### Logging structuré
+
+`LOG_FORMAT=json` produit un log **structuré** (une ligne = un objet JSON) directement
+agrégeable (Loki/ELK). Aucune PII n'est émise (pas de corps de requête, pas de query string).
+
 ## Sauvegarde
 
 Sauvegardez régulièrement le volume **`./data`** : il contient à la fois la **base SQLite** (`itsm.db`) **et** la **master key** (`data/master.key`).

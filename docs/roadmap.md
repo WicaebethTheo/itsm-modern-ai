@@ -11,8 +11,14 @@
 
 ### Moyen terme
 
-- **Portage PostgreSQL** — le code est déjà *Postgres-ready* : toutes les colonnes `ts` sont timezone-aware via `UtcDateTime`, les comparaisons `cutoff < ts` ne casseront pas. Migration SQLite → Postgres documentée à venir.
-- **Connecteur GLPI API V2** — le seam est prêt (`get_new_tickets()`, `write_followup()`, `get_referentials()`). L'API legacy `apirest.php` reste la source de vérité tant que V2 est WIP côté GLPI 11.
+- **Portage PostgreSQL** — ✅ **livré en Beta** (`docs/postgresql.md`). Driver `psycopg` en
+  extra, pooling auto pour les bases réseau, service compose optionnel. Migrations Alembic +
+  ORM validés sur PostgreSQL 16 réel. SQLite reste le défaut éprouvé. Reste à éprouver en
+  prod (backups, HA, CI dédiée Postgres).
+- **Connecteur GLPI API V2** — ✅ **livré en Beta** (`docs/glpi-api-v2.md`). API haut-niveau
+  OAuth2 de GLPI 11 (`/Assistance/Ticket`, `Timeline/Followup`, `TeamMember`, RSQL), bascule
+  `GLPI_API_VERSION=v2`. Le connecteur legacy `apirest.php` reste le **défaut** et la source
+  de vérité tant que la V2 n'est pas éprouvée. À valider sur l'instance cible avant `full_auto`.
 
 ### Long terme
 

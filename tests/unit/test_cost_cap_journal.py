@@ -60,6 +60,33 @@ def test_decisions_csv_export(temp_db):
     assert "low_confidence" in csv_text
 
 
+def test_csv_injection_neutralized(temp_db):
+    """Une cellule commençant par =/+/-/@ (ou tab/CR) est préfixée d'une apostrophe."""
+    outcome = TriageOutcome(accepted=False, reason=TriageReason.LOW_CONFIDENCE)
+    with db.session_scope() as s:
+        did = journal.record_decision(s, 7, outcome)
+        journal.set_annotation(s, did, "=cmd|'/C calc'!A1")
+    with db.session_scope() as s:
+        csv_text = journal.decisions_csv(s)
+    # Le payload de formule est neutralisé : la cellule est préfixée d'une apostrophe,
+    # donc aucune cellule ne commence directement par '='.
+    assert "'=cmd|" in csv_text  # préfixé apostrophe
+    import csv as _csv
+
+    rows = list(_csv.reader(csv_text.splitlines()))
+    assert all(not cell.startswith(("=", "+", "-", "@")) for row in rows for cell in row)
+
+    # Idem export des appels LLM (response_received contrôlable côté LLM).
+    with db.session_scope() as s:
+        journal.record_llm_call(
+            s, ticket_id=1, model="m", prompt_sent="masqué",
+            response_received="@SUM(1+1)", prompt_tokens=1, completion_tokens=1, cost_eur=0.0,
+        )
+    with db.session_scope() as s:
+        llm_csv = journal.llm_calls_csv(s)
+    assert "'@SUM(1+1)" in llm_csv
+
+
 def test_avg_confidence_and_daily_series(temp_db):
     from itsm_modern_ai.domain.models import Decision
 

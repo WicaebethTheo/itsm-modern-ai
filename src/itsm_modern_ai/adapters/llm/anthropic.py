@@ -22,7 +22,7 @@ from pydantic import ValidationError
 from ...domain.errors import LlmResponseError
 from ...domain.models import Decision
 from ...ports.llm import LlmResult
-from ._http import arequest, healthcheck_get
+from ._http import arequest, healthcheck_get, make_guarded_event_hooks
 
 logger = logging.getLogger("itsm.llm.anthropic")
 
@@ -74,6 +74,8 @@ class AnthropicLlm:
         version: str = DEFAULT_VERSION,
         max_tokens: int = 1024,
         timeout: float = 60.0,
+        ssrf_guard: bool = False,
+        allow_local: bool = False,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
@@ -82,6 +84,7 @@ class AnthropicLlm:
         self._version = version
         self._max_tokens = max_tokens
         self._timeout = timeout
+        self._event_hooks = make_guarded_event_hooks(guard=ssrf_guard, allow_local=allow_local)
         self._client = client
 
     def _headers(self) -> dict[str, str]:
@@ -97,6 +100,7 @@ class AnthropicLlm:
             self._headers(),
             client=self._client,
             timeout=self._timeout,
+            event_hooks=self._event_hooks,
         )
 
     async def complete(self, system_prompt: str, user_prompt: str) -> LlmResult:
@@ -121,6 +125,7 @@ class AnthropicLlm:
             json=payload,
             client=self._client,
             timeout=self._timeout,
+            event_hooks=self._event_hooks,
         )
 
         body = resp.json()

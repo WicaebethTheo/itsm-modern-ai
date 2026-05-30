@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from ..domain.models import Referentials, Ticket, TicketStat
+from ..domain.models import GlpiIdentity, Referentials, Ticket, TicketStat
 
 
 class ItsmPort(Protocol):
@@ -48,4 +48,18 @@ class ItsmPort(Protocol):
 
     async def healthcheck(self) -> bool:
         """True si GLPI est joignable et l'auth fonctionne (FR-27)."""
+        ...
+
+    async def whoami(self) -> GlpiIdentity | None:
+        """Compte GLPI sous lequel le bot agit, None si indéterminé.
+
+        Sert d'aperçu côté UI : « quel compte le bot utilise-t-il ? ». Best-effort —
+        ne lève pas (retourne None sur échec d'auth/réseau)."""
+        ...
+
+    async def avatar(self) -> tuple[bytes, str] | None:
+        """Photo de profil du compte (octets, content-type), None si indisponible.
+
+        Récupérable proprement en V2 (`User/Me/Picture`). En legacy : généralement None
+        (pas d'endpoint binaire) → l'UI retombe sur un avatar à initiales. Best-effort."""
         ...

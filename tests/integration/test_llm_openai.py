@@ -48,6 +48,13 @@ async def test_parses_valid_json_decision():
     sent = route.calls.last.request
     assert b'"response_format"' in sent.content
     assert b"json_object" in sent.content
+    # Borne de génération (LLM10) présente dans le payload.
+    import json as _json
+
+    from itsm_modern_ai.adapters.llm.openai_compatible import DEFAULT_MAX_TOKENS
+
+    payload = _json.loads(sent.content)
+    assert payload["max_tokens"] == DEFAULT_MAX_TOKENS
 
 
 @respx.mock
@@ -88,3 +95,16 @@ async def test_network_error_raises_transport_error():
     respx.post(URL).mock(side_effect=httpx.ConnectError("boom"))
     with pytest.raises(LlmTransportError):
         await _adapter().complete("sys", "user")
+
+
+async def test_ssrf_guard_blocks_host_resolving_to_internal_ip(monkeypatch):
+    """Anti-SSRF (DNS rebinding) : avec le garde activé, un hôte qui résout vers une IP
+    interne est bloqué AVANT l'émission de la requête (donc avant fuite de la clé LLM)."""
+    import itsm_modern_ai.domain.url_safety as us
+
+    monkeypatch.setattr(
+        us.socket, "getaddrinfo", lambda *a, **kw: [(2, 1, 6, "", ("127.0.0.1", 0))]
+    )
+    adapter = OpenAiCompatibleLlm(base_url=BASE, api_key="k", model="m", ssrf_guard=True)
+    with pytest.raises(LlmTransportError, match="anti-SSRF"):
+        await adapter.complete("sys", "user")

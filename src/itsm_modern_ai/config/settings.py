@@ -17,8 +17,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # Persistance (SQLite en pilote, Postgres-ready)
+    # Persistance (SQLite en pilote ; PostgreSQL en option — Beta, cf. docs/postgresql.md).
+    # Postgres : DATABASE_URL=postgresql+psycopg://user:pwd@host:5432/itsm (driver psycopg 3,
+    # extra `postgres`). Le code est Postgres-ready (UtcDateTime tz-aware, migrations batch).
     database_url: str = "sqlite:///./data/itsm.db"
+    # Pool de connexions — appliqué UNIQUEMENT aux bases réseau (non-SQLite). Ignorés en SQLite.
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_pre_ping: bool = True
+
+    @property
+    def is_sqlite(self) -> bool:
+        return self.database_url.startswith("sqlite")
 
     # Chiffrement des secrets au repos (FR-25). Si absent, une clé est générée et
     # persistée dans data/master.key (durci en Epic 4 : secret monté).
@@ -98,15 +108,41 @@ class Settings(BaseSettings):
     # Rename TicketFollowup→ITILFollowup (9.x→10.x). True = GLPI 9.x (legacy).
     glpi_followup_legacy_9x: bool = False
 
+    # Choix de l'API GLPI (Beta) : "legacy" = apirest.php (défaut, éprouvé) ;
+    # "v2" = API haut-niveau OAuth2 de GLPI 11 (cf. docs/glpi-api-v2.md). En mode v2,
+    # GLPI_BASE_URL pointe sur …/api.php/v2.3 et l'auth se fait par client OAuth + compte
+    # technique (secrets poussés via l'UI). Le client_secret et le mot de passe sont des
+    # secrets chiffrés ; client_id et username sont non-secrets (visibles dans l'UI).
+    glpi_api_version: str = "legacy"  # legacy | v2
+    # URL de base DISTINCTE pour l'API V2 (ex. https://glpi.exemple.local/api.php/v2.3).
+    # Séparée de glpi_base_url (legacy apirest.php) pour que les deux coexistent proprement ;
+    # à défaut, on retombe sur glpi_base_url.
+    glpi_v2_base_url: str = ""
+    glpi_oauth_client_id: str = ""
+    glpi_oauth_username: str = ""
+    # Scopes OAuth demandés (séparés par un espace). `api` couvre les opérations ITSM
+    # (tickets, suivis, référentiels) ; `user` est requis EN PLUS pour /Administration/User/Me
+    # (aperçu du compte). Le client OAuth GLPI doit autoriser les scopes demandés.
+    glpi_oauth_scope: str = "api user"
+
     # Polling (FR-2)
     polling_interval_seconds: int = 60
     polling_enabled: bool = True
     polling_max_tickets: int = 200  # garde-fou de pagination par cycle
 
     # Authentification locale (FR-24). Bootstrap : si défini et aucun hash stocké,
-    # le mot de passe est hashé (Argon2) et stocké au premier usage. Si AUCUN mot de
-    # passe n'est configuré → endpoints d'admin OUVERTS (pilote réseau interne) + warning.
+    # le mot de passe est hashé (Argon2) et stocké au premier usage.
     admin_password: str = ""
+
+    # Garde-fou FAIL-CLOSED (durcissement audit 2026-05) : par défaut, si AUCUN mot de
+    # passe admin n'est configuré, les endpoints d'admin sont REFUSÉS (401). Mettre ce
+    # flag à True ouvre volontairement l'admin sans mot de passe (ancien comportement
+    # « pilote réseau interne »). À n'activer qu'en labo/dev, jamais en production.
+    dev_open_admin: bool = False
+
+    # Cookie de session : `https_only` (Secure flag). Défaut sûr = True (prod derrière
+    # TLS). À mettre à False pour dev/tests en HTTP local (sinon le cookie est ignoré).
+    session_https_only: bool = True
 
     # Rate-limiting du login (anti brute-force). Limiteur EN MÉMOIRE par IP — adapté
     # au mono-process pilote (pas de HA / pas de store partagé). 0 = désactivé.
@@ -118,6 +154,32 @@ class Settings(BaseSettings):
     # déduire l'IP réelle du client (rate-limit login, audit). Défaut sûr : False
     # (pilote/labo sans proxy). À mettre à True UNIQUEMENT derrière un proxy fiable.
     trust_proxy_headers: bool = False
+
+    # Observabilité — logging structuré (durcissement audit 2026-05). `log_level`
+    # pilote le seuil racine ; `log_format=json` produit un log structuré (1 ligne =
+    # 1 objet JSON) pour l'agrégation (Loki/ELK), `text` reste lisible en dev.
+    # ⚠️ Le format n'inclut AUCUNE PII (pas de corps de requête, pas de query string).
+    log_level: str = "INFO"  # DEBUG | INFO | WARNING | ERROR | CRITICAL
+    log_format: str = "text"  # text | json
+
+    # Observabilité — métriques Prometheus exposées à GET /metrics (NON authentifié,
+    # comme un scrape classique côté réseau interne). Mettre à False pour désactiver
+    # complètement l'endpoint et l'instrumentation (défaut : activé).
+    metrics_enabled: bool = True
+    # Jeton de scrape OPTIONNEL pour `/metrics` (durcissement audit 2026-05). Vide (défaut)
+    # → endpoint non authentifié (scrape Prometheus classique, rétrocompatible). Si défini,
+    # `/metrics` exige `Authorization: Bearer <token>` (ou en-tête `X-Metrics-Token`) ;
+    # toute requête sans le bon jeton reçoit 401. Permet de fermer l'exposition de la
+    # volumétrie/latence par route sans casser le scrape par défaut.
+    metrics_token: str = ""
+
+    # Garde anti-SSRF au RUNTIME (durcissement audit 2026-05). La validation lexicale des
+    # URLs (à l'écriture de config) ne protège pas du DNS rebinding : un hostname public
+    # peut résoudre vers une IP interne (169.254.169.254, 10.x, loopback…). Quand activé,
+    # chaque appel sortant (LLM, GLPI) résout l'hôte et BLOQUE toute IP privée/loopback/
+    # link-local/réservée avant d'émettre la requête (et donc avant toute fuite de token).
+    # Localhost reste toléré pour Ollama (allow_local). Défaut sûr : True.
+    ssrf_guard_enabled: bool = True
 
 
 def get_settings() -> Settings:

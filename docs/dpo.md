@@ -12,12 +12,16 @@ Ce **n'est pas** une « anonymisation ». Voir la portée du masquage ci-dessous
 
 Avant **tout** appel au LLM, le système masque dans le contenu du ticket (FR-14) :
 
-- adresses **email** ;
-- numéros de **téléphone** ;
-- **IBAN** ;
-- **mots de passe / tokens** (motifs).
+- adresses **email** → `[EMAIL]` ;
+- numéros de **téléphone** (FR **et international E.164**, durcissement audit 2026-05) → `[PHONE]` ;
+- **IBAN** → `[IBAN]` ;
+- **cartes bancaires** (16 chiffres, **validation Luhn** anti faux positifs) → `[CARD]` ;
+- **adresses IP** (IPv4) et **adresses MAC** → `[IP]` / `[MAC]` ;
+- **mots de passe / tokens** (motifs) et **clés cloud** (AWS `AKIA…`, Google `AIza…`) → `[SECRET]` / `[CLOUD_KEY]`.
 
-Le masquage repose sur des **expressions régulières**. En V1, il **NE masque PAS** :
+> Les motifs **CB / IP / MAC / téléphone international / clés cloud** ont été ajoutés lors du durcissement **audit 2026-05** (`domain/masking.py`). De plus, en modes `semi_auto`/`full_auto`, le **brouillon généré par le LLM est re-masqué** avant toute publication publique au demandeur.
+
+Le masquage repose sur des **expressions régulières** (heuristiques). En V1, il **NE masque PAS** :
 
 - les **noms de personnes** ;
 - les **adresses** postales.
@@ -64,4 +68,21 @@ Par conception (PRD §9.4) :
 
 ## Rétention
 
-En V1, les logs et le journal de décision sont **conservés localement sans purge automatique**. Une politique de rétention configurable reste **à préciser** (hypothèse ouverte, PRD §10) et devra être arrêtée avec le client selon ses obligations.
+Une **purge RGPD automatique** est implémentée (`services/retention.py`). Elle supprime définitivement, en base locale, les lignes plus anciennes que des fenêtres de conservation **configurables** :
+
+- **Journal de décision** : `retention_decisions_days` (défaut **365 jours**) ;
+- **Appels LLM** (masqués) : `retention_llm_calls_days` (défaut **90 jours**).
+
+Une fenêtre **`<= 0` désactive** la purge de la table concernée (défaut sûr : on ne supprime jamais sans réglage explicite).
+
+**Job planifié.** Lorsque `automation_purge_enabled` est actif (défaut `true`), un job quotidien s'exécute à `automation_purge_hour_utc` (défaut **03:00 UTC**), planifié par le scheduler de l'application. La durée et l'heure peuvent être modifiées à chaud via l'UI (le job est re-planifié sans redémarrage).
+
+**Pilotage & audit.** Les endpoints `/api/automations/retention` (authentifiés) permettent de :
+
+- `GET` — consulter l'état (fenêtres, activation, heure, dernière exécution et volumes supprimés) ;
+- `PATCH` — ajuster les fenêtres, l'activation et l'heure ;
+- `POST /retention/run` — déclencher une purge **manuelle immédiate** (garde-fou de confirmation, comme toute action destructive).
+
+Chaque exécution consigne la dernière purge dans la configuration runtime (`automation_purge_last_run_at`, volumes supprimés) et son initiateur (`automation_purge_last_run_by` : `scheduler` pour l'automatique, l'IP/session de l'admin pour un déclenchement manuel), pour traçabilité RGPD.
+
+Les durées par défaut restent à confirmer avec le client selon ses obligations légales, mais le mécanisme de purge lui-même est livré et actif.

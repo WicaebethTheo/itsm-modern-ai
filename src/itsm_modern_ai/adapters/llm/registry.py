@@ -28,8 +28,24 @@ def build_llm(
     api_key: str,
     model: str,
     anthropic_version: str = "2023-06-01",
+    ssrf_guard: bool = False,
 ) -> LlmPort:
+    # Ollama est LOCAL : on tolère localhost/IP privée (sinon le garde anti-SSRF le bloque).
+    allow_local = provider == PROVIDER_OLLAMA
     if provider == PROVIDER_ANTHROPIC:
-        return AnthropicLlm(api_key=api_key, model=model, base_url=base_url, version=anthropic_version)
+        return AnthropicLlm(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            version=anthropic_version,
+            ssrf_guard=ssrf_guard,
+            allow_local=allow_local,
+        )
     # mistral / openai / ollama partagent le chemin OpenAI-compatible.
-    return OpenAiCompatibleLlm(base_url=base_url, api_key=api_key or "local", model=model)
+    return OpenAiCompatibleLlm(
+        base_url=base_url,
+        api_key=api_key or "local",
+        model=model,
+        ssrf_guard=ssrf_guard,
+        allow_local=allow_local,
+    )

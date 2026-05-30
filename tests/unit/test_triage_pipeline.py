@@ -213,6 +213,37 @@ async def test_full_auto_mutates_and_still_writes_followup(temp_db):
     assert row.applied is True and row.mode == "full_auto"
 
 
+async def test_public_draft_is_remasked_in_auto_mode(temp_db):
+    # Le brouillon LLM (mode full_auto, posté PUBLIQUEMENT) peut contenir une PII non
+    # détectée à l'entrée. Il DOIT être re-masqué avant publication au demandeur.
+    itsm = FakeItsm()
+    d = Decision(
+        category=1, priority=3, technician_id=11,
+        draft="Bonjour, mot de passe: Secret123 et email jean@exemple.fr",
+        confidence=0.95,
+    )
+    svc = _service(FakeLlm(d), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=27, content="x"), REFS)
+    tid, content, private = itsm.followups[0]
+    assert private is False  # public
+    assert "Secret123" not in content  # secret re-masqué
+    assert "jean@exemple.fr" not in content  # email re-masqué
+
+
+async def test_public_draft_length_is_bounded(temp_db):
+    from itsm_modern_ai.services.triage import PUBLIC_DRAFT_MAX_CHARS
+
+    itsm = FakeItsm()
+    d = Decision(
+        category=1, priority=3, technician_id=11, draft="A" * (PUBLIC_DRAFT_MAX_CHARS + 500),
+        confidence=0.95,
+    )
+    svc = _service(FakeLlm(d), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=28, content="x"), REFS)
+    _, content, _ = itsm.followups[0]
+    assert len(content) <= PUBLIC_DRAFT_MAX_CHARS + 1  # borné (+1 pour l'ellipse)
+
+
 async def test_semi_auto_applies_above_threshold_else_suggests(temp_db):
     # Confiance 0.9 ≥ seuil auto 0.85 → applique.
     itsm = FakeItsm()

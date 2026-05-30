@@ -47,6 +47,7 @@ def client(tmp_path):
         database_url=f"sqlite:///{tmp_path / 'cfg.db'}",
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
+        dev_open_admin=True,  # admin sans mot de passe (test) — fail-closed désactivé
     )
     with TestClient(create_app(settings)) as c:
         yield c

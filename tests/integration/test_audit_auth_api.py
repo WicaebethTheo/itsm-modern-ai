@@ -24,6 +24,8 @@ def _seed_decision():
 
 
 def _settings(tmp_path, **kw) -> Settings:
+    kw.setdefault("dev_open_admin", True)  # défaut test : admin ouvert sans mot de passe
+    kw.setdefault("session_https_only", False)  # TestClient = http → cookie non-Secure
     return Settings(
         _env_file=None,  # isole du .env ambiant
         database_url=f"sqlite:///{tmp_path / 'a.db'}",
@@ -65,6 +67,62 @@ def test_decisions_resolve_names_and_urgency(open_client):
     assert entry["category_name"] == "Compte"
     assert entry["urgency"] == 3  # min(priority=3, 5)
     assert entry["group_name"] is None
+
+
+def test_journal_link_rebuilt_from_runtime_glpi_url(open_client):
+    """Régression : le SUJET du Journal doit être cliquable en prod.
+
+    En prod, l'URL GLPI est posée via l'UI (config runtime), pas dans `.env`. Le lien
+    front du Ticket doit être reconstruit à la lecture depuis cette URL — y compris pour
+    une décision dont le lien figé était vide (cas du ticket triagé avant configuration).
+    """
+    from itsm_modern_ai.persistence import db, journal
+    from itsm_modern_ai.services.runtime_config import RuntimeConfigService
+
+    # Décision enregistrée AVEC un lien figé vide (reproduit le bug de prod).
+    outcome = TriageOutcome(
+        accepted=True,
+        reason=TriageReason.ACCEPTED,
+        decision=Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.9),
+    )
+    with db.session_scope() as s:
+        journal.record_decision(s, 100, outcome, glpi_link="")
+
+    # Avant config GLPI : lien absent (repli sur le lien stocké, vide ici).
+    assert open_client.get("/api/decisions").json()[0]["glpi_link"] == ""
+
+    # L'admin configure l'URL GLPI via l'UI (config runtime).
+    box = open_client.app.state.secrets_box
+    settings = open_client.app.state.settings
+    with db.session_scope() as s:
+        RuntimeConfigService(s, box, settings).set(
+            "glpi_base_url", "https://glpi.local/apirest.php"
+        )
+
+    # Le lien est désormais reconstruit → sujet cliquable, même pour la décision déjà loggée.
+    entry = open_client.get("/api/decisions").json()[0]
+    assert entry["glpi_link"] == "https://glpi.local/front/ticket.form.php?id=100"
+
+
+def test_glpi_reset_clears_connection(open_client):
+    """Le bouton « Réinitialiser » efface toute la connexion GLPI (legacy + V2)."""
+    open_client.post(
+        "/api/config",
+        json={
+            "glpi_base_url": "https://glpi.example.com/apirest.php",
+            "glpi_api_version": "v2",
+            "glpi_v2_base_url": "https://glpi.example.com/api.php/v2.3",
+            "glpi_oauth_client_id": "cid",
+            "glpi_user_token": "tok",
+            "glpi_oauth_client_secret": "secret",
+        },
+    )
+    assert open_client.post("/api/glpi/reset").json()["ok"] is True
+    cfg = open_client.get("/api/config").json()
+    assert (cfg["glpi_base_url"] or "") == "" and (cfg["glpi_v2_base_url"] or "") == ""
+    assert cfg["glpi_api_version"] == "legacy"  # repassé au défaut sûr
+    assert (cfg["glpi_oauth_client_id"] or "") == ""
+    assert cfg["glpi_user_token_set"] is False and cfg["glpi_oauth_client_secret_set"] is False
 
 
 def test_export_csv_open(open_client):
@@ -133,6 +191,41 @@ def test_login_success_resets_counter(tmp_path):
         c.post("/api/auth/login", json={"password": "nope"})
         c.post("/api/auth/login", json={"password": "nope"})
         assert c.post("/api/auth/login", json={"password": "s3cret"}).status_code == 200
+
+
+# ── Fail-closed : aucun mot de passe + dev_open_admin=False → refus (durcissement) ──
+def test_admin_fail_closed_when_no_password_and_not_dev_open(tmp_path):
+    settings = _settings(tmp_path, dev_open_admin=False)  # ni password ni ouverture explicite
+    with TestClient(create_app(settings)) as c:
+        # Routes protégées : refus systématique (401), pas d'accès « ouvert ».
+        assert c.get("/api/decisions").status_code == 401
+        assert c.post("/api/config", json={"llm_model": "x"}).status_code == 401
+        assert c.get("/api/export/decisions.csv").status_code == 401
+
+
+# ── Fail-safe déchiffrement : hash admin illisible (MASTER_KEY incohérente) ──────
+def test_login_does_not_500_when_admin_hash_unreadable(tmp_path):
+    """Si le hash admin a été chiffré avec une autre MASTER_KEY (rotation/perte de clé),
+    le login NE doit PAS crasher en 500 : il retombe en fail-closed 401 clair."""
+    from itsm_modern_ai.adapters.secrets.encrypted import FernetSecretsBox
+    from itsm_modern_ai.api import security
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.services.runtime_config import RuntimeConfigService
+
+    settings = _settings(tmp_path, dev_open_admin=False)
+    app = create_app(settings)
+    with TestClient(app) as c:
+        # Stocke un hash admin chiffré avec une clé DIFFÉRENTE de celle de l'app.
+        foreign_box = FernetSecretsBox(master_key=Fernet.generate_key().decode())
+        with db.session_scope() as s:
+            RuntimeConfigService(s, foreign_box, settings).set_secret(
+                security.HASH_KEY, "fake-argon2-hash"
+            )
+        # Login : le hash est illisible → 401 (fail-closed), jamais 500.
+        r = c.post("/api/auth/login", json={"password": "whatever"})
+        assert r.status_code == 401
+        # Les routes protégées restent refusées proprement (pas de 500).
+        assert c.get("/api/decisions").status_code == 401
 
 
 def test_status_counters_present(open_client):

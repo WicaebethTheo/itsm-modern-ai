@@ -12,7 +12,9 @@ from ...persistence import journal
 from ...persistence.journal import DEFAULT_DECISIONS_LIMIT
 from ...persistence.tables import DecisionLog
 from ...services import referentials
-from ..deps import get_session
+from ...services.links import ticket_web_link
+from ...services.runtime_config import RuntimeConfigService
+from ..deps import get_config_service, get_session
 from ..security import require_auth
 
 router = APIRouter(prefix="/api", tags=["journal"], dependencies=[Depends(require_auth)])
@@ -53,8 +55,16 @@ def _to_entry(
     cats: dict[int, str],
     techs: dict[int, str],
     groups: dict[int, str],
+    glpi_base_url: str = "",
 ) -> DecisionEntry:
-    """Enrichit une décision brute : noms résolus (cat/tech/groupe) + urgence dérivée."""
+    """Enrichit une décision brute : noms résolus (cat/tech/groupe) + urgence dérivée.
+
+    Le lien GLPI est reconstruit à la lecture depuis l'URL GLPI **courante** (config
+    runtime, posée via l'UI) : il reflète toujours l'instance configurée et reste valide
+    même pour les décisions enregistrées avant que GLPI ne soit configuré (où le lien figé
+    valait ""). Repli sur le lien stocké si l'URL runtime est absente.
+    """
+    glpi_link = ticket_web_link(glpi_base_url, row.ticket_id) or row.glpi_link
     return DecisionEntry(
         id=row.id,
         ticket_id=row.ticket_id,
@@ -72,7 +82,7 @@ def _to_entry(
         group_id=row.group_id,
         group_name=groups.get(row.group_id) if row.group_id is not None else None,
         confidence=row.confidence,
-        glpi_link=row.glpi_link,
+        glpi_link=glpi_link,
         annotation=row.annotation,
         mode=row.mode,
         applied=row.applied,
@@ -81,17 +91,26 @@ def _to_entry(
 
 @router.get("/decisions", response_model=list[DecisionEntry])
 def list_decisions(
-    limit: int = DEFAULT_DECISIONS_LIMIT, session: Session = Depends(get_session)
+    limit: int = DEFAULT_DECISIONS_LIMIT,
+    session: Session = Depends(get_session),
+    cfg: RuntimeConfigService = Depends(get_config_service),
 ) -> list[DecisionEntry]:
     cats = _name_map(session, referentials.KIND_CATEGORY)
     techs = _name_map(session, referentials.KIND_TECHNICIAN)
     groups = _name_map(session, referentials.KIND_GROUP)
-    return [_to_entry(d, cats, techs, groups) for d in journal.list_decisions(session, limit=limit)]
+    glpi_base_url = cfg.active_glpi_base_url()
+    return [
+        _to_entry(d, cats, techs, groups, glpi_base_url)
+        for d in journal.list_decisions(session, limit=limit)
+    ]
 
 
 @router.patch("/decisions/{decision_id}/annotation", response_model=DecisionEntry)
 def annotate(
-    decision_id: int, body: AnnotationUpdate, session: Session = Depends(get_session)
+    decision_id: int,
+    body: AnnotationUpdate,
+    session: Session = Depends(get_session),
+    cfg: RuntimeConfigService = Depends(get_config_service),
 ) -> DecisionEntry:
     row = journal.set_annotation(session, decision_id, body.annotation)
     if row is None:
@@ -99,4 +118,5 @@ def annotate(
     cats = _name_map(session, referentials.KIND_CATEGORY)
     techs = _name_map(session, referentials.KIND_TECHNICIAN)
     groups = _name_map(session, referentials.KIND_GROUP)
-    return _to_entry(row, cats, techs, groups)
+    glpi_base_url = cfg.active_glpi_base_url()
+    return _to_entry(row, cats, techs, groups, glpi_base_url)

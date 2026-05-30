@@ -61,6 +61,22 @@ class TicketStat(BaseModel):
         return self.status in (5, 6)  # Solved / Closed
 
 
+class GlpiIdentity(BaseModel):
+    """Compte GLPI sous lequel le bot agit — aperçu pour la console (legacy ou V2).
+
+    Best-effort : seul `account` est garanti ; les autres champs dépendent de ce que
+    l'API expose. `has_picture` indique qu'une photo de profil est récupérable (V2).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    account: str  # nom affichable (prénom nom, ou login)
+    username: str = ""  # identifiant de connexion GLPI
+    profile: str = ""  # profil/rôle actif (Technician, Super-Admin, …)
+    email: str = ""
+    has_picture: bool = False
+
+
 class Decision(BaseModel):
     """Sortie structurée du LLM (FR-6).
 

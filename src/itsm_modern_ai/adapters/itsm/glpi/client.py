@@ -11,6 +11,18 @@ from types import TracebackType
 import httpx
 
 from ....domain.errors import ItsmAuthError, ItsmError, ItsmUnavailableError
+from ....domain.url_safety import UrlSafetyError, assert_resolved_ip_is_public
+
+
+def _ssrf_event_hooks(guard: bool) -> dict[str, list] | None:
+    """Event hook httpx anti-SSRF (résolution DNS au runtime). GLPI n'est jamais local."""
+    if not guard:
+        return None
+
+    async def _hook(request: httpx.Request) -> None:
+        assert_resolved_ip_is_public(request.url.host or "", allow_local=False)
+
+    return {"request": [_hook]}
 
 
 class GlpiClient:
@@ -22,6 +34,7 @@ class GlpiClient:
         *,
         verify_tls: bool = True,
         timeout: float = 30.0,
+        ssrf_guard: bool = False,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         if not base_url or not user_token:
@@ -31,7 +44,10 @@ class GlpiClient:
         self._app_token = app_token
         self._session_token: str | None = None
         self._owns_client = client is None
-        self._client = client or httpx.AsyncClient(verify=verify_tls, timeout=timeout)
+        # Garde anti-SSRF (résolution DNS au runtime) sur le client que CE client possède.
+        self._client = client or httpx.AsyncClient(
+            verify=verify_tls, timeout=timeout, event_hooks=_ssrf_event_hooks(ssrf_guard) or {}
+        )
 
     # ── session ───────────────────────────────────────────────────────────────
     def _base_headers(self) -> dict[str, str]:
@@ -44,6 +60,8 @@ class GlpiClient:
         headers = self._base_headers() | {"Authorization": f"user_token {self._user_token}"}
         try:
             resp = await self._client.get(f"{self._base_url}/initSession", headers=headers)
+        except UrlSafetyError as exc:
+            raise ItsmUnavailableError(f"Appel GLPI bloqué (anti-SSRF): {exc}") from exc
         except httpx.HTTPError as exc:
             raise ItsmUnavailableError(f"GLPI injoignable: {exc}") from exc
         if resp.status_code in (400, 401):
@@ -87,6 +105,8 @@ class GlpiClient:
         url = f"{self._base_url}/{path.lstrip('/')}"
         try:
             resp = await self._client.request(method, url, headers=self._auth_headers(), **kw)
+        except UrlSafetyError as exc:
+            raise ItsmUnavailableError(f"Appel GLPI bloqué (anti-SSRF): {exc}") from exc
         except httpx.HTTPError as exc:
             raise ItsmUnavailableError(f"GLPI injoignable: {exc}") from exc
         if resp.status_code == 401:

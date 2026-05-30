@@ -51,6 +51,8 @@ export const PROVIDER_LABELS: Record<LlmProvider, string> = {
 
 export type RefKind = "category" | "entity" | "technician" | "group";
 
+export type GlpiApiVersion = "legacy" | "v2";
+
 export interface AuthStatus {
   authenticated: boolean;
   auth_configured: boolean;
@@ -125,6 +127,13 @@ export interface ConfigView {
   glpi_followup_legacy_9x: string | null;
   glpi_user_token_set: boolean;
   glpi_app_token_set: boolean;
+  glpi_api_version: GlpiApiVersion | null;
+  glpi_v2_base_url: string | null;
+  glpi_oauth_client_id: string | null;
+  glpi_oauth_username: string | null;
+  glpi_oauth_scope: string | null;
+  glpi_oauth_client_secret_set: boolean;
+  glpi_oauth_password_set: boolean;
   llm_api_key_set: boolean;
   openai_api_key_set: boolean;
   anthropic_api_key_set: boolean;
@@ -162,10 +171,41 @@ export interface ConfigUpdate {
   mask_secret?: boolean;
   glpi_user_token?: string;
   glpi_app_token?: string;
+  glpi_api_version?: GlpiApiVersion;
+  glpi_v2_base_url?: string;
+  glpi_oauth_client_id?: string;
+  glpi_oauth_username?: string;
+  glpi_oauth_scope?: string;
+  glpi_oauth_client_secret?: string;
+  glpi_oauth_password?: string;
   llm_api_key?: string;
   openai_api_key?: string;
   anthropic_api_key?: string;
 }
+
+/** Aperçu du compte GLPI sous lequel le bot agit (legacy = token, v2 = compte OAuth). */
+export interface GlpiAccount {
+  api_version: GlpiApiVersion;
+  configured: boolean; // identifiants présents (un connecteur a pu être construit)
+  account: string | null; // nom affichable, null si indéterminé/injoignable
+  username: string; // identifiant de connexion GLPI
+  profile: string; // profil/rôle GLPI actif
+  email: string;
+  has_picture: boolean; // une photo est-elle récupérable via /api/glpi/avatar ?
+}
+
+/** URL de la photo de profil du compte bot (proxy backend ; 404 → fallback initiales). */
+export const GLPI_AVATAR_URL = "/api/glpi/avatar";
+
+/** Scopes OAuth GLPI 11 disponibles (sélection multiple côté UI). */
+export const GLPI_OAUTH_SCOPES = [
+  "api",
+  "user",
+  "email",
+  "inventory",
+  "status",
+  "graphql",
+] as const;
 
 /** Vrai si une valeur de config stockée en chaîne représente un booléen vrai. */
 export function asBool(v: string | null | undefined): boolean {
@@ -332,6 +372,8 @@ export const Api = {
   getConfig: () => (DEMO ? ok(demo.config) : api.get<ConfigView>("/api/config")),
   updateConfig: (body: ConfigUpdate) =>
     DEMO ? ok(demo.config) : api.post<ConfigView>("/api/config", body),
+  glpiWhoami: () => (DEMO ? ok(demo.glpiAccount) : api.get<GlpiAccount>("/api/glpi/whoami")),
+  resetGlpi: () => (DEMO ? ok({ ok: true }) : api.post<{ ok: boolean }>("/api/glpi/reset")),
 
   // Référentiels GLPI : scan + découverte + sélection du périmètre.
   syncGlpi: () =>
