@@ -5,7 +5,7 @@ import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useLang, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { Gauge, Settings, TrendingUp, Wallet } from "lucide-react";
 import { useCallback } from "react";
@@ -52,8 +52,8 @@ function KpiCard({
 
 export function CostQuotas() {
   const t = useT();
+  const { lang } = useLang();
   const navigate = useNavigate();
-  const lang = t("fr", "en") as "fr" | "en";
   const cost = useResource(useCallback(() => Api.cost(), []));
   const c = cost.data;
 
@@ -149,11 +149,19 @@ export function CostQuotas() {
             }
           />
           <CardContent className="flex flex-col gap-2 p-5">
-            {/* Barre décorative : la valeur chiffrée est exposée par le Tag (% du plafond). */}
+            {/* Jauge accessible : rôle progressbar + valeurs ARIA (la valeur réelle, non bornée,
+                est annoncée via aria-valuetext pour les dépassements > 100 %). */}
+            {/* biome-ignore lint/a11y/useFocusableInteractive: progressbar est un rôle ARIA NON
+                interactif (WAI-ARIA APG) — il ne doit pas être focusable, donc pas de tabIndex. */}
             <div
               className="h-2.5 w-full overflow-hidden rounded-full bg-muted"
               data-testid="cost-cap-bar"
-              aria-hidden
+              role="progressbar"
+              aria-label={t("Consommation du plafond", "Cap consumption")}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(pctClamped)}
+              aria-valuetext={c.pct_of_cap != null ? `${Math.round(c.pct_of_cap)}%` : undefined}
             >
               <div
                 className={cn("h-full rounded-full transition-all", barColor)}

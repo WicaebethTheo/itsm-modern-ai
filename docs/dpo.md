@@ -26,7 +26,11 @@ l'édition** (open-core) :
 - **IBAN** → `[IBAN]`, **cartes bancaires** (validation Luhn) → `[CARD]` ;
 - **adresses IP** (IPv4) / **MAC** → `[IP]` / `[MAC]` ;
 - **mots de passe / tokens** et **clés cloud** (AWS `AKIA…`, Google `AIza…`) → `[SECRET]` / `[CLOUD_KEY]` ;
-- identifiants FR **NIR / SIRET** → `[NIR]` / `[SIRET]` et **patterns regex personnalisés**.
+- identifiants FR **NIR / SIRET** → `[NIR]` / `[SIRET]`.
+
+> Les **patterns regex personnalisés** sont une capacité de l'overlay **non encore exposée à la
+> configuration** : la console les affiche « à venir » et ils **ne masquent rien** pour l'instant.
+> À ne PAS présenter comme actifs à la DPO tant que leur configuration n'est pas livrée.
 
 > En modes `semi_auto`/`full_auto`, le **brouillon généré par le LLM est re-masqué** (selon
 > l'édition) avant toute publication publique au demandeur.
@@ -59,9 +63,10 @@ La console expose une page **« Confidentialité (DPO) »** (`/privacy`, sous l'
 permet de vérifier en réunion, **sans lire le code**, ce qui est réellement masqué :
 
 - **Tableau des catégories PII** avec leur statut **effectif selon l'édition installée**
-  (email + téléphone *Actif (Community)* ; IBAN/cartes, secrets/tokens/clés API, IP/MAC,
-  NIR/SIRET et patterns regex *Verrouillé · Enterprise* en édition Community). Le statut est
-  lu depuis le moteur, pas codé en dur — il reflète l'image **et** la licence actives.
+  (email + téléphone *Actif (Community)* ; IBAN/cartes, secrets/tokens/clés API, IP/MAC et
+  NIR/SIRET *Verrouillé · Enterprise* en édition Community ; patterns regex personnalisés
+  *À venir*). Le statut est lu depuis le moteur, pas codé en dur — il reflète l'image **et**
+  la licence actives.
 - **Avertissement honnête** affiché en Community : les catégories verrouillées transitent et
   sont journalisées **en clair** (à valider explicitement avant toute donnée réelle).
 - **Outil « Tester le masquage »** : colle un texte d'exemple, l'API applique le masquage

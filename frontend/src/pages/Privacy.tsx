@@ -137,8 +137,10 @@ export function Privacy() {
                         {c.active ? (
                           <Tag tone="green">
                             {t("Actif", "Active")}
-                            {c.scope === "community" ? t(" (Community)", " (Community)") : ""}
+                            {c.scope === "community" ? " (Community)" : ""}
                           </Tag>
+                        ) : c.scope === "roadmap" ? (
+                          <Tag tone="muted">{t("À venir", "Coming")}</Tag>
                         ) : c.scope === "enterprise" ? (
                           <span
                             className="inline-flex items-center gap-1"

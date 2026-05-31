@@ -29,7 +29,7 @@ class PiiCategory(BaseModel):
     label_fr: str
     label_en: str
     example: str
-    scope: str  # "community" | "enterprise"
+    scope: str  # "community" | "enterprise" | "roadmap" (capacité pas encore livrée)
     active: bool  # réellement masqué dans l'état courant
 
 
@@ -84,9 +84,12 @@ def _categories(advanced: bool, flags: dict[str, bool]) -> list[PiiCategory]:
                     example="10.0.1.42, a4:5e:60:…", scope="enterprise", active=flags["network"]),
         PiiCategory(key="nir_siret", label_fr="NIR / SIRET", label_en="NIR / SIRET",
                     example="1 85 12 …, 552 120 …", scope="enterprise", active=advanced),
+        # Patterns regex personnalisés : la capacité existe dans l'overlay (AdvancedPiiMasker
+        # .from_rules) mais n'est pas encore exposée à la configuration → jamais active en prod.
+        # Annoncé « à venir » (roadmap), jamais « masqué », pour ne pas tromper la DPO.
         PiiCategory(key="custom", label_fr="Patterns personnalisés (regex)",
                     label_en="Custom patterns (regex)", example="TICKET-\\d{5}",
-                    scope="enterprise", active=advanced),
+                    scope="roadmap", active=False),
     ]
 
 
@@ -135,9 +138,14 @@ def dpo_report(request: Request, cfg: RuntimeConfigService = Depends(get_config_
         "|---|---|---|",
     ]
     for c in cats:
-        status = "Masqué" if c.active else (
-            "VERROUILLÉ (Enterprise)" if c.scope == "enterprise" else "Désactivé"
-        )
+        if c.active:
+            status = "Masqué"
+        elif c.scope == "roadmap":
+            status = "À venir (non implémenté)"
+        elif c.scope == "enterprise":
+            status = "VERROUILLÉ (Enterprise)"
+        else:
+            status = "Désactivé"
         lines.append(f"| {c.label_fr} | `{c.example}` | {status} |")
     lines += [
         "",
