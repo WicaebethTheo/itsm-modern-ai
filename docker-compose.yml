@@ -31,7 +31,8 @@ services:
       # Peut aussi être collée via l'UI (page Store) ; l'env pré-licencie le déploiement.
       LICENSE_KEY: ${LICENSE_KEY:-}
     ports:
-      - "8000:8000"
+      # Port HÔTE pilotable (install.sh --port). Port interne fixe = 8000.
+      - "${ITSM_HOST_PORT:-8000}:8000"
     volumes:
       # Persistance : base SQLite + master key. Les fiches techniciens, la clé LLM
       # et la connexion GLPI se configurent dans l'interface web (rien à monter).
