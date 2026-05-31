@@ -37,13 +37,21 @@ GLPI gère bien les tickets structurés. **ITSM Modern AI** prend en charge le r
 ### Avec Docker (recommandé, on-prem)
 
 ```bash
-./install.sh                     # build + démarre + demande un mot de passe admin (masqué)
+# En une ligne (clone + install) — nécessite que le dépôt soit accessible :
+curl -fsSL https://itsm-modern-ai.com/install | sh
+
+# Ou depuis le dépôt cloné :
+./install.sh                     # vérifie les prérequis, démarre, demande un mot de passe admin
+./install.sh --bundle itsm.tar.gz   # install hors-ligne depuis une image (air-gap)
 open http://localhost:8000       # console web (SPA React)
 ```
 
-Le script génère la clé de chiffrement, applique les migrations, démarre le service et
-crée le compte administrateur — le mot de passe est saisi à l'écran et stocké **uniquement
-en hash Argon2 chiffré** (jamais en clair). Pour le changer : `./install.sh --reset-password`.
+`install.sh` **vérifie les prérequis** (Docker, plugin compose, disque, port) et **propose
+de les installer** (installation de Docker via le script officiel, plugin compose via le
+binaire officiel — toutes distros), applique les migrations, démarre le service et crée le
+compte administrateur (mot de passe saisi à l'écran, stocké **uniquement en hash Argon2
+chiffré**), puis affiche une **checklist** de l'état du système. Changer le mot de passe :
+`./install.sh --reset-password`.
 
 <details><summary>Install manuelle (équivalent)</summary>
 

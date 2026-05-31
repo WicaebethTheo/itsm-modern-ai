@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Installation on-premise — édition COMMUNITY.
+# On-premise installer — COMMUNITY edition.
 #
-# Vérifie les prérequis (et propose de les installer), prépare la config, démarre le
-# service, crée le compte admin, puis affiche une CHECKLIST finale de l'état du système.
+# Checks prerequisites (offers to install missing ones), prepares config, starts the
+# service, creates the admin account, then prints a final CHECKLIST of system state.
 #
-# Usage :
-#   ./install.sh                          # build depuis les sources + install
-#   ./install.sh --bundle itsm.tar.gz     # charge une image hors-ligne (pas de build)
-#   ./install.sh --no-build               # utilise une image déjà présente localement
-#   ./install.sh --port 8080              # publie sur un autre port hôte
-#   ./install.sh --yes                    # non-interactif (accepte les installs proposées)
-#   ./install.sh --reset-password         # change le mot de passe admin d'une instance
+# Usage:
+#   ./install.sh                          # build from source + install
+#   ./install.sh --bundle itsm.tar.gz     # load an offline image (no build)
+#   ./install.sh --no-build               # use an image already present locally
+#   ./install.sh --port 8080              # publish on a different host port
+#   ./install.sh --yes                    # non-interactive (accept proposed installs)
+#   ./install.sh --reset-password         # change the admin password of an instance
 #
-# Le mot de passe admin est saisi en interactif (getpass) et stocké UNIQUEMENT en hash
-# Argon2 chiffré (jamais en clair). En non-interactif, fournir ITSM_ADMIN_PASSWORD.
+# The admin password is entered interactively (hidden) and stored ONLY as an encrypted
+# Argon2 hash (never in clear text). In non-interactive mode, set ITSM_ADMIN_PASSWORD.
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -27,104 +27,135 @@ while [ $# -gt 0 ]; do
     --bundle) BUNDLE="${2:-}"; shift ;;
     --port) PORT="${2:-8000}"; shift ;;
     -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo "option inconnue: $1" >&2; exit 2 ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
   esac; shift
 done
 
-# ── Affichage ─────────────────────────────────────────────────────────────────
+# ── Output helpers ──────────────────────────────────────────────────────────
 c_cyan=$'\033[1;36m'; c_red=$'\033[1;31m'; c_grn=$'\033[1;32m'; c_yel=$'\033[1;33m'; c_off=$'\033[0m'
 say()  { printf '%s▶ %s%s\n' "$c_cyan" "$1" "$c_off"; }
 warn() { printf '%s! %s%s\n' "$c_yel" "$1" "$c_off"; }
 die()  { printf '%s✗ %s%s\n' "$c_red" "$1" "$c_off" >&2; exit 1; }
-ask()  { # ask "question" → 0 si oui. --yes => oui ; pas de TTY => non.
+ask()  { # ask "question" → 0 if yes. --yes => yes; no TTY => no.
   $ASSUME_YES && return 0
   [ -t 0 ] || return 1
-  local r; read -r -p "$(printf '%s? %s [o/N] %s' "$c_yel" "$1" "$c_off")" r
+  local r; read -r -p "$(printf '%s? %s [y/N] %s' "$c_yel" "$1" "$c_off")" r
   [[ "$r" =~ ^[oOyY]$ ]]
 }
 
-# Checklist accumulée (label\tétat) affichée à la fin.
 CHECKS=()
 check_add() { CHECKS+=("$1"$'\t'"$2"); }
 
-# Détection du gestionnaire de paquets (pour proposer une install).
-PKG=""; SUDO=""
-[ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO="sudo"
-for p in apt-get dnf yum zypper pacman; do command -v "$p" >/dev/null 2>&1 && { PKG="$p"; break; }; done
+# ── Distro / package-manager detection ────────────────────────────────────────
+OS_ID="unknown"; OS_NAME="unknown"
+if [ -r /etc/os-release ]; then
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  OS_ID="${ID:-unknown}"; OS_NAME="${PRETTY_NAME:-$OS_ID}"
+fi
+SUDO=""; [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO="sudo"
+PKG=""
+for p in apt-get dnf yum zypper pacman apk; do command -v "$p" >/dev/null 2>&1 && { PKG="$p"; break; }; done
 
-pkg_install() { # pkg_install "paquet1 paquet2"
+pkg_install() { # pkg_install "pkg1 pkg2"
   case "$PKG" in
-    apt-get) $SUDO apt-get update -qq && $SUDO apt-get install -y $1 ;;
+    apt-get) $SUDO apt-get update -qq && $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y $1 ;;
     dnf|yum) $SUDO "$PKG" install -y $1 ;;
-    zypper)  $SUDO zypper install -y $1 ;;
+    zypper)  $SUDO zypper --non-interactive install $1 ;;
     pacman)  $SUDO pacman -S --noconfirm $1 ;;
+    apk)     $SUDO apk add $1 ;;
     *) return 1 ;;
   esac
 }
 
-# ── 1) Préflight des prérequis ─────────────────────────────────────────────────
-say "Vérification des prérequis"
+# Install the Docker Compose v2 CLI plugin via the official binary (works on ANY distro
+# /arch without configuring Docker's apt/dnf repo — the `docker-compose-plugin` package
+# is only available from Docker's own repo, which is often not configured).
+install_compose_plugin() {
+  command -v curl >/dev/null 2>&1 || pkg_install curl >/dev/null 2>&1 || true
+  command -v curl >/dev/null 2>&1 || { warn "curl is required to fetch the compose plugin."; return 1; }
+  local arch; arch="$(uname -m)"
+  case "$arch" in
+    x86_64|amd64) arch=x86_64 ;;
+    aarch64|arm64) arch=aarch64 ;;
+    armv7l) arch=armv7 ;;
+    *) warn "unsupported arch '$arch' for auto compose install."; return 1 ;;
+  esac
+  local url="https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${arch}"
+  # Prefer system-wide cli-plugins dir; fall back to the user's.
+  for dest in /usr/local/lib/docker/cli-plugins "$HOME/.docker/cli-plugins"; do
+    local SU=""; [ "$dest" = "/usr/local/lib/docker/cli-plugins" ] && SU="$SUDO"
+    $SU mkdir -p "$dest" 2>/dev/null || continue
+    if $SU curl -fsSL "$url" -o "$dest/docker-compose" 2>/dev/null; then
+      $SU chmod +x "$dest/docker-compose"
+      docker compose version >/dev/null 2>&1 && return 0
+    fi
+  done
+  return 1
+}
+
+# ── 1) Prerequisite preflight ───────────────────────────────────────────────
+say "Checking prerequisites (detected OS: ${OS_NAME})"
 
 # Docker CLI
 if ! command -v docker >/dev/null 2>&1; then
-  warn "Docker n'est pas installé."
-  if ask "Installer Docker maintenant (script officiel get.docker.com)"; then
+  warn "Docker is not installed."
+  if ask "Install Docker now (official get.docker.com script)"; then
     if command -v curl >/dev/null 2>&1; then curl -fsSL https://get.docker.com | $SUDO sh
-    else pkg_install "docker.io" || die "Installation auto impossible — installez Docker manuellement."; fi
+    else pkg_install "docker.io" || die "Auto-install failed — please install Docker manually."; fi
   else
-    die "Docker est requis. Voir https://docs.docker.com/get-docker/"
+    die "Docker is required. See https://docs.docker.com/get-docker/"
   fi
 fi
-command -v docker >/dev/null 2>&1 && check_add "Docker CLI" ok || die "Docker introuvable après installation."
+command -v docker >/dev/null 2>&1 && check_add "Docker CLI" ok || die "Docker not found after install."
 
-# Démon Docker joignable + permissions
+# Docker daemon reachable + permissions
 if ! docker info >/dev/null 2>&1; then
-  warn "Le démon Docker ne répond pas (non démarré, ou permissions manquantes)."
-  if command -v systemctl >/dev/null 2>&1 && ask "Tenter de démarrer le service docker"; then
+  warn "Docker daemon not responding (not started, or missing permissions)."
+  if command -v systemctl >/dev/null 2>&1 && ask "Try to start the docker service"; then
     $SUDO systemctl enable --now docker || true
   fi
-  docker info >/dev/null 2>&1 || die "Démon Docker injoignable. Démarrez-le (sudo systemctl start docker) ou ajoutez votre user au groupe 'docker' (puis reconnectez-vous)."
+  docker info >/dev/null 2>&1 || die "Docker daemon unreachable. Start it (sudo systemctl start docker) or add your user to the 'docker' group (then re-login)."
 fi
-check_add "Démon Docker" ok
+check_add "Docker daemon" ok
 
 # docker compose v2
 if ! docker compose version >/dev/null 2>&1; then
-  warn "Le plugin 'docker compose' (v2) est absent."
-  if ask "Installer le plugin docker compose"; then
-    pkg_install "docker-compose-plugin" || warn "Installation auto impossible."
+  warn "The 'docker compose' v2 plugin is missing."
+  if ask "Install the docker compose plugin (official binary)"; then
+    install_compose_plugin || pkg_install "docker-compose-plugin" || true
   fi
-  docker compose version >/dev/null 2>&1 || die "Plugin 'docker compose' requis (https://docs.docker.com/compose/install/)."
+  docker compose version >/dev/null 2>&1 || die "'docker compose' v2 is required (https://docs.docker.com/compose/install/)."
 fi
 check_add "docker compose v2" ok
 
-# Espace disque (>= 2 Go conseillé pour build + images)
+# Disk space (>= 2 GB recommended for build + images)
 free_kb="$(df -Pk . | awk 'NR==2{print $4}')"
-if [ "${free_kb:-0}" -ge 2000000 ]; then check_add "Espace disque (≥2 Go)" ok
-else check_add "Espace disque (≥2 Go)" "warn:$(( free_kb/1024 )) Mo libres"; warn "Peu d'espace disque libre."; fi
+if [ "${free_kb:-0}" -ge 2000000 ]; then check_add "Disk space (>=2 GB)" ok
+else check_add "Disk space (>=2 GB)" "warn:$(( free_kb/1024 )) MB free"; warn "Low free disk space."; fi
 
-# Port hôte libre ?
+# Host port free?
 if (exec 3<>"/dev/tcp/127.0.0.1/${PORT}") 2>/dev/null; then
   exec 3>&- 3<&- 2>/dev/null || true
-  warn "Le port ${PORT} semble déjà utilisé (peut-être une instance existante)."
-  check_add "Port ${PORT} libre" "warn:occupé"
+  warn "Port ${PORT} seems already in use (maybe an existing instance)."
+  check_add "Port ${PORT} free" "warn:in use"
 else
-  check_add "Port ${PORT} libre" ok
+  check_add "Port ${PORT} free" ok
 fi
 
-# ── 2) Configuration minimale (.env) ───────────────────────────────────────────
+# ── 2) Minimal config (.env) ────────────────────────────────────────────────
 if [ ! -f .env ]; then
-  say "Création de .env depuis .env.example (MASTER_KEY générée au 1er démarrage dans ./data)"
+  say "Creating .env from .env.example (MASTER_KEY generated on first start in ./data)"
   cp .env.example .env
 fi
-check_add "Fichier .env" ok
-# Port hôte appliqué via override compose (sans éditer docker-compose.yml).
+check_add ".env file" ok
 export ITSM_HOST_PORT="$PORT"
 
-# ── 3) Image : bundle hors-ligne OU build depuis les sources ───────────────────
+# ── 3) Image: offline bundle OR build from source ─────────────────────────────
 IMAGE="${ITSM_IMAGE:-itsm-modern-ai-community:latest}"
 if [ -n "$BUNDLE" ]; then
-  [ -f "$BUNDLE" ] || die "Bundle introuvable : $BUNDLE"
-  say "Chargement de l'image depuis $BUNDLE (hors-ligne)"
+  [ -f "$BUNDLE" ] || die "Bundle not found: $BUNDLE"
+  say "Loading image from $BUNDLE (offline)"
   loaded="$(docker load -i "$BUNDLE" | sed -n 's/^Loaded image: //p' | head -1)"
   [ -n "$loaded" ] && IMAGE="$loaded"
   DO_BUILD=false
@@ -136,19 +167,19 @@ if [ "$DO_BUILD" = auto ]; then
 fi
 
 if [ "$DO_BUILD" = true ]; then
-  [ -f Dockerfile ] || die "Pas de Dockerfile (sources absentes) et image $IMAGE absente — fournissez --bundle."
-  say "Build de l'image puis démarrage"
-  docker compose up -d --build || die "Échec du build/démarrage (voir: docker compose logs)."
-  check_add "Image construite" ok
+  [ -f Dockerfile ] || die "No Dockerfile (sources missing) and image $IMAGE absent — provide --bundle."
+  say "Building image and starting"
+  docker compose up -d --build || die "Build/start failed (see: docker compose logs)."
+  check_add "Image built" ok
 else
-  docker image inspect "$IMAGE" >/dev/null 2>&1 || die "Image $IMAGE absente. Fournissez --bundle ou retirez --no-build."
-  say "Démarrage avec l'image $IMAGE (sans build)"
-  docker compose up -d || die "Échec du démarrage (voir: docker compose logs)."
-  check_add "Image présente ($IMAGE)" ok
+  docker image inspect "$IMAGE" >/dev/null 2>&1 || die "Image $IMAGE absent. Provide --bundle or drop --no-build."
+  say "Starting with image $IMAGE (no build)"
+  docker compose up -d || die "Start failed (see: docker compose logs)."
+  check_add "Image present ($IMAGE)" ok
 fi
 
-# ── 4) Attente que le moteur soit sain (migrations + API) ──────────────────────
-say "Attente du démarrage du moteur…"
+# ── 4) Wait until the engine is healthy (migrations + API) ─────────────────────
+say "Waiting for the engine to start…"
 cid="$(docker compose ps -q itsm 2>/dev/null || true)"
 st="starting"
 for _ in $(seq 1 "${HEALTH_TIMEOUT_TRIES:-150}"); do
@@ -156,32 +187,30 @@ for _ in $(seq 1 "${HEALTH_TIMEOUT_TRIES:-150}"); do
   [ "$st" = "healthy" ] && break
   sleep 2
 done
-[ "$st" = "healthy" ] && check_add "Conteneur healthy" ok || { check_add "Conteneur healthy" "fail:$st"; die "Le moteur n'est pas devenu sain (voir: docker compose logs)."; }
+[ "$st" = "healthy" ] && check_add "Container healthy" ok || { check_add "Container healthy" "fail:$st"; die "Engine did not become healthy (see: docker compose logs)."; }
 
-# ── 5) Compte administrateur ───────────────────────────────────────────────────
+# ── 5) Admin account ───────────────────────────────────────────────────────────
 admin_setup() {
   if [ -t 0 ]; then docker compose exec itsm python -m itsm_modern_ai.admin_setup "$@"
   elif [ -n "${ITSM_ADMIN_PASSWORD:-}" ]; then docker compose exec -T -e ITSM_ADMIN_PASSWORD itsm python -m itsm_modern_ai.admin_setup "$@"
-  else die "Pas de terminal interactif : définissez ITSM_ADMIN_PASSWORD pour une install non-interactive."; fi
+  else die "No interactive terminal: set ITSM_ADMIN_PASSWORD for a non-interactive install."; fi
 }
 if [ "$RESET" = true ]; then
-  say "Réinitialisation du mot de passe administrateur"; admin_setup --force
+  say "Resetting the administrator password"; admin_setup --force
 elif docker compose exec -T itsm python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1; then
-  say "Un mot de passe administrateur est déjà configuré — inchangé."
+  say "An administrator password is already configured — left unchanged."
 else
-  say "Création du compte administrateur"; admin_setup
+  say "Creating the administrator account"; admin_setup
 fi
 docker compose exec -T itsm python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1 \
-  && check_add "Mot de passe admin" ok || check_add "Mot de passe admin" "warn:non configuré"
+  && check_add "Admin password" ok || check_add "Admin password" "warn:not configured"
 
-# ── 6) Vérifs runtime ───────────────────────────────────────────────────────────
-# /health via le conteneur (pas de dépendance à curl sur l'hôte).
+# ── 6) Runtime checks ────────────────────────────────────────────────────────
 if docker compose exec -T itsm python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)" >/dev/null 2>&1; then
   check_add "API /health" ok
 else
   check_add "API /health" "fail"
 fi
-# Édition active (Community attendu en l'absence de licence).
 edition="$(docker compose exec -T itsm python -c "
 from datetime import date
 from itsm_modern_ai.config.settings import get_settings
@@ -194,9 +223,9 @@ with db.session_scope() as ss:
     cfg=RuntimeConfigService(ss,box,s)
     print(verify_license(cfg.get('license_key') or '', today=date.today()).edition)
 " 2>/dev/null | tr -d '\r')"
-check_add "Édition" "ok:${edition:-inconnue}"
+check_add "Edition" "ok:${edition:-unknown}"
 
-# ── Checklist finale ────────────────────────────────────────────────────────────
+# ── Final checklist ─────────────────────────────────────────────────────────────
 echo
 printf '%s──────── CHECKLIST ────────%s\n' "$c_cyan" "$c_off"
 allgood=true
@@ -211,9 +240,9 @@ for line in "${CHECKS[@]}"; do
 done
 echo
 if $allgood; then
-  printf '%s✅ Installation réussie — console : http://localhost:%s%s\n' "$c_grn" "$PORT" "$c_off"
-  echo "   Configurez GLPI, le fournisseur LLM et le périmètre dans l'interface."
-  echo "   Passer en Enterprise plus tard : ./upgrade-to-enterprise.sh \"<clé>\""
+  printf '%s✅ Installation successful — console: http://localhost:%s%s\n' "$c_grn" "$PORT" "$c_off"
+  echo "   Configure GLPI, the LLM provider and the scope from the web console."
+  echo "   Upgrade to Enterprise later: ./upgrade-to-enterprise.sh \"<key>\""
 else
-  die "Des vérifications ont échoué (voir ci-dessus)."
+  die "Some checks failed (see above)."
 fi
