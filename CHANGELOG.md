@@ -5,6 +5,24 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-31 — 0.8.12 — Audit 4 agents : honnêteté DPO + accessibilité
+
+Corrections suite à la revue multi-agents de la 0.8.11 :
+
+- **Honnêteté DPO (bloquant)** : la catégorie **« patterns regex personnalisés »** était
+  affichée *Actif/Masqué* en Enterprise alors qu'aucun motif n'est configurable (la capacité
+  `AdvancedPiiMasker.from_rules` existe mais n'est pas exposée). Elle passe en statut **« À
+  venir »** (scope `roadmap`, jamais active) dans la page, le rapport DPO et la doc — pour ne
+  pas tromper la DPO. NIR/SIRET reste réellement masqué.
+- **Accessibilité** : la jauge de la page Coûts reçoit `role="progressbar"` + `aria-valuenow/
+  min/max/valuetext` (la valeur du quota est désormais annoncée aux lecteurs d'écran).
+- **Cohérence démo** : rétention du mock alignée sur les vrais défauts (**365 j décisions /
+  90 j appels LLM**, au lieu de 30/30) ; catalogue Store de démo resynchronisé sur le vrai
+  catalogue (libellé **« Masquage PII avancé »** au lieu de « (NER) » — la NER n'est pas
+  implémentée — et features à venir marquées « (à venir) »).
+- NITs front : `CostQuotas` utilise `useLang()` (au lieu de détourner `t()`), `t()` redondant
+  retiré dans `Privacy`.
+
 ## 2026-05-31 — 0.8.11 — Console DPO + page Coûts & quotas
 
 - **Nouvelle page « Confidentialité (DPO) »** (`/privacy`) destinée à la DPO/RSSI :

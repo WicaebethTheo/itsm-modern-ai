@@ -38,7 +38,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.8.11";
+export const APP_VERSION = "0.8.12";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo MENEBOODE";
@@ -395,7 +395,7 @@ export interface PiiCategory {
   label_fr: string;
   label_en: string;
   example: string;
-  scope: "community" | "enterprise";
+  scope: "community" | "enterprise" | "roadmap"; // roadmap = capacité pas encore livrée
   active: boolean; // réellement masqué dans l'état courant
 }
 export interface PrivacyView {

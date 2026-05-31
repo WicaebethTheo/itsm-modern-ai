@@ -35,9 +35,13 @@ def test_privacy_community_split(client):
     # Community : email + phone masqués ; le reste = enterprise, inactif.
     assert cats["email"]["scope"] == "community" and cats["email"]["active"] is True
     assert cats["phone"]["active"] is True
-    for k in ("iban", "secret", "network", "nir_siret", "custom"):
+    for k in ("iban", "secret", "network", "nir_siret"):
         assert cats[k]["scope"] == "enterprise"
         assert cats[k]["active"] is False
+    # Patterns regex custom = capacité pas encore livrée → annoncée « roadmap », jamais active
+    # (honnêteté DPO : ne pas afficher « masqué » tant que from_rules n'est pas câblé).
+    assert cats["custom"]["scope"] == "roadmap"
+    assert cats["custom"]["active"] is False
     assert "retention_llm_calls_days" in body
 
 

@@ -74,7 +74,7 @@ export const demo: {
 } = {
   authStatus: { authenticated: true, auth_configured: false },
   info: {
-    version: "0.8.11",
+    version: "0.8.12",
     title: "ITSM Modern AI — moteur de triage (headless)",
     endpoints: [
       { path: "/health", methods: ["GET"] },
@@ -294,7 +294,7 @@ export const demo: {
     last_run_by: "scheduler",
   },
   version: {
-    current: "0.8.11",
+    current: "0.8.12",
     latest: null,
     update_available: false,
     check_enabled: false,
@@ -311,30 +311,36 @@ export const demo: {
     features: [
       {
         key: "pii_advanced",
-        label_fr: "Masquage avancé (NER)",
-        label_en: "Advanced masking (NER)",
-        description_fr: "Masque noms et adresses en plus des regex (reconnaissance d'entités).",
-        description_en: "Masks names and addresses on top of regexes (entity recognition).",
+        label_fr: "Masquage PII avancé",
+        label_en: "Advanced PII masking",
+        description_fr:
+          "Masquage des IBAN/cartes et des secrets (mots de passe, tokens, clés API), identifiants FR (NIR, SIRET), patterns regex personnalisés et règles par entité. En Community, seuls e-mail et téléphone sont masqués.",
+        description_en:
+          "Masking of IBANs/cards and secrets (passwords, tokens, API keys), French identifiers (NIR, SIRET), custom regex patterns and per-entity rules. In Community, only email and phone are masked.",
         installed: false,
         entitled: false,
         active: false,
       },
       {
         key: "multi_entity",
-        label_fr: "Multi-entités",
-        label_en: "Multi-entity",
-        description_fr: "Périmètres et règles de triage distincts par entité GLPI.",
-        description_en: "Separate triage scopes and rules per GLPI entity.",
+        label_fr: "Multi-entités avancé (à venir)",
+        label_en: "Advanced multi-entity (coming soon)",
+        description_fr:
+          "À VENIR. Gestion fine multi-entités : politiques de triage et seuils par entité, héritage hiérarchique, tableaux de bord par entité.",
+        description_en:
+          "COMING SOON. Fine-grained multi-entity management: per-entity triage policies and thresholds, hierarchical inheritance, per-entity dashboards.",
         installed: false,
         entitled: false,
         active: false,
       },
       {
         key: "scheduled_exports",
-        label_fr: "Exports planifiés",
-        label_en: "Scheduled exports",
-        description_fr: "Exports CSV/DPO programmés et envoyés automatiquement.",
-        description_en: "Scheduled CSV/DPO exports sent automatically.",
+        label_fr: "Exports planifiés / DPO+ (à venir)",
+        label_en: "Scheduled exports / DPO+ (coming soon)",
+        description_fr:
+          "À VENIR. Exports CSV planifiés (cron), rapports DPO enrichis et envois automatiques. L'export CSV manuel reste inclus en Community.",
+        description_en:
+          "COMING SOON. Scheduled CSV exports (cron), enriched DPO reports and automatic delivery. Manual CSV export remains included in Community.",
         installed: false,
         entitled: false,
         active: false,
@@ -344,8 +350,8 @@ export const demo: {
   // Démo : édition Community → email + téléphone masqués ; le reste = Enterprise (inactif).
   privacy: {
     edition_advanced: false,
-    retention_decisions_days: 30,
-    retention_llm_calls_days: 30,
+    retention_decisions_days: 365,
+    retention_llm_calls_days: 90,
     llm_calls_count: 1284,
     categories: [
       {
@@ -401,7 +407,7 @@ export const demo: {
         label_fr: "Motifs personnalisés (regex)",
         label_en: "Custom patterns (regex)",
         example: "TICKET-\\d{5}",
-        scope: "enterprise",
+        scope: "roadmap",
         active: false,
       },
     ],
