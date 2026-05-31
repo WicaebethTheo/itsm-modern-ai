@@ -51,7 +51,11 @@ def is_newer(latest: str | None, current: str) -> bool:
     if not latest:
         return False
     try:
-        return _parse(latest) > _parse(current)
+        a, b = _parse(latest), _parse(current)
+        n = max(len(a), len(b))  # pad pour comparer 1.0 et 1.0.0 sans faux positif
+        a += (0,) * (n - len(a))
+        b += (0,) * (n - len(b))
+        return a > b
     except Exception:  # pragma: no cover - défensif
         return False
 
