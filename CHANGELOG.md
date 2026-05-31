@@ -5,6 +5,27 @@ pas SemVer strictement (version d'app dans `pyproject.toml`, actuellement `0.7.0
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-31 — Open-core : édition Community + overlay Enterprise + licence
+
+Scission en deux éditions partageant la même base (architecture overlay) :
+
+- **Renommage** du dépôt en **édition Community** (le cœur, MIT). Conteneur/image Docker
+  renommés `itsm-modern-ai-community`.
+- **Système de licence** signé **Ed25519, vérifié 100 % hors-ligne** (zéro phone-home,
+  compatible air-gap) : `domain/licensing.py` (vérif + catalogue de features),
+  `services/license_service.py`, endpoint `/api/license` (Store), garde `require_feature`.
+  La clé **débloque** des features déjà installées — elle ne télécharge rien.
+- **Loader à plugins** (`plugins.py`, entry points `itsm_modern_ai.plugins`) : le core
+  découvre les modules Enterprise s'ils sont installés. Sur l'image Community, aucun n'est
+  installé → features payantes verrouillées même avec une licence valide (garantie de la
+  séparation : le code payant n'est pas livré).
+- **Page Store** (UI) : édition active, saisie/réinitialisation de clé, catalogue des
+  features (verrouillées « Enterprise » vs débloquées).
+- **Features Enterprise** (overlay privé, non livré ici) : masquage PII avancé
+  (NIR/SIRET/regex custom), multi-entités avancé, exports planifiés/DPO+. Le masquage de
+  base, les connecteurs GLPI (legacy + V2) et Postgres **restent en Community**.
+- Tests : **295 pytest · 64 vitest** (+ suite dédiée côté overlay Enterprise).
+
 ## 2026-05-30 — Audit multi-agents (6) : correctifs ops & frontend
 
 Seconde passe d'audit complet (backend, sécurité, frontend, devops, docs, live). Backend,

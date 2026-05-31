@@ -11,6 +11,7 @@ import type {
   EngineStatus,
   GlpiAccount,
   Health,
+  LicenseView,
   Metrics,
   OperationalView,
   RefItem,
@@ -63,6 +64,7 @@ export const demo: {
   retention: RetentionView;
   diagnostics: DebugDiagnostics;
   info: DebugInfo;
+  license: LicenseView;
 } = {
   authStatus: { authenticated: true, auth_configured: false },
   info: {
@@ -280,6 +282,47 @@ export const demo: {
     last_decisions_deleted: 12,
     last_llm_calls_deleted: 47,
     last_run_by: "scheduler",
+  },
+  // Démo : édition Community → tout le catalogue Enterprise est verrouillé.
+  license: {
+    edition: "community",
+    valid: true,
+    customer: null,
+    issued_at: null,
+    expires_at: null,
+    error: null,
+    features: [
+      {
+        key: "pii_advanced",
+        label_fr: "Masquage avancé (NER)",
+        label_en: "Advanced masking (NER)",
+        description_fr: "Masque noms et adresses en plus des regex (reconnaissance d'entités).",
+        description_en: "Masks names and addresses on top of regexes (entity recognition).",
+        installed: false,
+        entitled: false,
+        active: false,
+      },
+      {
+        key: "multi_entity",
+        label_fr: "Multi-entités",
+        label_en: "Multi-entity",
+        description_fr: "Périmètres et règles de triage distincts par entité GLPI.",
+        description_en: "Separate triage scopes and rules per GLPI entity.",
+        installed: false,
+        entitled: false,
+        active: false,
+      },
+      {
+        key: "scheduled_exports",
+        label_fr: "Exports planifiés",
+        label_en: "Scheduled exports",
+        description_fr: "Exports CSV/DPO programmés et envoyés automatiquement.",
+        description_en: "Scheduled CSV/DPO exports sent automatically.",
+        installed: false,
+        entitled: false,
+        active: false,
+      },
+    ],
   },
 };
 

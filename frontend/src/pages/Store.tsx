@@ -1,174 +1,203 @@
 import { Banner } from "@/components/Banner";
+import { LockedBadge } from "@/components/ui/LockedBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toast";
+import { useResource } from "@/hooks/useResource";
+import { Api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
-import { Check, KeyRound, Lock } from "lucide-react";
-import { useState } from "react";
-
-type Edition = "community" | "enterprise";
-
-// Catalogue de modules (vitrine open-core — pas encore actif côté serveur).
-// `community` = inclus dans l'édition libre ; `enterprise` = débloqué par licence.
-const MODULES: { fr: string; en: string; descFr: string; descEn: string; edition: Edition }[] = [
-  {
-    fr: "Multi-fournisseurs LLM",
-    en: "Multi LLM providers",
-    descFr: "Mistral EU, OpenAI, Ollama (local), Anthropic — clés chiffrées au repos.",
-    descEn: "Mistral EU, OpenAI, Ollama (local), Anthropic — keys encrypted at rest.",
-    edition: "community",
-  },
-  {
-    fr: "Journal & export DPO",
-    en: "Journal & DPO export",
-    descFr: "Journal des décisions annotable + export CSV (décisions, appels LLM).",
-    descEn: "Annotatable decision journal + CSV export (decisions, LLM calls).",
-    edition: "community",
-  },
-  {
-    fr: "Masquage avancé (NER)",
-    en: "Advanced masking (NER)",
-    descFr: "Masque noms et adresses en plus des regex (reconnaissance d'entités).",
-    descEn: "Masks names and addresses on top of regexes (entity recognition).",
-    edition: "enterprise",
-  },
-  {
-    fr: "Détection de doublons",
-    en: "Duplicate detection",
-    descFr: "Regroupe les tickets similaires / incidents de masse avant triage.",
-    descEn: "Groups similar tickets / mass incidents before triage.",
-    edition: "enterprise",
-  },
-  {
-    fr: "Connecteurs LLM additionnels",
-    en: "Additional LLM connectors",
-    descFr: "Gemini, OVH, Scaleway, vLLM… au-delà des 4 fournisseurs inclus.",
-    descEn: "Gemini, OVH, Scaleway, vLLM… beyond the 4 bundled providers.",
-    edition: "enterprise",
-  },
-  {
-    fr: "Connecteurs ITSM additionnels",
-    en: "Additional ITSM connectors",
-    descFr: "Au-delà de GLPI : autres outils de ticketing (extensions).",
-    descEn: "Beyond GLPI: other ticketing tools (extensions).",
-    edition: "enterprise",
-  },
-];
-
-const FILTERS: { value: "all" | Edition; fr: string; en: string }[] = [
-  { value: "all", fr: "Tout", en: "All" },
-  { value: "community", fr: "Communauté", en: "Community" },
-  { value: "enterprise", fr: "Entreprise", en: "Enterprise" },
-];
+import { Check } from "lucide-react";
+import { useCallback, useState } from "react";
 
 export function Store() {
   const t = useT();
-  const [filter, setFilter] = useState<"all" | Edition>("all");
-  const [license, setLicense] = useState("");
-  const [notice, setNotice] = useState(false);
+  const toast = useToast();
+  const license = useResource(useCallback(() => Api.getLicense(), []));
+  const [key, setKey] = useState("");
+  const [activating, setActivating] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
-  const shown = MODULES.filter((m) => filter === "all" || m.edition === filter);
+  const lic = license.data;
+  const isEnterprise = lic?.edition === "enterprise";
+  // Erreur de licence persistante (clé refusée par le backend → valid:false).
+  const invalidError = lic && !lic.valid ? lic.error : null;
+
+  async function activate() {
+    if (!key.trim()) return;
+    setActivating(true);
+    try {
+      const view = await Api.setLicense(key.trim());
+      license.reload();
+      if (view.valid) {
+        setKey("");
+        toast.success(t("Licence activée.", "License activated."));
+      } else {
+        // 200 avec valid:false : la clé est refusée, on garde l'erreur inline.
+        toast.error(
+          `${t("Clé refusée", "Key rejected")} : ${view.error ?? t("clé invalide", "invalid key")}`,
+        );
+      }
+    } catch (e: unknown) {
+      toast.error(`${t("Erreur", "Error")} : ${(e as Error).message}`);
+    } finally {
+      setActivating(false);
+    }
+  }
+
+  async function reset() {
+    if (
+      !window.confirm(
+        t(
+          "Réinitialiser la licence et revenir à l'édition Community ?",
+          "Reset the license and go back to the Community edition?",
+        ),
+      )
+    )
+      return;
+    setResetting(true);
+    try {
+      await Api.deleteLicense();
+      setKey("");
+      license.reload();
+      toast.success(t("Licence réinitialisée.", "License reset."));
+    } catch (e: unknown) {
+      toast.error(`${t("Erreur", "Error")} : ${(e as Error).message}`);
+    } finally {
+      setResetting(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
-      {/* Licence : déblocage de l'édition entreprise (hors-ligne, souverain). */}
+      {/* Bandeau d'édition : badge + client + expiration. */}
       <Card>
         <PanelHead
-          title={t("Licence", "License")}
+          title={t("Édition", "Edition")}
           subtitle={t(
-            "L'édition entreprise se débloque avec une clé — hors-ligne, aucune donnée ne sort.",
-            "The enterprise edition unlocks with a key — offline, no data leaves.",
+            "Open-core : l'édition Enterprise se débloque avec une clé — hors-ligne, aucune donnée ne sort.",
+            "Open-core: the Enterprise edition unlocks with a key — offline, no data leaves.",
           )}
           right={
-            <Tag tone="muted">
-              <Check className="h-3 w-3" />
-              {t("Édition Communauté", "Community edition")}
-            </Tag>
+            isEnterprise ? (
+              <Tag tone="indigo">
+                <Check className="h-3 w-3" />
+                Enterprise
+              </Tag>
+            ) : (
+              <Tag tone="muted">Community</Tag>
+            )
           }
         />
-        <CardContent className="flex flex-col gap-3 p-5">
-          {notice && (
-            <Banner kind="info">
+        <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 p-5 text-[12.5px]">
+          {lic?.customer ? (
+            <span>
+              <span className="text-muted-foreground">{t("Client", "Customer")} : </span>
+              <span className="font-medium">{lic.customer}</span>
+            </span>
+          ) : null}
+          {lic?.expires_at ? (
+            <span>
+              <span className="text-muted-foreground">{t("Expire le", "Expires on")} : </span>
+              <span className="font-medium">{lic.expires_at}</span>
+            </span>
+          ) : null}
+          {lic?.issued_at ? (
+            <span>
+              <span className="text-muted-foreground">{t("Émise le", "Issued on")} : </span>
+              <span className="font-medium">{lic.issued_at}</span>
+            </span>
+          ) : null}
+          {!isEnterprise && !lic?.customer ? (
+            <span className="text-muted-foreground">
               {t(
-                "La version entreprise arrive — la validation de licence sera disponible bientôt.",
-                "The enterprise version is coming — license validation will be available soon.",
+                "Édition Community — aucune licence active.",
+                "Community edition — no active license.",
               )}
-            </Banner>
+            </span>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {/* Activation de licence. */}
+      <Card>
+        <PanelHead
+          title={t("Activer une licence", "Activate a license")}
+          subtitle={t(
+            "Collez le jeton fourni à la livraison de votre licence Enterprise.",
+            "Paste the token provided with your Enterprise license.",
           )}
-          <div className="flex items-end gap-2">
-            <div className="relative flex-1">
-              <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={license}
-                placeholder={t("Coller la clé de licence…", "Paste the license key…")}
-                className="pl-9 font-mono"
-                onChange={(e) => setLicense(e.target.value)}
-              />
-            </div>
-            <Button onClick={() => setNotice(true)}>{t("Activer", "Activate")}</Button>
+        />
+        <CardContent className="flex flex-col gap-3 p-5">
+          {invalidError ? (
+            <Banner kind="error">
+              {t("Licence invalide", "Invalid license")} : {invalidError}
+            </Banner>
+          ) : null}
+          <Textarea
+            value={key}
+            placeholder={t("Coller le jeton de licence…", "Paste the license token…")}
+            className="min-h-24 font-mono text-[12px]"
+            onChange={(e) => setKey(e.target.value)}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={activate} disabled={activating || !key.trim()}>
+              {activating ? t("Activation…", "Activating…") : t("Activer", "Activate")}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={reset}
+              disabled={resetting || (!isEnterprise && !invalidError)}
+            >
+              {resetting ? t("Réinitialisation…", "Resetting…") : t("Réinitialiser", "Reset")}
+            </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Filtre Communauté / Entreprise. */}
-      <div className="inline-flex items-center gap-1 rounded-md border border-border bg-card p-1 text-[12.5px]">
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            onClick={() => setFilter(f.value)}
-            className={cn(
-              "rounded px-3 py-1 transition-colors",
-              filter === f.value
-                ? "bg-primary/15 text-accent-indigo"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground",
-            )}
-          >
-            {t(f.fr, f.en)}
-          </button>
-        ))}
-      </div>
-
-      {/* Catalogue. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {shown.map((m) => {
-          const pro = m.edition === "enterprise";
-          return (
-            <Card key={m.en} className="flex flex-col p-4">
+      {/* Catalogue des fonctionnalités Enterprise. */}
+      <Card>
+        <PanelHead
+          title={t("Fonctionnalités Enterprise", "Enterprise features")}
+          subtitle={t(
+            "Modules débloqués par licence et présents dans l'image.",
+            "Modules unlocked by license and present in the image.",
+          )}
+        />
+        <CardContent className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
+          {(lic?.features ?? []).map((f) => (
+            <div
+              key={f.key}
+              className="flex flex-col rounded-md border border-border bg-muted/20 p-4"
+            >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[13px] font-medium">{t(m.fr, m.en)}</span>
-                {pro ? (
-                  <Tag tone="indigo">Entreprise</Tag>
-                ) : (
+                <span className="text-[13px] font-medium">{t(f.label_fr, f.label_en)}</span>
+                {f.active ? (
                   <Tag tone="green">
                     <Check className="h-3 w-3" />
-                    {t("Inclus", "Included")}
+                    {t("Débloqué", "Unlocked")}
                   </Tag>
-                )}
-              </div>
-              <div className="mt-1 mb-3 flex-1 text-[12px] leading-relaxed text-muted-foreground">
-                {t(m.descFr, m.descEn)}
-              </div>
-              <div className="flex items-center justify-end">
-                {pro ? (
-                  <Button size="sm" variant="outline" disabled>
-                    <Lock className="h-3.5 w-3.5" />
-                    {t("Licence requise", "License required")}
-                  </Button>
                 ) : (
-                  <Button size="sm" variant="ghost" disabled>
-                    <Check className="h-3.5 w-3.5" />
-                    {t("Actif", "Active")}
-                  </Button>
+                  <LockedBadge />
                 )}
               </div>
-            </Card>
-          );
-        })}
-      </div>
+              <p className="mt-1 flex-1 text-[12px] leading-relaxed text-muted-foreground">
+                {t(f.description_fr, f.description_en)}
+              </p>
+              {!f.active ? (
+                <p className="mt-2 text-[11px] text-muted-foreground/80">
+                  {t(
+                    "Passez en édition Enterprise pour débloquer.",
+                    "Switch to the Enterprise edition to unlock.",
+                  )}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -112,6 +112,7 @@ Détails : [`SECURITY.md`](SECURITY.md) (politique de divulgation) · [`docs/dpo
 | [`docs/llm-providers.md`](docs/llm-providers.md) | 4 fournisseurs LLM + souveraineté |
 | [`docs/glpi-api-v2.md`](docs/glpi-api-v2.md) | Connecteur GLPI API V2 (OAuth2, GLPI 11) — **Beta** |
 | [`docs/postgresql.md`](docs/postgresql.md) | Portage PostgreSQL (driver, pool, compose) — **Beta** |
+| [`docs/enterprise-upgrade.md`](docs/enterprise-upgrade.md) | Passer en édition Enterprise sans rien perdre (open-core) |
 | [`docs/api.md`](docs/api.md) | Référence des endpoints REST |
 | [`docs/testing.md`](docs/testing.md) | Suites de tests + CI |
 | [`docs/install.md`](docs/install.md) | Installation on-prem en ½ page |
@@ -124,6 +125,14 @@ Détails : [`SECURITY.md`](SECURITY.md) (politique de divulgation) · [`docs/dpo
 | [`SECURITY.md`](SECURITY.md) | Politique de sécurité et divulgation |
 
 ---
+
+## Éditions (open-core)
+
+Ce dépôt est l'**édition Community** (le cœur, MIT) : triage à garde-fous, connecteurs GLPI **legacy + V2**, PostgreSQL, masquage PII de base, modes par entité. Tout est fonctionnel et gratuit.
+
+L'**édition Enterprise** ajoute, par-dessus la même base, des fonctionnalités payantes débloquées par une **clé de licence signée (Ed25519, vérifiée hors-ligne — zéro phone-home, compatible air-gap)** : masquage PII avancé (NIR/SIRET, regex custom), multi-entités avancé, exports planifiés / DPO+. Ces options apparaissent dans la console (page **Store**) mais restent **verrouillées** sans licence — leur code n'est pas livré dans l'édition Community (garantie de séparation).
+
+**Passer en Enterprise** sans rien perdre (même `./data`, swap d'image + licence) : [`docs/enterprise-upgrade.md`](docs/enterprise-upgrade.md) ou `./upgrade-to-enterprise.sh`.
 
 ## Licence
 
