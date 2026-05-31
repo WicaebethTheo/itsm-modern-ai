@@ -76,28 +76,28 @@ FEATURE_CATALOG: tuple[FeatureSpec, ...] = (
     ),
     FeatureSpec(
         key=FEATURE_MULTI_ENTITY,
-        label_fr="Multi-entités avancé",
-        label_en="Advanced multi-entity",
+        label_fr="Multi-entités avancé (à venir)",
+        label_en="Advanced multi-entity (coming soon)",
         description_fr=(
-            "Gestion fine multi-entités : politiques de triage et seuils par entité, "
-            "héritage hiérarchique, tableaux de bord par entité."
+            "À VENIR. Gestion fine multi-entités : politiques de triage et seuils par "
+            "entité, héritage hiérarchique, tableaux de bord par entité."
         ),
         description_en=(
-            "Fine-grained multi-entity management: per-entity triage policies and "
-            "thresholds, hierarchical inheritance, per-entity dashboards."
+            "COMING SOON. Fine-grained multi-entity management: per-entity triage "
+            "policies and thresholds, hierarchical inheritance, per-entity dashboards."
         ),
     ),
     FeatureSpec(
         key=FEATURE_SCHEDULED_EXPORTS,
-        label_fr="Exports planifiés / DPO+",
-        label_en="Scheduled exports / DPO+",
+        label_fr="Exports planifiés / DPO+ (à venir)",
+        label_en="Scheduled exports / DPO+ (coming soon)",
         description_fr=(
-            "Exports CSV planifiés (cron), rapports DPO enrichis et envois automatiques. "
-            "L'export CSV manuel reste inclus en Community."
+            "À VENIR. Exports CSV planifiés (cron), rapports DPO enrichis et envois "
+            "automatiques. L'export CSV manuel reste inclus en Community."
         ),
         description_en=(
-            "Scheduled CSV exports (cron), enriched DPO reports and automated delivery. "
-            "Manual CSV export stays in Community."
+            "COMING SOON. Scheduled CSV exports (cron), enriched DPO reports and "
+            "automated delivery. Manual CSV export stays in Community."
         ),
     ),
 )

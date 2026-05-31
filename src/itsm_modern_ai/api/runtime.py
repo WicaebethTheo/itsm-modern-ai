@@ -136,10 +136,14 @@ def build_triage_service(
         from ..plugins import build_registry
         from ..services.license_service import LicenseService
 
+        _registry = build_registry()
         pii_advanced = (
-            FEATURE_PII_ADVANCED in build_registry().installed_features()
+            FEATURE_PII_ADVANCED in _registry.installed_features()
             and LicenseService(cfg).has_feature(FEATURE_PII_ADVANCED)
         )
+        # Provider Enterprise (masquage avancé NIR/SIRET/regex) appliqué après le masque
+        # de base — None en Community (ou licence absente).
+        advanced_masker = _registry.provider(FEATURE_PII_ADVANCED) if pii_advanced else None
         mask_flags = {
             "email": cfg.get_bool("mask_email", settings.mask_email),
             "phone": cfg.get_bool("mask_phone", settings.mask_phone),
@@ -164,6 +168,7 @@ def build_triage_service(
         default_mode=default_mode,
         auto_min_confidence=auto_min_confidence,
         mask_flags=mask_flags,
+        advanced_masker=advanced_masker,
         glpi_base_url=glpi_base_url,
         confidence_threshold=confidence_threshold,
         cost_cap_eur_per_day=cost_cap_eur_per_day,

@@ -5,28 +5,36 @@
 
 ## Promesse exacte
 
-**Secrets et coordonnées masqués + traçabilité complète.**
-Ce **n'est pas** une « anonymisation ». Voir la portée du masquage ci-dessous.
+**Coordonnées masquées avant l'appel LLM — la portée DÉPEND DE L'ÉDITION.** Ce **n'est pas**
+une « anonymisation ». Lisez attentivement le périmètre par édition ci-dessous.
 
 ## Portée du masquage (à lire attentivement)
 
-Avant **tout** appel au LLM, le système masque dans le contenu du ticket (FR-14) :
+Le masquage (FR-14) repose sur des **expressions régulières** (heuristiques) et **diffère selon
+l'édition** (open-core) :
 
+**Édition Community (gratuite)** — masque uniquement :
 - adresses **email** → `[EMAIL]` ;
-- numéros de **téléphone** (FR **et international E.164**, durcissement audit 2026-05) → `[PHONE]` ;
-- **IBAN** → `[IBAN]` ;
-- **cartes bancaires** (16 chiffres, **validation Luhn** anti faux positifs) → `[CARD]` ;
-- **adresses IP** (IPv4) et **adresses MAC** → `[IP]` / `[MAC]` ;
-- **mots de passe / tokens** (motifs) et **clés cloud** (AWS `AKIA…`, Google `AIza…`) → `[SECRET]` / `[CLOUD_KEY]`.
+- numéros de **téléphone** (FR et international E.164) → `[PHONE]`.
 
-> Les motifs **CB / IP / MAC / téléphone international / clés cloud** ont été ajoutés lors du durcissement **audit 2026-05** (`domain/masking.py`). De plus, en modes `semi_auto`/`full_auto`, le **brouillon généré par le LLM est re-masqué** avant toute publication publique au demandeur.
+> ⚠️ **En Community, les IBAN, cartes bancaires, IP/MAC, mots de passe / tokens / clés API
+> NE sont PAS masqués** : ils sont transmis **EN CLAIR** au LLM **et** conservés en clair dans
+> le journal des appels (table `llm_calls`). **À porter explicitement à la connaissance de la
+> DPO** avant toute mise en production avec des données réelles.
 
-Le masquage repose sur des **expressions régulières** (heuristiques). En V1, il **NE masque PAS** :
+**Édition Enterprise (licence)** — ajoute le masquage de :
+- **IBAN** → `[IBAN]`, **cartes bancaires** (validation Luhn) → `[CARD]` ;
+- **adresses IP** (IPv4) / **MAC** → `[IP]` / `[MAC]` ;
+- **mots de passe / tokens** et **clés cloud** (AWS `AKIA…`, Google `AIza…`) → `[SECRET]` / `[CLOUD_KEY]` ;
+- identifiants FR **NIR / SIRET** → `[NIR]` / `[SIRET]` et **patterns regex personnalisés**.
 
-- les **noms de personnes** ;
-- les **adresses** postales.
+> En modes `semi_auto`/`full_auto`, le **brouillon généré par le LLM est re-masqué** (selon
+> l'édition) avant toute publication publique au demandeur.
 
-La reconnaissance d'entités nommées (NER) qui couvrirait noms et adresses est prévue en **V2**. Des données nominatives peuvent donc apparaître en clair dans le contenu transmis au LLM (ex. le nom d'un agent cité dans un ticket). À communiquer tel quel : la promesse est « secrets et coordonnées masqués », **pas** « aucune donnée nominative ».
+Dans **toutes** les éditions, le masquage **NE masque PAS** les **noms de personnes** ni les
+**adresses postales** (reconnaissance d'entités nommées non implémentée). Des données
+nominatives peuvent donc apparaître en clair dans le contenu transmis au LLM. La promesse est
+« coordonnées masquées selon l'édition », **pas** « aucune donnée nominative ».
 
 ## Résidence des données
 
