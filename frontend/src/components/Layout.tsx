@@ -3,7 +3,7 @@ import { LangToggle } from "@/components/LangToggle";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useResource } from "@/hooks/useResource";
-import { APP_VERSION, Api, GITHUB_URL } from "@/lib/api";
+import { Api, GITHUB_URL } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { type IconName, NAV, navByPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
@@ -201,7 +201,7 @@ export function Layout() {
             ) : null}
             <div className="flex items-center gap-2">
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
-              {t(`Moteur en marche · v${APP_VERSION}`, `Engine running · v${APP_VERSION}`)}
+              {t("Moteur en marche", "Engine running")}
             </div>
           </div>
         </aside>
