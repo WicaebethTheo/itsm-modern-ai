@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     system_prompt: str = ""
     system_prompt_max_chars: int = 8000  # garde-fou de longueur
 
+    # Licence Enterprise (open-core). Jeton signé Ed25519, vérifié HORS-LIGNE (zéro
+    # phone-home). Vide = édition Community. Normalement saisi via l'UI (Store) et stocké
+    # en base ; l'env LICENSE_KEY permet de pré-licencier une image (ex. build Enterprise).
+    license_key: str = ""
+
     # UI web (Phase 2) : SPA React buildée servie en statique.
     frontend_dist: str = "frontend/dist"
 

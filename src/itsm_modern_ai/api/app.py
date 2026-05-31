@@ -120,6 +120,12 @@ async def lifespan(app: FastAPI):
     app.state.secrets_box = make_secrets_box(settings)
     app.state.whitelist_cache = WhitelistCache()
 
+    # Open-core : découverte des plugins Enterprise installés (entry points). Sur l'image
+    # Community, aucun plugin → toutes les features payantes restent verrouillées.
+    from ..plugins import build_registry
+
+    app.state.plugin_registry = build_registry()
+
     # Intervalle initial depuis la config runtime (modifiable à chaud via /api/config).
     from ..services.runtime_config import RuntimeConfigService
 
@@ -174,6 +180,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .routes import glpi as glpi_routes
     from .routes import health as health_routes
     from .routes import insights as insights_routes
+    from .routes import license as license_routes
     from .routes import referentials as referentials_routes
     from .routes import sandbox as sandbox_routes
     from .routes import status as status_routes
@@ -239,6 +246,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(glpi_routes.router)
     app.include_router(debug_routes.router)
     app.include_router(automations_routes.router)
+    app.include_router(license_routes.router)
 
     # Observabilité : métriques Prometheus d'infra à GET /metrics (NON authentifié,
     # scrape interne). Branché AVANT le catch-all SPA pour que /metrics ne soit pas

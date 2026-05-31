@@ -351,6 +351,31 @@ export interface SandboxResult {
   draft: string | null;
 }
 
+// ── Licence Enterprise (open-core) ───────────────────────────────────────────
+
+export type LicenseEdition = "community" | "enterprise";
+
+export interface LicenseFeature {
+  key: string; // "pii_advanced" | "multi_entity" | "scheduled_exports"
+  label_fr: string;
+  label_en: string;
+  description_fr: string;
+  description_en: string;
+  installed: boolean; // code présent dans l'image (Enterprise)
+  entitled: boolean; // autorisé par la licence
+  active: boolean; // installed && entitled (= réellement débloqué)
+}
+
+export interface LicenseView {
+  edition: LicenseEdition;
+  valid: boolean;
+  customer: string | null;
+  issued_at: string | null; // "YYYY-MM-DD"
+  expires_at: string | null; // "YYYY-MM-DD"
+  error: string | null; // raison si invalide (ex. "licence expirée", "signature invalide")
+  features: LicenseFeature[];
+}
+
 /** Mode démo : l'app est servie sous /demo → toutes les données sont simulées. */
 export const DEMO =
   typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "").startsWith("/demo");
@@ -374,6 +399,12 @@ export const Api = {
     DEMO ? ok(demo.config) : api.post<ConfigView>("/api/config", body),
   glpiWhoami: () => (DEMO ? ok(demo.glpiAccount) : api.get<GlpiAccount>("/api/glpi/whoami")),
   resetGlpi: () => (DEMO ? ok({ ok: true }) : api.post<{ ok: boolean }>("/api/glpi/reset")),
+
+  // Licence Enterprise (open-core) — activation/réinitialisation hors-ligne.
+  getLicense: () => (DEMO ? ok(demo.license) : api.get<LicenseView>("/api/license")),
+  setLicense: (key: string) =>
+    DEMO ? ok(demo.license) : api.post<LicenseView>("/api/license", { key }),
+  deleteLicense: () => (DEMO ? ok(demo.license) : api.del<LicenseView>("/api/license")),
 
   // Référentiels GLPI : scan + découverte + sélection du périmètre.
   syncGlpi: () =>
