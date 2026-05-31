@@ -5,6 +5,23 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-31 — 0.8.11 — Console DPO + page Coûts & quotas
+
+- **Nouvelle page « Confidentialité (DPO) »** (`/privacy`) destinée à la DPO/RSSI :
+  tableau des catégories PII avec leur statut **réel par édition** (email + téléphone
+  masqués en Community ; IBAN/cartes, secrets/tokens/clés API, IP/MAC, NIR/SIRET et
+  patterns regex custom **verrouillés · Enterprise**), bandeau d'avertissement honnête en
+  Community (ces motifs transitent et sont journalisés **en clair**), **outil « Tester le
+  masquage »** (applique le masquage réel à un texte), lien vers le journal `llm_calls`,
+  rappel des durées de rétention, et **export d'un rapport DPO** (`GET /api/privacy/report.md`).
+- **Nouvelle page « Coûts & quotas »** (`/cost`) : dépense LLM des dernières 24 h vs plafond
+  journalier glissant (jauge colorée + alerte de dépassement), nombre d'appels journalisés
+  et tarifs configurés. Lecture seule (le plafond se règle dans « Moteur »).
+- **Backend** : routes `GET /api/privacy`, `POST /api/privacy/test-mask`,
+  `GET /api/privacy/report.md`, `GET /api/cost` (protégées par l'auth locale).
+- **Cohérence masquage** : le masquage **IP/MAC** suit désormais un flag `network` dédié
+  (gaté Enterprise comme dans la fiche DPO), au lieu d'être couplé au flag `phone`.
+
 ## 2026-05-31 — 0.8.10 — Audit 4 agents : câblage pii_advanced + honnêteté docs
 
 - **pii_advanced CÂBLÉ** : le masquage avancé (NIR/SIRET + regex custom) est désormais

@@ -149,7 +149,10 @@ def test_extended_patterns_idempotent():
 
 def test_card_and_ip_follow_toggles():
     text = "carte 4242 4242 4242 4242 ip 192.168.1.10"
-    # iban=False désactive aussi la carte (donnée bancaire) ; phone=False l'IP.
-    r = masking.mask(text, iban=False, phone=False)
+    # iban=False désactive aussi la carte (donnée bancaire) ; network=False l'IP/MAC.
+    r = masking.mask(text, iban=False, network=False)
     assert "4242 4242 4242 4242" in r.text
     assert "192.168.1.10" in r.text
+    # IP/MAC suivent désormais `network` (et plus `phone`).
+    r2 = masking.mask(text, phone=False, network=True)
+    assert "[IP]" in r2.text

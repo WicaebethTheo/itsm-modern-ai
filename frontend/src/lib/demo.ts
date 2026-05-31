@@ -5,6 +5,7 @@
 import type {
   AuthStatus,
   ConfigView,
+  CostView,
   DebugDiagnostics,
   DebugInfo,
   DecisionEntry,
@@ -14,6 +15,7 @@ import type {
   LicenseView,
   Metrics,
   OperationalView,
+  PrivacyView,
   RefItem,
   RetentionView,
   Scope,
@@ -67,10 +69,12 @@ export const demo: {
   info: DebugInfo;
   license: LicenseView;
   version: VersionInfo;
+  privacy: PrivacyView;
+  cost: CostView;
 } = {
   authStatus: { authenticated: true, auth_configured: false },
   info: {
-    version: "0.8.10",
+    version: "0.8.11",
     title: "ITSM Modern AI — moteur de triage (headless)",
     endpoints: [
       { path: "/health", methods: ["GET"] },
@@ -88,6 +92,10 @@ export const demo: {
       { path: "/api/export/decisions.csv", methods: ["GET"] },
       { path: "/api/sandbox", methods: ["POST"] },
       { path: "/api/auth/login", methods: ["POST"] },
+      { path: "/api/privacy", methods: ["GET"] },
+      { path: "/api/privacy/test-mask", methods: ["POST"] },
+      { path: "/api/privacy/report.md", methods: ["GET"] },
+      { path: "/api/cost", methods: ["GET"] },
     ],
   },
   diagnostics: {
@@ -286,7 +294,7 @@ export const demo: {
     last_run_by: "scheduler",
   },
   version: {
-    current: "0.8.10",
+    current: "0.8.11",
     latest: null,
     update_available: false,
     check_enabled: false,
@@ -332,6 +340,81 @@ export const demo: {
         active: false,
       },
     ],
+  },
+  // Démo : édition Community → email + téléphone masqués ; le reste = Enterprise (inactif).
+  privacy: {
+    edition_advanced: false,
+    retention_decisions_days: 30,
+    retention_llm_calls_days: 30,
+    llm_calls_count: 1284,
+    categories: [
+      {
+        key: "email",
+        label_fr: "Adresses e-mail",
+        label_en: "Email addresses",
+        example: "alice@acme.com",
+        scope: "community",
+        active: true,
+      },
+      {
+        key: "phone",
+        label_fr: "Numéros de téléphone",
+        label_en: "Phone numbers",
+        example: "+33 6 12 34 56 78",
+        scope: "community",
+        active: true,
+      },
+      {
+        key: "iban",
+        label_fr: "IBAN & cartes de paiement",
+        label_en: "IBAN & payment cards",
+        example: "FR76 3000 4000 …",
+        scope: "enterprise",
+        active: false,
+      },
+      {
+        key: "secret",
+        label_fr: "Secrets, tokens, mots de passe, clés API",
+        label_en: "Secrets, tokens, passwords, API keys",
+        example: "sk-•••••, Bearer •••",
+        scope: "enterprise",
+        active: false,
+      },
+      {
+        key: "network",
+        label_fr: "IP & MAC",
+        label_en: "IP & MAC",
+        example: "10.0.1.42, a4:5e:60:…",
+        scope: "enterprise",
+        active: false,
+      },
+      {
+        key: "nir_siret",
+        label_fr: "NIR / SIRET",
+        label_en: "NIR / SIRET",
+        example: "1 85 12 …, 552 120 …",
+        scope: "enterprise",
+        active: false,
+      },
+      {
+        key: "custom",
+        label_fr: "Motifs personnalisés (regex)",
+        label_en: "Custom patterns (regex)",
+        example: "TICKET-\\d{5}",
+        scope: "enterprise",
+        active: false,
+      },
+    ],
+  },
+  cost: {
+    cost_cap_eur_per_day: 5,
+    spent_eur_last_24h: 1.83,
+    pct_of_cap: 36.6,
+    over_cap: false,
+    llm_calls_total: 1284,
+    price_input_per_mtok: 0.15,
+    price_output_per_mtok: 0.6,
+    currency: "EUR",
   },
 };
 

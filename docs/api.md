@@ -70,6 +70,15 @@ Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `
 | `/api/automations/retention` | `PATCH` | Modifie la rétention (activation, fenêtres, heure UTC). |
 | `/api/automations/retention/run` | `POST` | Déclenche une purge manuelle (`confirm: "PURGER"`). |
 
+## Confidentialité (DPO) & coûts
+
+| Endpoint | Méthode | Description |
+|---|---|---|
+| `/api/privacy` | `GET` | État du masquage PII : catégories + statut effectif par édition, rétentions, nombre d'appels LLM. |
+| `/api/privacy/test-mask` | `POST` | Applique le masquage **réel** (état + édition courants) à un texte (`{ "text": "…" }`). |
+| `/api/privacy/report.md` | `GET` | Rapport DPO téléchargeable (Markdown) : édition, catégories masquées, rétention. |
+| `/api/cost` | `GET` | Dépense LLM 24 h vs plafond journalier glissant, ratio, nombre d'appels et tarifs configurés. |
+
 ## Debug (gatés par `DEBUG_TOOLS_ENABLED`)
 
 | Endpoint | Méthode | Description |

@@ -149,6 +149,8 @@ def build_triage_service(
             "phone": cfg.get_bool("mask_phone", settings.mask_phone),
             "iban": pii_advanced and cfg.get_bool("mask_iban", settings.mask_iban),
             "secret": pii_advanced and cfg.get_bool("mask_secret", settings.mask_secret),
+            # IP/MAC : Enterprise aussi (pas de toggle dédié — suit pii_advanced).
+            "network": pii_advanced,
         }
         # URL GLPI résolue runtime (UI > .env) : sinon le lien du Journal resterait figé à ""
         # quand GLPI est configuré via l'UI et non dans .env.
