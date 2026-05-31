@@ -1,3 +1,3 @@
 """ITSM Modern AI — moteur de triage de tickets GLPI à garde-fous."""
 
-__version__ = "0.8.1"
+__version__ = "0.8.2"
