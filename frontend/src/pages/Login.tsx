@@ -1,11 +1,11 @@
 import { Banner } from "@/components/Banner";
+import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
 import { Api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { ShieldCheck } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -43,7 +43,7 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
-          <ShieldCheck className="mx-auto h-7 w-7 text-primary" />
+          <Logo className="mx-auto h-7 w-7" />
           <CardTitle className="text-base">ITSM Modern AI</CardTitle>
           <p className="text-sm text-muted-foreground">
             {t("Console d'administration", "Admin console")}

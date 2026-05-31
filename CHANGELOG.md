@@ -5,6 +5,11 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-31 — 0.8.8 — Logo « nœud de décision » (login + sidebar)
+
+- Logo unifié sur le favicon (page de connexion + en-tête sidebar) ; remplace le « M »
+  montagne et l'icône bouclier du login.
+
 ## 2026-05-31 — 0.8.7 — Nouveau favicon
 
 - Favicon « nœud de décision » (le LLM propose → le code décide), charte indigo.
