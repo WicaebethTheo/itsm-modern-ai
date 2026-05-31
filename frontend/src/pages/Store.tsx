@@ -7,18 +7,31 @@ import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
-import { Api } from "@/lib/api";
+import { Api, GITHUB_URL } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Check } from "lucide-react";
 import { useCallback, useState } from "react";
+
+const UPDATE_CMD = "./install.sh --update";
 
 export function Store() {
   const t = useT();
   const toast = useToast();
   const license = useResource(useCallback(() => Api.getLicense(), []));
+  const version = useResource(useCallback(() => Api.version(), []));
+  const ver = version.data;
   const [key, setKey] = useState("");
   const [activating, setActivating] = useState(false);
   const [resetting, setResetting] = useState(false);
+
+  async function copyUpdateCmd() {
+    try {
+      await navigator.clipboard.writeText(UPDATE_CMD);
+      toast.success(t("Commande copiée.", "Command copied."));
+    } catch {
+      toast.error(t("Copie impossible — copiez manuellement.", "Copy failed — copy manually."));
+    }
+  }
 
   const lic = license.data;
   const features = lic?.features ?? [];
@@ -118,6 +131,44 @@ export function Store() {
           ) : null}
         </CardContent>
       </Card>
+
+      {/* Mise à jour disponible : notes + commande à lancer sur l'hôte (zéro action
+          privilégiée dans l'app — l'admin copie/colle la commande). */}
+      {ver?.update_available ? (
+        <Card>
+          <PanelHead
+            title={t(`Mise à jour disponible : v${ver.latest}`, `Update available: v${ver.latest}`)}
+            subtitle={t(
+              "À lancer sur l'hôte du déploiement — la configuration et les données sont conservées.",
+              "Run on the deployment host — configuration and data are preserved.",
+            )}
+            right={<Tag tone="indigo">↑ v{ver.latest}</Tag>}
+          />
+          <CardContent className="flex flex-col gap-3 p-5">
+            {ver.latest_notes ? (
+              <div className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/20 p-3 text-[12px] leading-relaxed text-muted-foreground">
+                {ver.latest_notes}
+              </div>
+            ) : null}
+            <div className="flex items-center gap-2">
+              <pre className="flex-1 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-[12px]">
+                {UPDATE_CMD}
+              </pre>
+              <Button variant="outline" onClick={copyUpdateCmd}>
+                {t("Copier", "Copy")}
+              </Button>
+            </div>
+            <a
+              href={`${GITHUB_URL}/releases`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[12px] text-accent-indigo hover:underline"
+            >
+              {t("Voir toutes les notes de version", "View all release notes")}
+            </a>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {enterpriseImage ? (
         /* Image Enterprise : activation de licence par clé. */

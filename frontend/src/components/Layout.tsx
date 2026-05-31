@@ -58,6 +58,9 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
   const g = health.data?.glpi;
   const version = useResource(useCallback(() => Api.version(), []));
   const v = version.data;
+  const license = useResource(useCallback(() => Api.getLicense(), []));
+  // Édition = Enterprise uniquement si une feature est réellement active (cohérent Store).
+  const isEnterprise = (license.data?.features ?? []).some((f) => f.active);
   // Re-vérifie périodiquement (page ouverte) → l'indicateur de MAJ se met à jour seul,
   // sans recharger ni redémarrer. Le backend met le résultat en cache (TTL configurable).
   const reloadVersion = version.reload;
@@ -77,6 +80,20 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
         )}
       </div>
       <div className="flex shrink-0 items-center gap-3">
+        {/* Édition courante (à gauche de la version/MAJ). */}
+        {license.data ? (
+          <span
+            className={cn(
+              "hidden rounded-full px-2 py-0.5 text-[11px] font-medium md:inline",
+              isEnterprise
+                ? "border border-accent-indigo/30 bg-accent-indigo/10 text-accent-indigo"
+                : "bg-muted text-muted-foreground",
+            )}
+            title={t("Édition", "Edition")}
+          >
+            {isEnterprise ? "Enterprise" : "Community"}
+          </span>
+        ) : null}
         {v ? (
           v.update_available ? (
             <a
