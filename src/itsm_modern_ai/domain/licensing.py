@@ -64,13 +64,14 @@ FEATURE_CATALOG: tuple[FeatureSpec, ...] = (
         label_fr="Masquage PII avancé",
         label_en="Advanced PII masking",
         description_fr=(
-            "Patterns regex personnalisés, identifiants FR (NIR, SIRET), règles de "
-            "masquage par entité. Le masquage de base (email, téléphone, IBAN, secrets) "
-            "reste inclus en Community."
+            "Masquage des IBAN/cartes et des secrets (mots de passe, tokens, clés API), "
+            "identifiants FR (NIR, SIRET), patterns regex personnalisés et règles par "
+            "entité. En Community, seuls e-mail et téléphone sont masqués."
         ),
         description_en=(
-            "Custom regex patterns, French identifiers (NIR, SIRET), per-entity masking "
-            "rules. Baseline masking (email, phone, IBAN, secrets) stays in Community."
+            "Masking of IBANs/cards and secrets (passwords, tokens, API keys), French "
+            "identifiers (NIR, SIRET), custom regex patterns and per-entity rules. In "
+            "Community, only email and phone are masked."
         ),
     ),
     FeatureSpec(

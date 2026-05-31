@@ -1,4 +1,5 @@
 import { Banner } from "@/components/Banner";
+import { LockedBadge } from "@/components/ui/LockedBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -58,6 +59,11 @@ export function EngineSettings() {
   // Mode d'exécution par défaut global (FR-17) — appliqué aux entités sans mode explicite.
   const [modeDefault, setModeDefault] = useState<ExecutionMode>("suggestion");
   const c = cfg.data;
+  // Masquage IBAN + secrets = feature Enterprise (FEATURE_PII_ADVANCED). En Community,
+  // ces motifs sont verrouillés et NON masqués (envoyés en clair) → bandeau d'alerte.
+  const license = useResource(useCallback(() => Api.getLicense(), []));
+  const piiAdvanced =
+    (license.data?.features ?? []).find((f) => f.key === "pii_advanced")?.active ?? false;
 
   useEffect(() => {
     if (c) {
@@ -98,7 +104,13 @@ export function EngineSettings() {
     }
   }
 
-  const maskedCount = [mask.email, mask.phone, mask.iban, mask.secret].filter(Boolean).length;
+  // IBAN/secret comptent comme masqués seulement si l'Enterprise est actif.
+  const maskedCount = [
+    mask.email,
+    mask.phone,
+    piiAdvanced && mask.iban,
+    piiAdvanced && mask.secret,
+  ].filter(Boolean).length;
 
   return (
     <div className="space-y-6">
@@ -350,12 +362,21 @@ export function EngineSettings() {
               }
             />
             <CardContent className="flex flex-col gap-4 p-5">
-              <Banner kind="error">
-                {t(
-                  "⚠ Désactiver un motif envoie cette donnée EN CLAIR au LLM — d'autant plus sensible si le fournisseur est hors UE (OpenAI, Anthropic). À valider avec la DPO.",
-                  "⚠ Disabling a pattern sends that data IN CLEAR to the LLM — especially sensitive with a non-EU provider (OpenAI, Anthropic). Validate with the DPO.",
-                )}
-              </Banner>
+              {piiAdvanced ? (
+                <Banner kind="error">
+                  {t(
+                    "⚠ Désactiver un motif envoie cette donnée EN CLAIR au LLM — d'autant plus sensible si le fournisseur est hors UE (OpenAI, Anthropic). À valider avec la DPO.",
+                    "⚠ Disabling a pattern sends that data IN CLEAR to the LLM — especially sensitive with a non-EU provider (OpenAI, Anthropic). Validate with the DPO.",
+                  )}
+                </Banner>
+              ) : (
+                <Banner kind="error">
+                  {t(
+                    "⚠ Édition Community : les IBAN et les secrets (mots de passe, tokens, clés API) ne sont PAS masqués et sont envoyés EN CLAIR au LLM. Passez en édition Enterprise pour les masquer.",
+                    "⚠ Community edition: IBANs and secrets (passwords, tokens, API keys) are NOT masked and are sent IN CLEAR to the LLM. Upgrade to the Enterprise edition to mask them.",
+                  )}
+                </Banner>
+              )}
               <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
                 <Toggle
                   checked={mask.email}
@@ -367,16 +388,34 @@ export function EngineSettings() {
                   onChange={(v) => setMask((s) => ({ ...s, phone: v }))}
                   label={t("Masquer les téléphones", "Mask phone numbers")}
                 />
-                <Toggle
-                  checked={mask.iban}
-                  onChange={(v) => setMask((s) => ({ ...s, iban: v }))}
-                  label={t("Masquer les IBAN", "Mask IBANs")}
-                />
-                <Toggle
-                  checked={mask.secret}
-                  onChange={(v) => setMask((s) => ({ ...s, secret: v }))}
-                  label={t("Masquer mots de passe / tokens", "Mask passwords / tokens")}
-                />
+                {piiAdvanced ? (
+                  <Toggle
+                    checked={mask.iban}
+                    onChange={(v) => setMask((s) => ({ ...s, iban: v }))}
+                    label={t("Masquer les IBAN", "Mask IBANs")}
+                  />
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px] text-muted-foreground">
+                      {t("Masquer les IBAN", "Mask IBANs")}
+                    </span>
+                    <LockedBadge />
+                  </div>
+                )}
+                {piiAdvanced ? (
+                  <Toggle
+                    checked={mask.secret}
+                    onChange={(v) => setMask((s) => ({ ...s, secret: v }))}
+                    label={t("Masquer mots de passe / tokens", "Mask passwords / tokens")}
+                  />
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px] text-muted-foreground">
+                      {t("Masquer mots de passe / tokens", "Mask passwords / tokens")}
+                    </span>
+                    <LockedBadge />
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
