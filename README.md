@@ -15,7 +15,7 @@
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Tailwind v4](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
-[![Tests](https://img.shields.io/badge/tests-304_pytest_%C2%B7_64_vitest_%C2%B7_3_e2e-success)](docs/testing.md)
+[![Tests](https://img.shields.io/badge/tests-308_pytest_%C2%B7_71_vitest_%C2%B7_4_e2e-success)](docs/testing.md)
 [![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_default-6B46C1)](docs/llm-providers.md)
 
 [Démarrage rapide](#démarrage-rapide) · [Fonctionnalités](docs/features.md) · [Architecture](docs/architecture.md) · [Documentation](#documentation)
@@ -104,12 +104,14 @@ Détail des suites de tests et conventions qualité : [`docs/testing.md`](docs/t
 
 - **On-premise**, aucun phone-home, aucun appel sortant hors fournisseur LLM configuré.
 - **Secrets chiffrés Fernet** au repos ; `master.key` montée comme volume Docker (`0600`).
-- **Masquage PII avant le LLM** : e-mail + téléphone en Community ; IBAN/cartes, secrets (mots de passe/tokens/clés API), IP/MAC et identifiants FR (NIR/SIRET) + regex custom en **Enterprise**. ⚠️ Sans Enterprise, IBAN et secrets sont envoyés **en clair** au LLM (avertissement affiché dans la console + fiche DPO).
+- **Masquage PII avant le LLM** : e-mail + téléphone en Community ; IBAN/cartes, secrets (mots de passe/tokens/clés API), IP/MAC et identifiants FR (NIR/SIRET) en **Enterprise**. ⚠️ Sans Enterprise, IBAN et secrets sont envoyés **en clair** au LLM (avertissement affiché dans la console + fiche DPO).
+- **Console DPO** dédiée (page *Confidentialité (DPO)*) : tableau des catégories PII masquées par édition, outil de test du masquage, et **export d'un rapport DPO** (Markdown) — pour valider le flux de données en réunion.
+- **Page Coûts & quotas** : dépense LLM des dernières 24 h vs plafond journalier glissant.
 - **Pas de métrique nominative** par technicien (anti-mouchard).
 - **Conteneur non-root**, rate-limit login (avec `X-Forwarded-For` derrière proxy).
 - **Export CSV DPO** + rétention RGPD automatisée.
 
-Détails : [`SECURITY.md`](SECURITY.md) (politique de divulgation) · [`docs/dpo.md`](docs/dpo.md) (fiche DPO) · [`docs/llm-providers.md`](docs/llm-providers.md) (souveraineté par fournisseur).
+Détails : [`SECURITY.md`](SECURITY.md) (politique de divulgation) · [`docs/dpo.md`](docs/dpo.md) (fiche DPO + console) · [`docs/llm-providers.md`](docs/llm-providers.md) (souveraineté par fournisseur).
 
 ---
 
@@ -141,7 +143,7 @@ Détails : [`SECURITY.md`](SECURITY.md) (politique de divulgation) · [`docs/dpo
 
 Ce dépôt est l'**édition Community** (le cœur, MIT) : triage à garde-fous, connecteurs GLPI **legacy + V2**, PostgreSQL, masquage PII **e-mail + téléphone**, modes par entité. Tout est fonctionnel et gratuit.
 
-L'**édition Enterprise** ajoute, par-dessus la même base, des fonctionnalités payantes débloquées par une **clé de licence signée (Ed25519, vérifiée hors-ligne — zéro phone-home, compatible air-gap)** : masquage **IBAN/cartes + secrets (mots de passe/tokens) + IP/MAC** et masquage avancé **NIR/SIRET + regex personnalisés**. *(Multi-entités avancé et exports planifiés / DPO+ : sur la roadmap.)* Ces options apparaissent dans la console (page **Store**) mais restent **verrouillées** sans licence — leur code n'est pas livré dans l'édition Community (garantie de séparation).
+L'**édition Enterprise** ajoute, par-dessus la même base, des fonctionnalités payantes débloquées par une **clé de licence signée (Ed25519, vérifiée hors-ligne — zéro phone-home, compatible air-gap)** : masquage **IBAN/cartes + secrets (mots de passe/tokens/clés API) + IP/MAC** et identifiants FR **NIR/SIRET**. *(Patterns regex personnalisés, multi-entités avancé et exports planifiés / DPO+ : sur la roadmap.)* Ces options apparaissent dans la console (page **Store**) mais restent **verrouillées** sans licence — leur code n'est pas livré dans l'édition Community (garantie de séparation).
 
 **Passer en Enterprise** sans rien perdre (même `./data`, swap d'image + licence) : [`docs/enterprise-upgrade.md`](docs/enterprise-upgrade.md) ou `./upgrade-to-enterprise.sh`.
 
