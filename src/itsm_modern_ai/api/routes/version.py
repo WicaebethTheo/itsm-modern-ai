@@ -60,13 +60,17 @@ def is_newer(latest: str | None, current: str) -> bool:
 async def _fetch_latest(url: str, timeout: float) -> str | None:
     """Récupère la dernière version publiée (best-effort). None si indisponible."""
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             ctype = resp.headers.get("content-type", "")
             if "json" in ctype:
                 data = resp.json()
-                raw = data.get("version") or data.get("tag_name") or ""
+                # GitLab /releases renvoie un TABLEAU (plus récent en tête) ; GitHub
+                # /releases/latest renvoie un objet. On gère les deux.
+                if isinstance(data, list):
+                    data = data[0] if data else {}
+                raw = (data.get("version") or data.get("tag_name") or "") if isinstance(data, dict) else ""
                 return str(raw).strip().lstrip("vV") or None
             return resp.text.strip().splitlines()[0].strip().lstrip("vV") or None
     except Exception:
