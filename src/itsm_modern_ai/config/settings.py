@@ -151,8 +151,10 @@ class Settings(BaseSettings):
     # « pilote réseau interne »). À n'activer qu'en labo/dev, jamais en production.
     dev_open_admin: bool = False
 
-    # Cookie de session : `https_only` (Secure flag). Défaut sûr = True (prod derrière
-    # TLS). À mettre à False pour dev/tests en HTTP local (sinon le cookie est ignoré).
+    # Cookie de session : `https_only` (Secure flag). Défaut CODE = True (sûr si aucune
+    # config). MAIS l'install (.env.example) livre `SESSION_HTTPS_ONLY=false` car le pilote
+    # on-prem tourne généralement en HTTP : avec True sur HTTP, le cookie est ignoré et le
+    # login boucle. À repasser à True derrière un reverse-proxy TLS (durcissement prod).
     session_https_only: bool = True
 
     # Rate-limiting du login (anti brute-force). Limiteur EN MÉMOIRE par IP — adapté
