@@ -8,7 +8,8 @@
 #   ./install.sh                          # build from source + install
 #   ./install.sh --bundle itsm.tar.gz     # load an offline image (no build)
 #   ./install.sh --no-build               # use an image already present locally
-#   ./install.sh --build                  # force a rebuild (use after `git pull` to update)
+#   ./install.sh --update                 # UPDATE: git pull latest code + rebuild + restart
+#   ./install.sh --build                  # force a rebuild of the current code (no pull)
 #   ./install.sh --port 8080              # publish on a different host port
 #   ./install.sh --yes                    # non-interactive (accept proposed installs)
 #   ./install.sh --reset-password         # change the admin password of an instance
@@ -19,12 +20,13 @@ set -uo pipefail
 cd "$(dirname "$0")"
 
 # ── Options ─────────────────────────────────────────────────────────────────
-RESET=false; ASSUME_YES=false; DO_BUILD=auto; BUNDLE=""; PORT="${ITSM_PORT:-8000}"
+RESET=false; ASSUME_YES=false; DO_BUILD=auto; BUNDLE=""; PORT="${ITSM_PORT:-8000}"; SELF_UPDATE=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --reset-password) RESET=true ;;
     --yes|-y) ASSUME_YES=true ;;
-    --build|--update) DO_BUILD=true ;;
+    --update) DO_BUILD=true; SELF_UPDATE=true ;;  # git pull + rebuild
+    --build) DO_BUILD=true ;;                     # rebuild current code (no pull)
     --no-build) DO_BUILD=false ;;
     --bundle) BUNDLE="${2:-}"; shift ;;
     --port) PORT="${2:-8000}"; shift ;;
@@ -152,6 +154,26 @@ if [ ! -f .env ]; then
 fi
 check_add ".env file" ok
 export ITSM_HOST_PORT="$PORT"
+
+# ── 2b) Self-update (--update): pull the latest code BEFORE rebuilding ─────────
+# `./install.sh --update` = one-command update: fetch the latest code (git) and rebuild
+# the image; ./data (config + DB + master.key) is preserved across the rebuild.
+# In offline/bundle mode (no git checkout) the pull is skipped (use --bundle to update).
+if [ "$SELF_UPDATE" = true ]; then
+  if [ -d .git ] && command -v git >/dev/null 2>&1; then
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo master)"
+    say "Updating source (git pull, branch: $branch)…"
+    if git fetch --depth 1 origin "$branch" && git reset --hard "origin/$branch"; then
+      check_add "Source updated (git)" ok
+    else
+      warn "git update failed — rebuilding the current code instead."
+      check_add "Source updated (git)" "warn:git pull failed"
+    fi
+  else
+    warn "Not a git checkout — skipping source pull (use --bundle for offline updates)."
+    check_add "Source updated (git)" "warn:not a git checkout"
+  fi
+fi
 
 # ── 3) Image: offline bundle OR build from source ─────────────────────────────
 IMAGE="${ITSM_IMAGE:-itsm-modern-ai-community:latest}"
