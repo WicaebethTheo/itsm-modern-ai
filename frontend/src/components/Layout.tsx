@@ -1,3 +1,4 @@
+import { FloatingActions } from "@/components/FloatingActions";
 import { LangToggle } from "@/components/LangToggle";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -188,6 +189,7 @@ export function Layout() {
           </main>
         </div>
       </div>
+      <FloatingActions />
     </div>
   );
 }

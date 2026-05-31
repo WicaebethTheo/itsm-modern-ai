@@ -376,6 +376,13 @@ export interface LicenseView {
   features: LicenseFeature[];
 }
 
+export interface VersionInfo {
+  current: string;
+  latest: string | null;
+  update_available: boolean;
+  check_enabled: boolean; // une URL de vérification (opt-in) est-elle configurée ?
+}
+
 /** Mode démo : l'app est servie sous /demo → toutes les données sont simulées. */
 export const DEMO =
   typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "").startsWith("/demo");
@@ -401,6 +408,8 @@ export const Api = {
   resetGlpi: () => (DEMO ? ok({ ok: true }) : api.post<{ ok: boolean }>("/api/glpi/reset")),
 
   // Licence Enterprise (open-core) — activation/réinitialisation hors-ligne.
+  version: () => (DEMO ? ok(demo.version) : api.get<VersionInfo>("/api/version")),
+
   getLicense: () => (DEMO ? ok(demo.license) : api.get<LicenseView>("/api/license")),
   setLicense: (key: string) =>
     DEMO ? ok(demo.license) : api.post<LicenseView>("/api/license", { key }),

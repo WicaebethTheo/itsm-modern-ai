@@ -19,8 +19,25 @@ vi.mock("@/lib/api", async (orig) => {
   };
 });
 
-// Licence Enterprise valide avec le catalogue débloqué (active:true).
-const ENTERPRISE: LicenseView = {
+// Image ENTERPRISE, non licenciée : le code est installé (installed:true) mais aucune
+// licence valide → l'activation par clé est proposée.
+const ENT_UNLICENSED: LicenseView = {
+  edition: "community",
+  valid: false,
+  customer: null,
+  issued_at: null,
+  expires_at: null,
+  error: null,
+  features: demo.license.features.map((f) => ({
+    ...f,
+    installed: true,
+    entitled: false,
+    active: false,
+  })),
+};
+
+// Image ENTERPRISE, licence valide → tout actif.
+const ENT_ACTIVE: LicenseView = {
   edition: "enterprise",
   valid: true,
   customer: "ACME Corp",
@@ -35,11 +52,8 @@ const ENTERPRISE: LicenseView = {
   })),
 };
 
-const INVALID: LicenseView = {
-  ...demo.license,
-  valid: false,
-  error: "signature invalide",
-};
+// Image ENTERPRISE, clé refusée (valid:false) → bannière d'erreur, activation visible.
+const ENT_INVALID: LicenseView = { ...ENT_UNLICENSED, valid: false, error: "signature invalide" };
 
 describe("Store (licence open-core)", () => {
   beforeEach(() => {
@@ -49,25 +63,25 @@ describe("Store (licence open-core)", () => {
     vi.mocked(Api.deleteLicense).mockResolvedValue(demo.license);
   });
 
-  it("affiche l'édition Community et les 3 features verrouillées par défaut", async () => {
+  it("Community : pas de champ d'activation, encart d'upgrade + features verrouillées", async () => {
     renderWithToast(<Store />);
     expect(await screen.findByText("Community")).toBeInTheDocument();
-    // Les 3 features du catalogue.
-    expect(screen.getByText("Masquage avancé (NER)")).toBeInTheDocument();
-    expect(screen.getByText("Multi-entités")).toBeInTheDocument();
-    expect(screen.getByText("Exports planifiés")).toBeInTheDocument();
-    // Toutes verrouillées (badge Enterprise), aucune débloquée.
+    // Aucune feature installée (image Community) → pas d'activation par clé.
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Activer" })).not.toBeInTheDocument();
+    // À la place : l'encart d'upgrade.
+    expect(screen.getByText("Passer en édition Enterprise")).toBeInTheDocument();
+    // Les 3 features, toutes verrouillées.
     expect(screen.getAllByText("Enterprise")).toHaveLength(3);
     expect(screen.queryByText("Débloqué")).not.toBeInTheDocument();
   });
 
-  it("active une clé valide → passe en édition Enterprise", async () => {
-    vi.mocked(Api.setLicense).mockResolvedValue(ENTERPRISE);
-    vi.mocked(Api.getLicense)
-      .mockResolvedValueOnce(demo.license) // chargement initial
-      .mockResolvedValue(ENTERPRISE); // après reload
+  it("Image Enterprise : active une clé valide → édition Enterprise + features débloquées", async () => {
+    vi.mocked(Api.setLicense).mockResolvedValue(ENT_ACTIVE);
+    vi.mocked(Api.getLicense).mockResolvedValueOnce(ENT_UNLICENSED).mockResolvedValue(ENT_ACTIVE);
     renderWithToast(<Store />);
-    await screen.findByText("Community");
+    // Sur l'image Enterprise non licenciée, le champ d'activation est présent.
+    await screen.findByRole("textbox");
 
     await userEvent.type(screen.getByRole("textbox"), "JETON-VALIDE");
     await userEvent.click(screen.getByRole("button", { name: "Activer" }));
@@ -78,23 +92,21 @@ describe("Store (licence open-core)", () => {
     expect(await screen.findByText("Licence activée.")).toBeInTheDocument();
   });
 
-  it("affiche l'erreur d'une clé invalide (valid:false)", async () => {
-    vi.mocked(Api.setLicense).mockResolvedValue(INVALID);
-    vi.mocked(Api.getLicense).mockResolvedValueOnce(demo.license).mockResolvedValue(INVALID);
+  it("Image Enterprise : clé invalide → bannière d'erreur (valid:false)", async () => {
+    vi.mocked(Api.setLicense).mockResolvedValue(ENT_INVALID);
+    vi.mocked(Api.getLicense).mockResolvedValueOnce(ENT_UNLICENSED).mockResolvedValue(ENT_INVALID);
     renderWithToast(<Store />);
-    await screen.findByText("Community");
+    await screen.findByRole("textbox");
 
     await userEvent.type(screen.getByRole("textbox"), "JETON-POURRI");
     await userEvent.click(screen.getByRole("button", { name: "Activer" }));
 
-    // Encart inline persistant (en plus du toast).
     expect(await screen.findByText(/Licence invalide.*signature invalide/)).toBeInTheDocument();
   });
 
-  it("réinitialise la licence → retour Community", async () => {
+  it("Image Enterprise : réinitialise la licence → retour Community", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-    // Démarre en Enterprise pour que le bouton Réinitialiser soit actif.
-    vi.mocked(Api.getLicense).mockResolvedValueOnce(ENTERPRISE).mockResolvedValue(demo.license);
+    vi.mocked(Api.getLicense).mockResolvedValueOnce(ENT_ACTIVE).mockResolvedValue(ENT_UNLICENSED);
     renderWithToast(<Store />);
     await screen.findByText("ACME Corp");
 

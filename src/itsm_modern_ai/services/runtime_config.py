@@ -63,6 +63,8 @@ PLAIN_KEYS = frozenset(
         "automation_purge_last_run_by",  # audit trail (scheduler | IP de l'admin)
         # Licence Enterprise (open-core) — jeton signé Ed25519, auto-portant (non chiffré).
         "license_key",
+        # Vérification de mise à jour (opt-in, souverain) — URL du flux de versions.
+        "update_check_url",
     }
 )
 
@@ -168,6 +170,7 @@ class RuntimeConfigService:
             # Licence : défaut env optionnel (permet de pré-charger une clé en Enterprise
             # via ITSM_LICENSE_KEY, ex. image Enterprise pré-licenciée). Vide = Community.
             "license_key": self._settings.license_key or None,
+            "update_check_url": self._settings.update_check_url or None,
         }
         return defaults.get(key)
 
