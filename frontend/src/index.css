@@ -146,12 +146,24 @@
 
 /* === Atomes visuels portés de la maquette « operator preview » === */
 
-/* Logo bicolore (montagne « M »). */
+/* Logo « nœud de décision » (dégradé indigo). */
 .logo-grad-a {
   fill: #6366f1;
 }
 .logo-grad-b {
   fill: #8b8df7;
+}
+
+/* Accessibilité : couper animations/transitions si l'utilisateur le demande (spec design §7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Sparkline en mini-barres (carte KPI). */

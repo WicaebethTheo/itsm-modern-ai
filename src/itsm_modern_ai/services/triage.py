@@ -108,6 +108,7 @@ class TriageService:
         default_mode: ExecutionMode = ExecutionMode.SUGGESTION,
         auto_min_confidence: float | None = None,
         mask_flags: dict[str, bool] | None = None,
+        advanced_masker=None,  # passe Enterprise (FEATURE_PII_ADVANCED) appliquée après le masque de base
         glpi_base_url: str | None = None,
         confidence_threshold: float | None = None,
         cost_cap_eur_per_day: float | None = None,
@@ -139,6 +140,12 @@ class TriageService:
         )
         # Motifs de masquage actifs (FR-14). Vide → tous actifs (défaut sûr).
         self._mask_flags = mask_flags or {}
+        # Masquage avancé Enterprise (NIR/SIRET, regex custom) — None en Community.
+        self._advanced_masker = advanced_masker
+
+    def _advanced(self, text: str) -> str:
+        """Passe de masquage Enterprise après le masque de base (no-op en Community)."""
+        return self._advanced_masker.mask(text) if self._advanced_masker is not None else text
 
     async def _call_llm(self, system: str, user: str) -> LlmResult:
         """Appel LLM avec retry borné (FR-9) sur erreur transport."""
@@ -156,7 +163,9 @@ class TriageService:
         """Masquage → LLM → Pydantic → Whitelist → seuil. N'écrit RIEN (sandbox-safe)."""
         masked = masking.mask(raw_text, **self._mask_flags)
         system = self._system_prompt
-        user = prompting.build_user_prompt(masked.text, refs, self._profiles, self._guidance)
+        user = prompting.build_user_prompt(
+            self._advanced(masked.text), refs, self._profiles, self._guidance
+        )
         try:
             result = await self._call_llm(system, user)
         except LlmResponseError as exc:
@@ -218,7 +227,7 @@ class TriageService:
                 session,
                 ticket_id=ticket.id,
                 model=result.model,
-                prompt_sent=masking.mask(raw_text, **self._mask_flags).text,
+                prompt_sent=self._advanced(masking.mask(raw_text, **self._mask_flags).text),
                 response_received=result.raw_response,
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,
@@ -274,7 +283,7 @@ class TriageService:
                     # RE-MASQUE le brouillon LLM (le LLM peut recracher une PII présente
                     # dans le ticket et non détectée à l'entrée, ou injectée) et on borne
                     # sa longueur. Le mode suggestion (privé) n'est pas concerné.
-                    content = masking.mask(content, **self._mask_flags).text
+                    content = self._advanced(masking.mask(content, **self._mask_flags).text)
                     if len(content) > PUBLIC_DRAFT_MAX_CHARS:
                         content = content[:PUBLIC_DRAFT_MAX_CHARS].rstrip() + "…"
                 await self._itsm.write_followup(ticket.id, content, private=not applied)

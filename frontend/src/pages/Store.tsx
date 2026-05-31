@@ -23,6 +23,7 @@ export function Store() {
   const [key, setKey] = useState("");
   const [activating, setActivating] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [showRenew, setShowRenew] = useState(false);
 
   async function copyUpdateCmd() {
     try {
@@ -42,6 +43,13 @@ export function Store() {
   // (installée ET licenciée), pas seulement parce qu'une clé est présente.
   const anyActive = features.some((f) => f.active);
   const invalidError = lic && !lic.valid ? lic.error : null;
+  // Expiration : jours restants (depuis expires_at), pour prévenir avant l'échéance.
+  const daysLeft = (() => {
+    if (!lic?.expires_at) return null;
+    const ms = new Date(`${lic.expires_at}T00:00:00Z`).getTime() - Date.now();
+    return Math.ceil(ms / 86_400_000);
+  })();
+  const expiringSoon = anyActive && daysLeft != null && daysLeft <= 30;
 
   async function activate() {
     if (!key.trim()) return;
@@ -108,27 +116,18 @@ export function Store() {
             )
           }
         />
-        <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 p-5 text-[12.5px]">
-          {anyActive && lic?.customer ? (
-            <span>
-              <span className="text-muted-foreground">{t("Client", "Customer")} : </span>
-              <span className="font-medium">{lic.customer}</span>
-            </span>
-          ) : null}
-          {anyActive && lic?.expires_at ? (
-            <span>
-              <span className="text-muted-foreground">{t("Expire le", "Expires on")} : </span>
-              <span className="font-medium">{lic.expires_at}</span>
-            </span>
-          ) : null}
-          {!anyActive ? (
-            <span className="text-muted-foreground">
-              {t(
-                "Édition Community — fonctionnalités Enterprise verrouillées.",
-                "Community edition — Enterprise features locked.",
-              )}
-            </span>
-          ) : null}
+        <CardContent className="p-5 text-[12.5px]">
+          <span className="text-muted-foreground">
+            {anyActive
+              ? t(
+                  "Édition Enterprise active — détails de la licence ci-dessous.",
+                  "Enterprise edition active — license details below.",
+                )
+              : t(
+                  "Édition Community — fonctionnalités Enterprise verrouillées.",
+                  "Community edition — Enterprise features locked.",
+                )}
+          </span>
         </CardContent>
       </Card>
 
@@ -171,41 +170,127 @@ export function Store() {
       ) : null}
 
       {enterpriseImage ? (
-        /* Image Enterprise : activation de licence par clé. */
-        <Card>
-          <PanelHead
-            title={t("Activer une licence", "Activate a license")}
-            subtitle={t(
-              "Collez le jeton fourni à la livraison de votre licence Enterprise.",
-              "Paste the token provided with your Enterprise license.",
-            )}
-          />
-          <CardContent className="flex flex-col gap-3 p-5">
-            {invalidError ? (
-              <Banner kind="error">
-                {t("Licence invalide", "Invalid license")} : {invalidError}
-              </Banner>
-            ) : null}
-            <Textarea
-              value={key}
-              placeholder={t("Coller le jeton de licence…", "Paste the license token…")}
-              className="min-h-24 font-mono text-[12px]"
-              onChange={(e) => setKey(e.target.value)}
+        anyActive ? (
+          /* Licence ACTIVE : statut + renouvellement (remplacer par une nouvelle clé). */
+          <Card>
+            <PanelHead
+              title={t("Licence active", "Active license")}
+              subtitle={t(
+                "Licence Enterprise valide. Renouvelez-la avec une nouvelle clé avant l'expiration.",
+                "Valid Enterprise license. Renew it with a new key before it expires.",
+              )}
+              right={
+                <Tag tone="green">
+                  <Check className="h-3 w-3" />
+                  {t("Active", "Active")}
+                </Tag>
+              }
             />
-            <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={activate} disabled={activating || !key.trim()}>
-                {activating ? t("Activation…", "Activating…") : t("Activer", "Activate")}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={reset}
-                disabled={resetting || (!anyActive && !invalidError)}
-              >
-                {resetting ? t("Réinitialisation…", "Resetting…") : t("Réinitialiser", "Reset")}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+            <CardContent className="flex flex-col gap-3 p-5 text-[12.5px]">
+              <div className="flex flex-wrap gap-x-6 gap-y-1">
+                {lic?.customer ? (
+                  <span>
+                    <span className="text-muted-foreground">{t("Client", "Customer")} : </span>
+                    <span className="font-medium">{lic.customer}</span>
+                  </span>
+                ) : null}
+                {lic?.expires_at ? (
+                  <span>
+                    <span className="text-muted-foreground">{t("Expire le", "Expires on")} : </span>
+                    <span className="font-medium">
+                      {lic.expires_at}
+                      {daysLeft != null ? ` (${daysLeft} ${t("j", "d")})` : ""}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">
+                    {t("Licence perpétuelle (sans expiration).", "Perpetual license (no expiry).")}
+                  </span>
+                )}
+              </div>
+              {expiringSoon ? (
+                <Banner kind="warning">
+                  {t(
+                    `⚠ Votre licence expire dans ${daysLeft} jour(s). Demandez une clé renouvelée et collez-la ci-dessous pour la prolonger.`,
+                    `⚠ Your license expires in ${daysLeft} day(s). Request a renewed key and paste it below to extend it.`,
+                  )}
+                </Banner>
+              ) : null}
+              {showRenew ? (
+                <>
+                  <Textarea
+                    value={key}
+                    placeholder={t("Coller la nouvelle clé…", "Paste the new key…")}
+                    className="min-h-24 font-mono text-[12px]"
+                    onChange={(e) => setKey(e.target.value)}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button onClick={activate} disabled={activating || !key.trim()}>
+                      {activating
+                        ? t("Application…", "Applying…")
+                        : t("Appliquer la nouvelle clé", "Apply new key")}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowRenew(false);
+                        setKey("");
+                      }}
+                    >
+                      {t("Annuler", "Cancel")}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="outline" onClick={() => setShowRenew(true)}>
+                    {t("Renouveler / remplacer la clé", "Renew / replace key")}
+                  </Button>
+                  <Button variant="outline" onClick={reset} disabled={resetting}>
+                    {resetting ? t("Réinitialisation…", "Resetting…") : t("Réinitialiser", "Reset")}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          /* Image Enterprise SANS licence valide (absente ou EXPIRÉE) : activation/renouvellement. */
+          <Card>
+            <PanelHead
+              title={t("Activer une licence", "Activate a license")}
+              subtitle={t(
+                "Collez le jeton fourni à la livraison (ou une clé renouvelée si la précédente a expiré).",
+                "Paste the token provided with your license (or a renewed key if the previous one expired).",
+              )}
+            />
+            <CardContent className="flex flex-col gap-3 p-5">
+              {invalidError ? (
+                <Banner kind="error">
+                  {t("Licence invalide", "Invalid license")} : {invalidError}
+                  {lic?.expires_at && invalidError.includes("expir") ? ` (${lic.expires_at})` : ""}
+                </Banner>
+              ) : null}
+              <Textarea
+                value={key}
+                placeholder={t("Coller le jeton de licence…", "Paste the license token…")}
+                className="min-h-24 font-mono text-[12px]"
+                onChange={(e) => setKey(e.target.value)}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={activate} disabled={activating || !key.trim()}>
+                  {activating ? t("Activation…", "Activating…") : t("Activer", "Activate")}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={reset}
+                  disabled={resetting || (!anyActive && !invalidError)}
+                >
+                  {resetting ? t("Réinitialisation…", "Resetting…") : t("Réinitialiser", "Reset")}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )
       ) : (
         /* Image Community : pas d'activation (une clé ne débloque rien ici). On guide
            vers la bascule Enterprise. */

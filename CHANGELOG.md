@@ -5,6 +5,18 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-31 — 0.8.10 — Audit 4 agents : câblage pii_advanced + honnêteté docs
+
+- **pii_advanced CÂBLÉ** : le masquage avancé (NIR/SIRET + regex custom) est désormais
+  réellement appliqué dans le pipeline de triage quand licencié (était enregistré mais
+  jamais consommé). Couvert par tests.
+- **Docs honnêtes** : `dpo.md` / `README` / `SECURITY.md` reflètent le découpage masquage
+  par édition (Community = email+phone ; Enterprise = IBAN/secrets/IP-MAC/NIR-SIRET) +
+  caveat « en clair » Community (transit ET journal `llm_calls`). NER retiré (non implémenté).
+- multi-entités + exports planifiés marqués **« à venir »** dans le Store (non câblés).
+- NITs : alerte d'expiration en `warning`, `prefers-reduced-motion`, garde `--update`/
+  `--bundle` (bootstrap), timeout santé upgrade, overlay Enterprise aligné en 0.8.10.
+
 ## 2026-05-31 — 0.8.9 — Masquage IBAN + secrets en Enterprise
 
 - En **Community**, seuls **e-mail et téléphone** sont masqués. **IBAN/cartes** et

@@ -50,8 +50,12 @@ fi
 
 cd "$DIR"
 if [ "$MODE" = "update" ]; then
-  say "Updating (./install.sh --update)"
-  exec ./install.sh --update "$@"
+  # `--update` fait un git pull ; incompatible avec une MAJ hors-ligne par bundle. Si
+  # l'utilisateur a passé --bundle, on laisse install.sh gérer le bundle sans git pull.
+  case " $* " in
+    *" --bundle "*) say "Updating from offline bundle"; exec ./install.sh "$@" ;;
+    *) say "Updating (./install.sh --update)"; exec ./install.sh --update "$@" ;;
+  esac
 else
   say "Launching the installer (./install.sh)"
   exec ./install.sh "$@"

@@ -345,3 +345,41 @@ async def test_cost_cap_blocks_subsequent_tickets_same_day(temp_db):
         rows = journal.list_decisions(s)
     assert len(rows) == 2
     assert all(r.reason == "cost_cap_reached" for r in rows)
+
+
+class _StubAdvancedMasker:
+    """Masker Enterprise factice : masque un motif que le masque de base ne couvre pas."""
+
+    def mask(self, text: str) -> str:
+        return text.replace("MATR-42", "[MATR]")
+
+
+async def test_advanced_masker_applied_after_base(temp_db):
+    """Le masker Enterprise (FEATURE_PII_ADVANCED) est appliqué APRÈS le masque de base
+    sur le texte envoyé au LLM (NIR/SIRET/regex custom)."""
+    llm = FakeLlm(decision=_accepted_decision())
+    svc = TriageService(
+        itsm=FakeItsm(),
+        llm=llm,
+        settings=Settings(glpi_base_url="https://glpi.local/apirest.php"),
+        tech_profiles_prose="",
+        session_factory=db.session_scope,
+        advanced_masker=_StubAdvancedMasker(),
+    )
+    await svc.evaluate_text(1, "Dossier MATR-42 à traiter", REFS)
+    assert "MATR-42" not in llm.last_user
+    assert "[MATR]" in llm.last_user
+
+
+async def test_no_advanced_masker_in_community(temp_db):
+    """Sans masker Enterprise (Community), le texte n'est pas masqué au-delà du base."""
+    llm = FakeLlm(decision=_accepted_decision())
+    svc = TriageService(
+        itsm=FakeItsm(),
+        llm=llm,
+        settings=Settings(glpi_base_url="https://glpi.local/apirest.php"),
+        tech_profiles_prose="",
+        session_factory=db.session_scope,
+    )
+    await svc.evaluate_text(1, "Dossier MATR-42 à traiter", REFS)
+    assert "MATR-42" in llm.last_user
