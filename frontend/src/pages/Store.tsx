@@ -21,8 +21,13 @@ export function Store() {
   const [resetting, setResetting] = useState(false);
 
   const lic = license.data;
-  const isEnterprise = lic?.edition === "enterprise";
-  // Erreur de licence persistante (clé refusée par le backend → valid:false).
+  const features = lic?.features ?? [];
+  // Image Enterprise = le code d'au moins une feature payante est installé. Sur l'image
+  // Community, RIEN n'est installé → une clé ne débloque rien : on masque l'activation.
+  const enterpriseImage = features.some((f) => f.installed);
+  // Badge honnête : "Enterprise" uniquement si une feature est RÉELLEMENT active
+  // (installée ET licenciée), pas seulement parce qu'une clé est présente.
+  const anyActive = features.some((f) => f.active);
   const invalidError = lic && !lic.valid ? lic.error : null;
 
   async function activate() {
@@ -35,7 +40,6 @@ export function Store() {
         setKey("");
         toast.success(t("Licence activée.", "License activated."));
       } else {
-        // 200 avec valid:false : la clé est refusée, on garde l'erreur inline.
         toast.error(
           `${t("Clé refusée", "Key rejected")} : ${view.error ?? t("clé invalide", "invalid key")}`,
         );
@@ -81,7 +85,7 @@ export function Store() {
             "Open-core: the Enterprise edition unlocks with a key — offline, no data leaves.",
           )}
           right={
-            isEnterprise ? (
+            anyActive ? (
               <Tag tone="indigo">
                 <Check className="h-3 w-3" />
                 Enterprise
@@ -92,82 +96,107 @@ export function Store() {
           }
         />
         <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 p-5 text-[12.5px]">
-          {lic?.customer ? (
+          {anyActive && lic?.customer ? (
             <span>
               <span className="text-muted-foreground">{t("Client", "Customer")} : </span>
               <span className="font-medium">{lic.customer}</span>
             </span>
           ) : null}
-          {lic?.expires_at ? (
+          {anyActive && lic?.expires_at ? (
             <span>
               <span className="text-muted-foreground">{t("Expire le", "Expires on")} : </span>
               <span className="font-medium">{lic.expires_at}</span>
             </span>
           ) : null}
-          {lic?.issued_at ? (
-            <span>
-              <span className="text-muted-foreground">{t("Émise le", "Issued on")} : </span>
-              <span className="font-medium">{lic.issued_at}</span>
-            </span>
-          ) : null}
-          {!isEnterprise && !lic?.customer ? (
+          {!anyActive ? (
             <span className="text-muted-foreground">
               {t(
-                "Édition Community — aucune licence active.",
-                "Community edition — no active license.",
+                "Édition Community — fonctionnalités Enterprise verrouillées.",
+                "Community edition — Enterprise features locked.",
               )}
             </span>
           ) : null}
         </CardContent>
       </Card>
 
-      {/* Activation de licence. */}
-      <Card>
-        <PanelHead
-          title={t("Activer une licence", "Activate a license")}
-          subtitle={t(
-            "Collez le jeton fourni à la livraison de votre licence Enterprise.",
-            "Paste the token provided with your Enterprise license.",
-          )}
-        />
-        <CardContent className="flex flex-col gap-3 p-5">
-          {invalidError ? (
-            <Banner kind="error">
-              {t("Licence invalide", "Invalid license")} : {invalidError}
-            </Banner>
-          ) : null}
-          <Textarea
-            value={key}
-            placeholder={t("Coller le jeton de licence…", "Paste the license token…")}
-            className="min-h-24 font-mono text-[12px]"
-            onChange={(e) => setKey(e.target.value)}
+      {enterpriseImage ? (
+        /* Image Enterprise : activation de licence par clé. */
+        <Card>
+          <PanelHead
+            title={t("Activer une licence", "Activate a license")}
+            subtitle={t(
+              "Collez le jeton fourni à la livraison de votre licence Enterprise.",
+              "Paste the token provided with your Enterprise license.",
+            )}
           />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={activate} disabled={activating || !key.trim()}>
-              {activating ? t("Activation…", "Activating…") : t("Activer", "Activate")}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={reset}
-              disabled={resetting || (!isEnterprise && !invalidError)}
-            >
-              {resetting ? t("Réinitialisation…", "Resetting…") : t("Réinitialiser", "Reset")}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          <CardContent className="flex flex-col gap-3 p-5">
+            {invalidError ? (
+              <Banner kind="error">
+                {t("Licence invalide", "Invalid license")} : {invalidError}
+              </Banner>
+            ) : null}
+            <Textarea
+              value={key}
+              placeholder={t("Coller le jeton de licence…", "Paste the license token…")}
+              className="min-h-24 font-mono text-[12px]"
+              onChange={(e) => setKey(e.target.value)}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={activate} disabled={activating || !key.trim()}>
+                {activating ? t("Activation…", "Activating…") : t("Activer", "Activate")}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={reset}
+                disabled={resetting || (!anyActive && !invalidError)}
+              >
+                {resetting ? t("Réinitialisation…", "Resetting…") : t("Réinitialiser", "Reset")}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        /* Image Community : pas d'activation (une clé ne débloque rien ici). On guide
+           vers la bascule Enterprise. */
+        <Card>
+          <PanelHead
+            title={t("Passer en édition Enterprise", "Upgrade to the Enterprise edition")}
+            subtitle={t(
+              "Sur l'édition Community, le code des modules payants n'est pas livré : une clé seule ne débloque rien ici.",
+              "On the Community edition, the paid modules' code is not shipped: a key alone unlocks nothing here.",
+            )}
+          />
+          <CardContent className="flex flex-col gap-3 p-5 text-[12.5px]">
+            <p className="text-muted-foreground">
+              {t(
+                "La bascule conserve toute votre configuration (même volume de données). Elle remplace l'image par l'édition Enterprise et applique votre clé de licence :",
+                "Upgrading keeps your whole configuration (same data volume). It swaps the image for the Enterprise edition and applies your license key:",
+              )}
+            </p>
+            <pre className="overflow-x-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-[12px]">
+              ./upgrade-to-enterprise.sh "{t("<votre-clé>", "<your-key>")}"
+            </pre>
+            <p className="text-[11.5px] text-muted-foreground/80">
+              {t(
+                "Détails : docs/enterprise-upgrade.md. La licence est vérifiée hors-ligne (aucun appel sortant).",
+                "Details: docs/enterprise-upgrade.md. The license is verified offline (no outbound call).",
+              )}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Catalogue des fonctionnalités Enterprise. */}
       <Card>
         <PanelHead
           title={t("Fonctionnalités Enterprise", "Enterprise features")}
           subtitle={t(
-            "Modules débloqués par licence et présents dans l'image.",
-            "Modules unlocked by license and present in the image.",
+            "Modules débloqués par licence sur l'édition Enterprise.",
+            "Modules unlocked by license on the Enterprise edition.",
           )}
         />
         <CardContent className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
-          {(lic?.features ?? []).map((f) => (
+          {features.map((f) => (
             <div
               key={f.key}
               className="flex flex-col rounded-md border border-border bg-muted/20 p-4"

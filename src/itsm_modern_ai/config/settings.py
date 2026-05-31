@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     # en base ; l'env LICENSE_KEY permet de pré-licencier une image (ex. build Enterprise).
     license_key: str = ""
 
+    # Vérification de mise à jour (OPT-IN, souverain). Vide (défaut) = AUCUN appel sortant
+    # (air-gap respecté). Si défini, le moteur interroge cette URL (best-effort, en cache)
+    # pour connaître la dernière version publiée. Le flux doit renvoyer du JSON
+    # {"version": "x.y.z"} (ou {"tag_name": ...}) ou la version en texte brut.
+    update_check_url: str = ""
+
     # UI web (Phase 2) : SPA React buildée servie en statique.
     frontend_dist: str = "frontend/dist"
 

@@ -17,6 +17,7 @@ import type {
   RefItem,
   RetentionView,
   Scope,
+  VersionInfo,
 } from "./api";
 
 function series14() {
@@ -65,6 +66,7 @@ export const demo: {
   diagnostics: DebugDiagnostics;
   info: DebugInfo;
   license: LicenseView;
+  version: VersionInfo;
 } = {
   authStatus: { authenticated: true, auth_configured: false },
   info: {
@@ -283,6 +285,7 @@ export const demo: {
     last_llm_calls_deleted: 47,
     last_run_by: "scheduler",
   },
+  version: { current: "0.7.0", latest: null, update_available: false, check_enabled: false },
   // Démo : édition Community → tout le catalogue Enterprise est verrouillé.
   license: {
     edition: "community",

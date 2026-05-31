@@ -8,6 +8,7 @@
 #   ./install.sh                          # build from source + install
 #   ./install.sh --bundle itsm.tar.gz     # load an offline image (no build)
 #   ./install.sh --no-build               # use an image already present locally
+#   ./install.sh --build                  # force a rebuild (use after `git pull` to update)
 #   ./install.sh --port 8080              # publish on a different host port
 #   ./install.sh --yes                    # non-interactive (accept proposed installs)
 #   ./install.sh --reset-password         # change the admin password of an instance
@@ -23,6 +24,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --reset-password) RESET=true ;;
     --yes|-y) ASSUME_YES=true ;;
+    --build|--update) DO_BUILD=true ;;
     --no-build) DO_BUILD=false ;;
     --bundle) BUNDLE="${2:-}"; shift ;;
     --port) PORT="${2:-8000}"; shift ;;
