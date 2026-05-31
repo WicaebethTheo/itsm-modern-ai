@@ -42,8 +42,10 @@ def test_status_enabled(enabled):
 
 
 def test_info_exposes_version_and_endpoints(enabled):
+    from itsm_modern_ai import __version__
+
     body = enabled.get("/api/debug/info").json()
-    assert body["version"] == "0.7.0"
+    assert body["version"] == __version__
     paths = {e["path"] for e in body["endpoints"]}
     assert "/health" in paths and "/api/config" in paths
 

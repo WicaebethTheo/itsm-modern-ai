@@ -3,7 +3,7 @@ import { LangToggle } from "@/components/LangToggle";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useResource } from "@/hooks/useResource";
-import { APP_VERSION, Api } from "@/lib/api";
+import { APP_VERSION, Api, GITHUB_URL } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { type IconName, NAV, navByPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
@@ -56,6 +56,8 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
   const title = item ? t(item.fr, item.en) : "ITSM Modern AI";
   const health = useResource(useCallback(() => Api.health(), []));
   const g = health.data?.glpi;
+  const version = useResource(useCallback(() => Api.version(), []));
+  const v = version.data;
 
   return (
     <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-5 sm:px-6">
@@ -68,6 +70,29 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
         )}
       </div>
       <div className="flex shrink-0 items-center gap-3">
+        {v ? (
+          v.update_available ? (
+            <a
+              href={`${GITHUB_URL}/releases`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={t(
+                `Mise à jour disponible (v${v.latest}). Mettre à jour : ./install.sh --update`,
+                `Update available (v${v.latest}). Update: ./install.sh --update`,
+              )}
+              className="hidden items-center gap-1 rounded-full border border-accent-indigo/40 bg-accent-indigo/10 px-2 py-0.5 text-[11px] font-medium text-accent-indigo md:flex"
+            >
+              ↑ v{v.latest}
+            </a>
+          ) : (
+            <span
+              className="hidden text-[11.5px] text-muted-foreground md:inline"
+              title={t("Version installée", "Installed version")}
+            >
+              v{v.current}
+            </span>
+          )
+        ) : null}
         <span className="hidden items-center gap-1.5 text-[12px] text-muted-foreground md:flex">
           <span
             className={cn(
