@@ -70,7 +70,7 @@ export const demo: {
 } = {
   authStatus: { authenticated: true, auth_configured: false },
   info: {
-    version: "0.8.6",
+    version: "0.8.7",
     title: "ITSM Modern AI — moteur de triage (headless)",
     endpoints: [
       { path: "/health", methods: ["GET"] },
@@ -286,7 +286,7 @@ export const demo: {
     last_run_by: "scheduler",
   },
   version: {
-    current: "0.8.6",
+    current: "0.8.7",
     latest: null,
     update_available: false,
     check_enabled: false,
