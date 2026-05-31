@@ -5,6 +5,10 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-31 — 0.8.7 — Nouveau favicon
+
+- Favicon « nœud de décision » (le LLM propose → le code décide), charte indigo.
+
 ## 2026-05-31 — 0.8.6 — Audit multi-agents : cohérences
 
 - Overlay Enterprise **réaligné** sur la version du cœur (était figé en 0.7.0).
