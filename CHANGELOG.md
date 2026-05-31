@@ -5,6 +5,13 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-05-31 — 0.8.9 — Masquage IBAN + secrets en Enterprise
+
+- En **Community**, seuls **e-mail et téléphone** sont masqués. **IBAN/cartes** et
+  **secrets** (mots de passe, tokens, clés API) passent en feature **Enterprise**
+  (`FEATURE_PII_ADVANCED`) — toggles verrouillés + **bandeau d'avertissement** clair
+  (« envoyés EN CLAIR au LLM »). Docs/Sécurité mises à jour pour refléter ce découpage.
+
 ## 2026-05-31 — 0.8.8 — Logo « nœud de décision » (login + sidebar)
 
 - Logo unifié sur le favicon (page de connexion + en-tête sidebar) ; remplace le « M »

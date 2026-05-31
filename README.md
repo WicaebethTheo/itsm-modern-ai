@@ -9,7 +9,7 @@
 *The LLM proposes, the code decides — GLPI ticket triage with deterministic guardrails.*
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.8.8-blueviolet)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.8.9-blueviolet)](pyproject.toml)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
@@ -104,7 +104,7 @@ Détail des suites de tests et conventions qualité : [`docs/testing.md`](docs/t
 
 - **On-premise**, aucun phone-home, aucun appel sortant hors fournisseur LLM configuré.
 - **Secrets chiffrés Fernet** au repos ; `master.key` montée comme volume Docker (`0600`).
-- **Pas de PII en clair** envoyée au LLM (masquage avant l'appel ; logs reflètent le masquage).
+- **Masquage PII avant le LLM** : e-mail + téléphone en Community ; IBAN/cartes, secrets (mots de passe/tokens/clés API) et masquage avancé (NIR/SIRET, regex, NER) en **Enterprise**. ⚠️ Sans Enterprise, IBAN et secrets sont envoyés **en clair** au LLM (avertissement affiché dans la console).
 - **Pas de métrique nominative** par technicien (anti-mouchard).
 - **Conteneur non-root**, rate-limit login (avec `X-Forwarded-For` derrière proxy).
 - **Export CSV DPO** + rétention RGPD automatisée.
@@ -139,9 +139,9 @@ Détails : [`SECURITY.md`](SECURITY.md) (politique de divulgation) · [`docs/dpo
 
 ## Éditions (open-core)
 
-Ce dépôt est l'**édition Community** (le cœur, MIT) : triage à garde-fous, connecteurs GLPI **legacy + V2**, PostgreSQL, masquage PII de base, modes par entité. Tout est fonctionnel et gratuit.
+Ce dépôt est l'**édition Community** (le cœur, MIT) : triage à garde-fous, connecteurs GLPI **legacy + V2**, PostgreSQL, masquage PII **e-mail + téléphone**, modes par entité. Tout est fonctionnel et gratuit.
 
-L'**édition Enterprise** ajoute, par-dessus la même base, des fonctionnalités payantes débloquées par une **clé de licence signée (Ed25519, vérifiée hors-ligne — zéro phone-home, compatible air-gap)** : masquage PII avancé (NIR/SIRET, regex custom), multi-entités avancé, exports planifiés / DPO+. Ces options apparaissent dans la console (page **Store**) mais restent **verrouillées** sans licence — leur code n'est pas livré dans l'édition Community (garantie de séparation).
+L'**édition Enterprise** ajoute, par-dessus la même base, des fonctionnalités payantes débloquées par une **clé de licence signée (Ed25519, vérifiée hors-ligne — zéro phone-home, compatible air-gap)** : masquage **IBAN/cartes + secrets (mots de passe/tokens)** et masquage avancé (NIR/SIRET, regex custom, NER), multi-entités avancé, exports planifiés / DPO+. Ces options apparaissent dans la console (page **Store**) mais restent **verrouillées** sans licence — leur code n'est pas livré dans l'édition Community (garantie de séparation).
 
 **Passer en Enterprise** sans rien perdre (même `./data`, swap d'image + licence) : [`docs/enterprise-upgrade.md`](docs/enterprise-upgrade.md) ou `./upgrade-to-enterprise.sh`.
 

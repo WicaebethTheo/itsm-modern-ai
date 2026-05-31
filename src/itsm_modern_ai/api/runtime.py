@@ -128,11 +128,23 @@ def build_triage_service(
         auto_min_confidence = cfg.get_float(
             "auto_min_confidence_default", settings.auto_min_confidence_default
         )
+        # Masquage : e-mail + téléphone TOUJOURS dispo (Community). IBAN/carte + secrets
+        # (mots de passe, tokens, clés API/cloud) sont une feature ENTERPRISE
+        # (FEATURE_PII_ADVANCED). En Community (plugin non installé ou licence absente),
+        # ils sont forcés à False → NON masqués (un bandeau le signale dans l'UI).
+        from ..domain.licensing import FEATURE_PII_ADVANCED
+        from ..plugins import build_registry
+        from ..services.license_service import LicenseService
+
+        pii_advanced = (
+            FEATURE_PII_ADVANCED in build_registry().installed_features()
+            and LicenseService(cfg).has_feature(FEATURE_PII_ADVANCED)
+        )
         mask_flags = {
             "email": cfg.get_bool("mask_email", settings.mask_email),
             "phone": cfg.get_bool("mask_phone", settings.mask_phone),
-            "iban": cfg.get_bool("mask_iban", settings.mask_iban),
-            "secret": cfg.get_bool("mask_secret", settings.mask_secret),
+            "iban": pii_advanced and cfg.get_bool("mask_iban", settings.mask_iban),
+            "secret": pii_advanced and cfg.get_bool("mask_secret", settings.mask_secret),
         }
         # URL GLPI résolue runtime (UI > .env) : sinon le lien du Journal resterait figé à ""
         # quand GLPI est configuré via l'UI et non dans .env.
