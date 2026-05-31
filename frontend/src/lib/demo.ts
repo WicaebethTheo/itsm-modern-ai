@@ -70,7 +70,7 @@ export const demo: {
 } = {
   authStatus: { authenticated: true, auth_configured: false },
   info: {
-    version: "0.8.4",
+    version: "0.8.5",
     title: "ITSM Modern AI — moteur de triage (headless)",
     endpoints: [
       { path: "/health", methods: ["GET"] },
@@ -285,7 +285,13 @@ export const demo: {
     last_llm_calls_deleted: 47,
     last_run_by: "scheduler",
   },
-  version: { current: "0.8.4", latest: null, update_available: false, check_enabled: false },
+  version: {
+    current: "0.8.5",
+    latest: null,
+    update_available: false,
+    check_enabled: false,
+    latest_notes: null,
+  },
   // Démo : édition Community → tout le catalogue Enterprise est verrouillé.
   license: {
     edition: "community",

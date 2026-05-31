@@ -38,7 +38,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.8.4";
+export const APP_VERSION = "0.8.5";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo MENEBOODE";
@@ -386,6 +386,7 @@ export interface VersionInfo {
   latest: string | null;
   update_available: boolean;
   check_enabled: boolean; // une URL de vérification (opt-in) est-elle configurée ?
+  latest_notes: string | null; // notes de release de la dernière version
 }
 
 /** Mode démo : l'app est servie sous /demo → toutes les données sont simulées. */

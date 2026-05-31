@@ -30,6 +30,7 @@ class VersionView(BaseModel):
     latest: str | None = None
     update_available: bool = False
     check_enabled: bool = False  # une URL de vérification est-elle configurée ?
+    latest_notes: str | None = None  # notes de release (description du flux), si dispo
 
 
 def _parse(v: str) -> tuple[int, ...]:
@@ -55,8 +56,11 @@ def is_newer(latest: str | None, current: str) -> bool:
         return False
 
 
-async def _fetch_latest(url: str, timeout: float) -> str | None:
-    """Récupère la dernière version publiée (best-effort). None si indisponible."""
+async def _fetch_latest(url: str, timeout: float) -> dict | None:
+    """Dernière version publiée + notes (best-effort). None si indisponible.
+
+    Renvoie {"version": "x.y.z", "notes": str | None}.
+    """
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             resp = await client.get(url)
@@ -68,9 +72,16 @@ async def _fetch_latest(url: str, timeout: float) -> str | None:
                 # /releases/latest renvoie un objet. On gère les deux.
                 if isinstance(data, list):
                     data = data[0] if data else {}
-                raw = (data.get("version") or data.get("tag_name") or "") if isinstance(data, dict) else ""
-                return str(raw).strip().lstrip("vV") or None
-            return resp.text.strip().splitlines()[0].strip().lstrip("vV") or None
+                if not isinstance(data, dict):
+                    return None
+                ver = str(data.get("version") or data.get("tag_name") or "").strip().lstrip("vV")
+                if not ver:
+                    return None
+                # GitLab : "description" ; GitHub : "body".
+                notes = data.get("description") or data.get("body") or None
+                return {"version": ver, "notes": str(notes) if notes else None}
+            ver = resp.text.strip().splitlines()[0].strip().lstrip("vV")
+            return {"version": ver, "notes": None} if ver else None
     except Exception:
         logger.info("vérification de mise à jour échouée (%s) — ignorée", url)
         return None
@@ -90,14 +101,16 @@ async def version(
     now = time.monotonic()
     cache = getattr(request.app.state, "update_check_cache", None)
     if not cache or cache.get("url") != url or (now - cache.get("ts", 0)) > ttl:
-        latest = await _fetch_latest(url, float(request.app.state.settings.glpi_timeout_seconds or 10))
-        cache = {"url": url, "ts": now, "latest": latest}
+        info = await _fetch_latest(url, float(request.app.state.settings.glpi_timeout_seconds or 10))
+        cache = {"url": url, "ts": now, "info": info}
         request.app.state.update_check_cache = cache
 
-    latest = cache.get("latest")
+    info = cache.get("info") or {}
+    latest = info.get("version")
     return VersionView(
         current=current,
         latest=latest,
         update_available=is_newer(latest, current),
         check_enabled=True,
+        latest_notes=info.get("notes"),
     )

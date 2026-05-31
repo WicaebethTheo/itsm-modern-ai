@@ -15,6 +15,7 @@ vi.mock("@/lib/api", async (orig) => {
       getLicense: vi.fn(),
       setLicense: vi.fn(),
       deleteLicense: vi.fn(),
+      version: vi.fn(),
     },
   };
 });
@@ -61,6 +62,7 @@ describe("Store (licence open-core)", () => {
     vi.mocked(Api.getLicense).mockResolvedValue(demo.license);
     vi.mocked(Api.setLicense).mockResolvedValue(demo.license);
     vi.mocked(Api.deleteLicense).mockResolvedValue(demo.license);
+    vi.mocked(Api.version).mockResolvedValue(demo.version);
   });
 
   it("Community : pas de champ d'activation, encart d'upgrade + features verrouillées", async () => {
