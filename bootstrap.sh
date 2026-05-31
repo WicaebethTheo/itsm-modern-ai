@@ -36,15 +36,12 @@ pkg_install() {
 
 command -v git >/dev/null 2>&1 || { say "Installing git"; pkg_install git || die "Please install git first."; }
 
-EXTRA=""
+MODE="install"
 if [ -d "$DIR/.git" ]; then
-  # Existing checkout = UPDATE: pull the latest code and force a rebuild so the running
-  # container picks up the new version (data in ./data is preserved across the rebuild).
-  say "Updating existing install in '$DIR'"
-  git -C "$DIR" fetch --depth 1 origin "$REF" \
-    && git -C "$DIR" checkout -f "$REF" 2>/dev/null \
-    && git -C "$DIR" reset --hard "origin/$REF" || die "Update failed in '$DIR'."
-  EXTRA="--build"
+  # Existing checkout → UPDATE. The pull + rebuild is delegated to `install.sh --update`
+  # (single source of truth for the update logic). Data in ./data is preserved.
+  say "Existing install found in '$DIR' → update"
+  MODE="update"
 else
   say "Cloning $REPO_URL (ref: $REF) into '$DIR'"
   git clone --depth 1 --branch "$REF" "$REPO_URL" "$DIR" \
@@ -52,6 +49,10 @@ else
 fi
 
 cd "$DIR"
-say "Launching the installer (./install.sh)"
-# $EXTRA forces a rebuild on update; if the user passed --bundle, install.sh ignores it.
-exec ./install.sh $EXTRA "$@"
+if [ "$MODE" = "update" ]; then
+  say "Updating (./install.sh --update)"
+  exec ./install.sh --update "$@"
+else
+  say "Launching the installer (./install.sh)"
+  exec ./install.sh "$@"
+fi
