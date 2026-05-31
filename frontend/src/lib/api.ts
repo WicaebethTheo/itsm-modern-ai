@@ -38,7 +38,12 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.7.0";
+export const APP_VERSION = "0.8.0";
+
+// Liens projet / auteur (widget flottant + indicateur de version).
+export const AUTHOR_NAME = "Théo MENEBOODE";
+export const GITHUB_URL = "https://github.com/tmeneboode/itsm-modern-ai";
+export const BUYMEACOFFEE_URL = "https://buymeacoffee.com/tmeneboode";
 
 export type LlmProvider = "mistral" | "openai" | "ollama" | "anthropic";
 
