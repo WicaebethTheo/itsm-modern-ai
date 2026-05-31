@@ -195,21 +195,35 @@ for _ in $(seq 1 "${HEALTH_TIMEOUT_TRIES:-150}"); do
 done
 [ "$st" = "healthy" ] && check_add "Container healthy" ok || { check_add "Container healthy" "fail:$st"; die "Engine did not become healthy (see: docker compose logs)."; }
 
-# ── 5) Admin account ───────────────────────────────────────────────────────────
-admin_setup() {
+# ── 5) Admin account — REQUIRED (the console must never be left unprotected) ────
+admin_is_set() { docker compose exec -T itsm python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1; }
+run_admin_setup() {  # "$@" → extra flags ; returns the setup exit code
   if [ -t 0 ]; then docker compose exec itsm python -m itsm_modern_ai.admin_setup "$@"
   elif [ -n "${ITSM_ADMIN_PASSWORD:-}" ]; then docker compose exec -T -e ITSM_ADMIN_PASSWORD itsm python -m itsm_modern_ai.admin_setup "$@"
-  else die "No interactive terminal: set ITSM_ADMIN_PASSWORD for a non-interactive install."; fi
+  else die "No interactive terminal and ITSM_ADMIN_PASSWORD unset — an admin password is REQUIRED."; fi
 }
 if [ "$RESET" = true ]; then
-  say "Resetting the administrator password"; admin_setup --force
-elif docker compose exec -T itsm python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1; then
+  say "Resetting the administrator password (required)"; run_admin_setup --force || true
+elif admin_is_set; then
   say "An administrator password is already configured — left unchanged."
-else
-  say "Creating the administrator account"; admin_setup
 fi
-docker compose exec -T itsm python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1 \
-  && check_add "Admin password" ok || check_add "Admin password" "warn:not configured"
+# Enforce: a password MUST be set. Interactive → retry until set (typo/too short).
+if ! admin_is_set; then
+  if [ -t 0 ]; then
+    tries=0
+    until admin_is_set; do
+      tries=$((tries+1)); [ "$tries" -gt 5 ] && die "Admin password still not set after several attempts."
+      say "Set the administrator password — REQUIRED (min. 8 characters)"
+      run_admin_setup || warn "Not set (mismatch or too short) — try again."
+    done
+  else
+    run_admin_setup || true
+    admin_is_set || die "Could not set the admin password from ITSM_ADMIN_PASSWORD (min. 8 chars)."
+  fi
+fi
+# Hard gate: refuse to finish if there is still no admin password.
+admin_is_set && check_add "Admin password" ok \
+  || { check_add "Admin password" fail; die "No admin password configured — refusing to finish (console would be UNPROTECTED)."; }
 
 # ── 6) Runtime checks ────────────────────────────────────────────────────────
 if docker compose exec -T itsm python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)" >/dev/null 2>&1; then
@@ -230,6 +244,11 @@ with db.session_scope() as ss:
     print(verify_license(cfg.get('license_key') or '', today=date.today()).edition)
 " 2>/dev/null | tr -d '\r')"
 check_add "Edition" "ok:${edition:-unknown}"
+# Open-admin mode bypasses login ONLY when no password is set; we now force one, but
+# warn loudly if it's enabled so it isn't left on by accident in production.
+if docker compose exec -T itsm python -c "from itsm_modern_ai.config.settings import get_settings as g; import sys; sys.exit(0 if g().dev_open_admin else 1)" >/dev/null 2>&1; then
+  check_add "Open-admin (DEV_OPEN_ADMIN)" "warn:ENABLED — disable for production (DEV_OPEN_ADMIN=false)"
+fi
 
 # ── Final checklist ─────────────────────────────────────────────────────────────
 echo
