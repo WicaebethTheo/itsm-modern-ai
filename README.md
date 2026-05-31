@@ -9,13 +9,13 @@
 *The LLM proposes, the code decides — GLPI ticket triage with deterministic guardrails.*
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.8.5-blueviolet)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.8.6-blueviolet)](pyproject.toml)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Tailwind v4](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
-[![Tests](https://img.shields.io/badge/tests-276_pytest_%C2%B7_63_vitest_%C2%B7_3_e2e-success)](docs/testing.md)
+[![Tests](https://img.shields.io/badge/tests-302_pytest_%C2%B7_64_vitest_%C2%B7_3_e2e-success)](docs/testing.md)
 [![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_default-6B46C1)](docs/llm-providers.md)
 
 [Démarrage rapide](#démarrage-rapide) · [Fonctionnalités](docs/features.md) · [Architecture](docs/architecture.md) · [Documentation](#documentation)
@@ -65,8 +65,11 @@ docker compose exec itsm python -m itsm_modern_ai.admin_setup   # mot de passe a
 > ⚠️ **Ne JAMAIS faire `docker compose down -v`** : `-v` supprime le volume `./data`
 > qui contient la base SQLite + la `master.key` Fernet. La configuration repart à zéro.
 
-**Mise à jour** : `./update.sh` (sauvegarde `./data` → récupère la nouvelle version → recrée →
-migrations auto, données préservées ; rollback affiché si besoin). Détails : [`docs/install.md`](docs/install.md#mise-à-jour).
+**Mise à jour** — deux voies, données préservées dans les deux cas :
+- `./update.sh` (**recommandé**) : **sauvegarde `./data` d'abord** (pg_dump / copie SQLite) puis récupère la nouvelle version, recrée, migrations auto, rollback affiché si besoin.
+- `./install.sh --update` (rapide, **sans sauvegarde**) : `git pull` + rebuild + redémarrage ; c'est aussi la voie du one-liner `curl … | sh`.
+
+Détails : [`docs/install.md`](docs/install.md#mise-à-jour).
 
 Tout se configure ensuite **dans l'interface** : connexion GLPI, choix du fournisseur LLM, scan GLPI, sélection des catégories/entités/techniciens/groupes du périmètre, fiches en prose, modes par entité. **Aucun secret dans `.env`** — les tokens GLPI et clés LLM sont poussés via l'UI et chiffrés Fernet au repos.
 

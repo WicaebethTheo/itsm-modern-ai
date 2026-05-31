@@ -1,11 +1,44 @@
 # Changelog
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/) ; le projet ne suit
-pas SemVer strictement (version d'app dans `pyproject.toml`, actuellement `0.7.0`).
+pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
-## 2026-05-31 — Open-core : édition Community + overlay Enterprise + licence
+## 2026-05-31 — 0.8.6 — Audit multi-agents : cohérences
+
+- Overlay Enterprise **réaligné** sur la version du cœur (était figé en 0.7.0).
+- `.env.example` : `UPDATE_CHECK_TTL_SECONDS` documenté. Doc de MAJ clarifiée
+  (`update.sh` = avec sauvegarde ; `install.sh --update` = rapide). **`les conventions internes`** ajouté
+  (conventions : bump version + CHANGELOG + release + docs à jour à chaque changement).
+- `is_newer` : comparaison semver robuste aux longueurs inégales (1.0 vs 1.0.0).
+
+## 2026-05-31 — 0.8.5 — Bouton de mise à jour guidé + édition dans la barre
+
+- **Store** : carte « Mise à jour disponible » (notes de release + commande
+  `./install.sh --update` + bouton Copier + lien releases). Action privilégiée laissée
+  à l'hôte (aucun socket Docker exposé). `/api/version` remonte `latest_notes`.
+- **Barre du haut** : badge d'édition (Community / Enterprise) à gauche de l'indicateur
+  de version/MAJ.
+
+## 2026-05-31 — 0.8.3 — Vérification de mise à jour automatique
+
+- Cache de vérification ramené de 6 h à **1 h** (configurable `UPDATE_CHECK_TTL_SECONDS`)
+  + re-check auto de l'UI toutes les 30 min → une release publiée est détectée **sans
+  redémarrage**.
+
+## 2026-05-31 — 0.8.1 → 0.8.2 — Version checker + correctifs install
+
+- **Version checker** (opt-in, souverain — `UPDATE_CHECK_URL` vide par défaut = zéro
+  appel sortant) : endpoint `/api/version`, indicateur dans la barre du haut, widget
+  flottant (lien GitHub + « Offrir un café »). Le flux gère objet (GitHub) **et** tableau
+  (GitLab `/releases`) + redirections.
+- **install.sh** : `--update` (git pull + rebuild) ; attente non bloquante (teste
+  `/api/status`, fail-fast si crash) ; **mot de passe admin obligatoire** ; build via le
+  builder classique (sans buildx) ; bootstrap `curl | sh`. `SESSION_HTTPS_ONLY=false` par
+  défaut (pilote HTTP). Sidebar : « Moteur en marche » sans la version (0.8.2).
+
+## 2026-05-31 — 0.8.0 — Open-core : édition Community + overlay Enterprise + licence
 
 Scission en deux éditions partageant la même base (architecture overlay) :
 
