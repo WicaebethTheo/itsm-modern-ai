@@ -38,6 +38,8 @@ export const NAV: NavSection[] = [
       { to: "/groups", fr: "Groupes", en: "Groups" },
       { to: "/ai-provider", fr: "Fournisseur IA", en: "AI provider" },
       { to: "/engine", fr: "Moteur", en: "Engine" },
+      { to: "/privacy", fr: "Confidentialité (DPO)", en: "Privacy (DPO)" },
+      { to: "/cost", fr: "Coûts & quotas", en: "Cost & quotas" },
     ],
   },
   {

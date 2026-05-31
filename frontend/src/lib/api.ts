@@ -38,7 +38,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.8.10";
+export const APP_VERSION = "0.8.11";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo MENEBOODE";
@@ -389,6 +389,42 @@ export interface VersionInfo {
   latest_notes: string | null; // notes de release de la dernière version
 }
 
+// ── Confidentialité / DPO ─────────────────────────────────────────────────────
+export interface PiiCategory {
+  key: string;
+  label_fr: string;
+  label_en: string;
+  example: string;
+  scope: "community" | "enterprise";
+  active: boolean; // réellement masqué dans l'état courant
+}
+export interface PrivacyView {
+  edition_advanced: boolean;
+  categories: PiiCategory[];
+  retention_decisions_days: number;
+  retention_llm_calls_days: number;
+  llm_calls_count: number;
+}
+export interface MaskTestOut {
+  masked: string;
+  counts: Record<string, number>;
+}
+
+// ── Coûts & quotas ────────────────────────────────────────────────────────────
+export interface CostView {
+  cost_cap_eur_per_day: number; // 0 = pas de plafond
+  spent_eur_last_24h: number;
+  pct_of_cap: number | null;
+  over_cap: boolean;
+  llm_calls_total: number;
+  price_input_per_mtok: number;
+  price_output_per_mtok: number;
+  currency: string;
+}
+
+/** Rapport DPO téléchargeable (Markdown) — lien direct (téléchargement). */
+export const DPO_REPORT_URL = "/api/privacy/report.md";
+
 /** Mode démo : l'app est servie sous /demo → toutes les données sont simulées. */
 export const DEMO =
   typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "").startsWith("/demo");
@@ -415,6 +451,14 @@ export const Api = {
 
   // Licence Enterprise (open-core) — activation/réinitialisation hors-ligne.
   version: () => (DEMO ? ok(demo.version) : api.get<VersionInfo>("/api/version")),
+
+  // Confidentialité / DPO + coûts.
+  privacy: () => (DEMO ? ok(demo.privacy) : api.get<PrivacyView>("/api/privacy")),
+  testMask: (text: string) =>
+    DEMO
+      ? ok({ masked: text.replace(/\S+@\S+/g, "[EMAIL]"), counts: {} } as MaskTestOut)
+      : api.post<MaskTestOut>("/api/privacy/test-mask", { text }),
+  cost: () => (DEMO ? ok(demo.cost) : api.get<CostView>("/api/cost")),
 
   getLicense: () => (DEMO ? ok(demo.license) : api.get<LicenseView>("/api/license")),
   setLicense: (key: string) =>

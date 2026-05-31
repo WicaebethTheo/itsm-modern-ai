@@ -174,6 +174,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .routes import auth as auth_routes
     from .routes import automations as automations_routes
     from .routes import config as config_routes
+    from .routes import cost as cost_routes
     from .routes import debug as debug_routes
     from .routes import decisions as decisions_routes
     from .routes import export as export_routes
@@ -181,6 +182,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .routes import health as health_routes
     from .routes import insights as insights_routes
     from .routes import license as license_routes
+    from .routes import privacy as privacy_routes
     from .routes import referentials as referentials_routes
     from .routes import sandbox as sandbox_routes
     from .routes import status as status_routes
@@ -249,6 +251,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(automations_routes.router)
     app.include_router(license_routes.router)
     app.include_router(version_routes.router)
+    app.include_router(privacy_routes.router)
+    app.include_router(cost_routes.router)
 
     # Observabilité : métriques Prometheus d'infra à GET /metrics (NON authentifié,
     # scrape interne). Branché AVANT le catch-all SPA pour que /metrics ne soit pas

@@ -3,6 +3,7 @@ import { ToastProvider } from "@/components/ui/toast";
 import { DEMO } from "@/lib/api";
 import { AiProvider } from "@/pages/AiProvider";
 import { Automations } from "@/pages/Automations";
+import { CostQuotas } from "@/pages/CostQuotas";
 import { Dashboard } from "@/pages/Dashboard";
 import { Debug } from "@/pages/Debug";
 import { EngineSettings } from "@/pages/EngineSettings";
@@ -10,6 +11,7 @@ import { GlpiConnection } from "@/pages/GlpiConnection";
 import { Groups } from "@/pages/Groups";
 import { Journal } from "@/pages/Journal";
 import { Login } from "@/pages/Login";
+import { Privacy } from "@/pages/Privacy";
 import { Sandbox } from "@/pages/Sandbox";
 import { Scope } from "@/pages/Scope";
 import { Status } from "@/pages/Status";
@@ -31,6 +33,8 @@ export default function App() {
             <Route path="glpi" element={<GlpiConnection />} />
             <Route path="ai-provider" element={<AiProvider />} />
             <Route path="engine" element={<EngineSettings />} />
+            <Route path="privacy" element={<Privacy />} />
+            <Route path="cost" element={<CostQuotas />} />
             <Route path="scope" element={<Scope />} />
             <Route path="technicians" element={<Technicians />} />
             <Route path="groups" element={<Groups />} />

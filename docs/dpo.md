@@ -53,6 +53,27 @@ nominatives peuvent donc apparaître en clair dans le contenu transmis au LLM. L
 
 Le masquage intervient **avant** tout appel LLM (ordre du pipeline immuable). Seul le contenu masqué quitte l'infrastructure du client, à destination du seul fournisseur LLM configuré.
 
+## Console DPO (page dédiée)
+
+La console expose une page **« Confidentialité (DPO) »** (`/privacy`, sous l'auth locale) qui
+permet de vérifier en réunion, **sans lire le code**, ce qui est réellement masqué :
+
+- **Tableau des catégories PII** avec leur statut **effectif selon l'édition installée**
+  (email + téléphone *Actif (Community)* ; IBAN/cartes, secrets/tokens/clés API, IP/MAC,
+  NIR/SIRET et patterns regex *Verrouillé · Enterprise* en édition Community). Le statut est
+  lu depuis le moteur, pas codé en dur — il reflète l'image **et** la licence actives.
+- **Avertissement honnête** affiché en Community : les catégories verrouillées transitent et
+  sont journalisées **en clair** (à valider explicitement avant toute donnée réelle).
+- **Outil « Tester le masquage »** : colle un texte d'exemple, l'API applique le masquage
+  **réel** (état + édition courants) et renvoie le texte masqué — utile pour démontrer que
+  `[EMAIL]` est masqué mais qu'un IBAN reste en clair en Community.
+- **Rappel des durées de rétention** et **lien vers le journal `llm_calls`**.
+- **Export d'un rapport DPO** (`GET /api/privacy/report.md`) : un Markdown daté listant
+  l'édition, les catégories masquées et les fenêtres de rétention — pièce jointe pour le dossier.
+
+> Une page **« Coûts & quotas »** (`/cost`) complète l'observabilité : dépense LLM des
+> dernières 24 h vs plafond journalier, nombre d'appels et tarifs configurés.
+
 ## Traçabilité
 
 - **Log exhaustif des appels LLM** (FR-19) : ticket, horodatage, modèle, contenu envoyé et reçu. Le contenu loggé **reflète toujours le masquage** — aucun secret en clair dans les logs.
