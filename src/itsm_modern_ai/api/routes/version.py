@@ -24,8 +24,6 @@ from ..security import require_auth
 logger = logging.getLogger("itsm.version")
 router = APIRouter(prefix="/api", tags=["version"], dependencies=[Depends(require_auth)])
 
-_CACHE_TTL_SECONDS = 6 * 3600  # le flux de versions change rarement
-
 
 class VersionView(BaseModel):
     current: str
@@ -87,10 +85,11 @@ async def version(
     if not url:
         return VersionView(current=current, check_enabled=False)
 
-    # Cache process (URL → dernière version), rafraîchi toutes les 6 h.
+    # Cache process (URL → dernière version), rafraîchi selon update_check_ttl_seconds.
+    ttl = max(60, int(request.app.state.settings.update_check_ttl_seconds))
     now = time.monotonic()
     cache = getattr(request.app.state, "update_check_cache", None)
-    if not cache or cache.get("url") != url or (now - cache.get("ts", 0)) > _CACHE_TTL_SECONDS:
+    if not cache or cache.get("url") != url or (now - cache.get("ts", 0)) > ttl:
         latest = await _fetch_latest(url, float(request.app.state.settings.glpi_timeout_seconds or 10))
         cache = {"url": url, "ts": now, "latest": latest}
         request.app.state.update_check_cache = cache
