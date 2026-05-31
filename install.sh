@@ -208,16 +208,37 @@ else
   check_add "Image present ($IMAGE)" ok
 fi
 
-# ── 4) Wait until the engine is healthy (migrations + API) ─────────────────────
+# ── 4) Wait until the engine SERVES (independent of GLPI/LLM reachability) ──────
+# We poll /api/status (public, no external deps) → 200 means the HTTP server is up.
+# We do NOT wait for Docker's `healthy` state: its healthcheck probes GLPI/LLM, so a
+# fresh install (GLPI/LLM not yet configured, or unreachable) stays "degraded" forever
+# even though the engine is fine — that used to hang this script. We also FAIL FAST if
+# the container crashes (e.g. bad MASTER_KEY), printing the logs instead of waiting.
 say "Waiting for the engine to start…"
 cid="$(docker compose ps -q itsm 2>/dev/null || true)"
-st="starting"
-for _ in $(seq 1 "${HEALTH_TIMEOUT_TRIES:-150}"); do
-  st="$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo starting)"
-  [ "$st" = "healthy" ] && break
+[ -n "$cid" ] || cid="$(docker ps -q -f name=itsm-modern-ai | head -1)"
+ready=false
+for _ in $(seq 1 "${HEALTH_TIMEOUT_TRIES:-90}"); do
+  state="$(docker inspect --format '{{.State.Status}}' "$cid" 2>/dev/null || echo unknown)"
+  if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+    echo; warn "The engine container crashed. Recent logs:"
+    docker compose logs --tail=40 itsm 2>/dev/null || docker logs --tail=40 "$cid" 2>/dev/null || true
+    check_add "Engine reachable" "fail:crashed"
+    die "Engine crashed at startup (see logs above) — fix the cause and re-run."
+  fi
+  if docker exec "$cid" python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/status').status==200 else 1)" >/dev/null 2>&1; then
+    ready=true; break
+  fi
   sleep 2
 done
-[ "$st" = "healthy" ] && check_add "Container healthy" ok || { check_add "Container healthy" "fail:$st"; die "Engine did not become healthy (see: docker compose logs)."; }
+if $ready; then
+  check_add "Engine reachable" ok
+else
+  echo; warn "Engine did not respond in time. Recent logs:"
+  docker compose logs --tail=40 itsm 2>/dev/null || true
+  check_add "Engine reachable" "fail:timeout"
+  die "Engine did not become ready in time (see logs above)."
+fi
 
 # ── 5) Admin account — REQUIRED (the console must never be left unprotected) ────
 admin_is_set() { docker compose exec -T itsm python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1; }
@@ -250,11 +271,21 @@ admin_is_set && check_add "Admin password" ok \
   || { check_add "Admin password" fail; die "No admin password configured — refusing to finish (console would be UNPROTECTED)."; }
 
 # ── 6) Runtime checks ────────────────────────────────────────────────────────
-if docker compose exec -T itsm python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)" >/dev/null 2>&1; then
-  check_add "API /health" ok
-else
-  check_add "API /health" "fail"
-fi
+# /health reflète GLPI+LLM : 503 si l'un est configuré-injoignable (ou pas encore
+# configuré). Ce n'est PAS un échec d'install (on configure GLPI/LLM dans l'UI ensuite) →
+# 200 = ok, 503 = warn (à configurer), pas de réponse = fail.
+hc="$(docker compose exec -T itsm python -c "import urllib.request
+try:
+    print(urllib.request.urlopen('http://localhost:8000/health').status)
+except urllib.error.HTTPError as e:
+    print(e.code)
+except Exception:
+    print('down')" 2>/dev/null | tr -d '\r' | tail -1)"
+case "$hc" in
+  200) check_add "API /health" ok ;;
+  ""|down) check_add "API /health" "fail" ;;
+  *) check_add "API /health" "warn:HTTP $hc — GLPI/LLM à configurer dans l'UI" ;;
+esac
 edition="$(docker compose exec -T itsm python -c "
 from datetime import date
 from itsm_modern_ai.config.settings import get_settings
