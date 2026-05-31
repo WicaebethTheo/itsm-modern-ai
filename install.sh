@@ -168,8 +168,14 @@ fi
 
 if [ "$DO_BUILD" = true ]; then
   [ -f Dockerfile ] || die "No Dockerfile (sources missing) and image $IMAGE absent — provide --bundle."
-  say "Building image and starting"
-  docker compose up -d --build || die "Build/start failed (see: docker compose logs)."
+  say "Building image '$IMAGE' (a few minutes on first run)…"
+  # Build with the engine builder directly (NOT `docker compose build`): compose v2
+  # delegates to buildx >= 0.17, which is often absent (e.g. distro 'docker.io'). A plain
+  # `docker build` uses buildx if present, else the engine's classic builder — works on
+  # far more setups. If BuildKit/buildx IS installed it's used transparently.
+  docker build -t "$IMAGE" . || die "Image build failed (see output above)."
+  say "Starting"
+  docker compose up -d || die "Start failed (see: docker compose logs)."
   check_add "Image built" ok
 else
   docker image inspect "$IMAGE" >/dev/null 2>&1 || die "Image $IMAGE absent. Provide --bundle or drop --no-build."
