@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     # pour connaître la dernière version publiée. Le flux doit renvoyer du JSON
     # {"version": "x.y.z"} (ou {"tag_name": ...}) ou la version en texte brut.
     update_check_url: str = ""
+    # Fraîcheur du cache de vérification (s). Le moteur ré-interroge le flux au plus une
+    # fois par fenêtre → une release publiée est détectée AUTOMATIQUEMENT sous ce délai,
+    # sans redémarrage. Défaut 1 h ; baisser (ex. 60) pour un test quasi immédiat.
+    update_check_ttl_seconds: int = 3600
 
     # UI web (Phase 2) : SPA React buildée servie en statique.
     frontend_dist: str = "frontend/dist"

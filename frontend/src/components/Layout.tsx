@@ -8,7 +8,7 @@ import { useT } from "@/lib/i18n";
 import { type IconName, NAV, navByPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { LogOut } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 /** Les 4 icônes de la section « Opération » (fidèles à la maquette). */
@@ -58,6 +58,13 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
   const g = health.data?.glpi;
   const version = useResource(useCallback(() => Api.version(), []));
   const v = version.data;
+  // Re-vérifie périodiquement (page ouverte) → l'indicateur de MAJ se met à jour seul,
+  // sans recharger ni redémarrer. Le backend met le résultat en cache (TTL configurable).
+  const reloadVersion = version.reload;
+  useEffect(() => {
+    const id = setInterval(() => reloadVersion(), 30 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [reloadVersion]);
 
   return (
     <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-5 sm:px-6">
