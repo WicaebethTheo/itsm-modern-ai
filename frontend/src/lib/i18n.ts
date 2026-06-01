@@ -1,7 +1,8 @@
 import { useCallback, useSyncExternalStore } from "react";
 
 // Store de langue FR/EN — externe (localStorage + event), lu via useSyncExternalStore.
-// Porté de la maquette « operator preview ». Défaut : FR (outil souverain).
+// Porté de la maquette « operator preview ». Défaut au premier démarrage : EN
+// (seul un choix explicite « fr » bascule en français).
 export type Lang = "fr" | "en";
 
 const KEY = "itsm-lang";
@@ -17,11 +18,11 @@ function subscribe(callback: () => void) {
 }
 
 function snapshot(): Lang {
-  return typeof localStorage !== "undefined" && localStorage.getItem(KEY) === "en" ? "en" : "fr";
+  return typeof localStorage !== "undefined" && localStorage.getItem(KEY) === "fr" ? "fr" : "en";
 }
 
 export function useLang() {
-  const lang = useSyncExternalStore(subscribe, snapshot, () => "fr" as Lang);
+  const lang = useSyncExternalStore(subscribe, snapshot, () => "en" as Lang);
   const setLang = useCallback((l: Lang) => {
     localStorage.setItem(KEY, l);
     document.documentElement.setAttribute("lang", l);

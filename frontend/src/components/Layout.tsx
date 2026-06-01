@@ -231,7 +231,7 @@ export function Layout() {
         </aside>
 
         {/* Zone principale : topbar + contenu défilant. */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="app-content flex min-w-0 flex-1 flex-col">
           <Topbar onLogout={logout} />
           <main className="flex-1 overflow-y-auto p-5 sm:p-6">
             <Outlet />

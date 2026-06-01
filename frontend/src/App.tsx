@@ -21,7 +21,13 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 export default function App() {
   return (
-    <BrowserRouter basename={DEMO ? "/demo" : undefined}>
+    <BrowserRouter
+      basename={
+        // Build démo dédié (sous-domaine, servi à la racine) → aucun préfixe.
+        // Sinon démo in-product servie sous /demo → préfixe /demo. App réelle → racine.
+        import.meta.env.VITE_DEMO === "true" ? undefined : DEMO ? "/demo" : undefined
+      }
+    >
       <ToastProvider>
         <Routes>
           <Route path="/login" element={<Login />} />

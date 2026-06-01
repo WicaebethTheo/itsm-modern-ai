@@ -38,7 +38,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.8.12";
+export const APP_VERSION = "0.8.13";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo MENEBOODE";
@@ -425,9 +425,13 @@ export interface CostView {
 /** Rapport DPO téléchargeable (Markdown) — lien direct (téléchargement). */
 export const DPO_REPORT_URL = "/api/privacy/report.md";
 
-/** Mode démo : l'app est servie sous /demo → toutes les données sont simulées. */
+/** Mode démo : soit un build dédié (`VITE_DEMO=true`, ex. sous-domaine demo.*, servi à la
+ *  racine), soit l'app servie sous /demo (démo in-product). Dans les deux cas, toutes les
+ *  données sont simulées (demo.ts) — aucun backend requis. */
 export const DEMO =
-  typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "").startsWith("/demo");
+  import.meta.env.VITE_DEMO === "true" ||
+  (typeof window !== "undefined" &&
+    window.location.pathname.replace(/\/+$/, "").startsWith("/demo"));
 
 const ok = <T>(v: T): Promise<T> => Promise.resolve(v);
 
