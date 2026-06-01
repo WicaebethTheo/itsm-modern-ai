@@ -126,22 +126,67 @@
 
 /* === Châssis « embed » : la console flotte dans un conteneur centré === */
 
-/* Fond derrière le shell : teinte légèrement distincte + halo indigo discret. */
+/* Fond derrière le shell : jamais plat. Mesh indigo multi-stops (sobre, DSI) — un halo
+   principal en haut + deux accents froids hors-axe pour la profondeur, sur la teinte de base. */
 .app-backdrop {
-  background: radial-gradient(1100px 520px at 50% -8%, hsl(var(--primary) / 0.06), transparent 60%),
-    hsl(var(--muted));
+  position: relative;
+  isolation: isolate; /* contient le grain ::before sans déborder sur le reste */
+  background-color: hsl(var(--muted));
+  background-image: radial-gradient(
+      1100px 520px at 50% -8%,
+      hsl(var(--primary) / 0.07),
+      transparent 60%
+    ), radial-gradient(720px 620px at 102% -4%, hsl(252 90% 60% / 0.05), transparent 58%),
+    radial-gradient(820px 720px at -6% 104%, hsl(217 91% 60% / 0.04), transparent 60%);
 }
 .dark .app-backdrop {
-  background: radial-gradient(1100px 520px at 50% -8%, hsl(var(--primary) / 0.1), transparent 62%),
-    #060610;
+  background-color: #060610;
+  background-image: radial-gradient(
+      1100px 520px at 50% -8%,
+      hsl(var(--primary) / 0.12),
+      transparent 62%
+    ), radial-gradient(760px 640px at 102% -5%, hsl(252 90% 65% / 0.1), transparent 58%),
+    radial-gradient(860px 780px at -6% 105%, hsl(217 91% 60% / 0.07), transparent 60%);
+}
+/* Grain subtil (SVG feTurbulence) en overlay — sous le contenu, jamais cliquable. */
+.app-backdrop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.dark .app-backdrop::before {
+  opacity: 0.045;
 }
 
 /* Le shell : ombre portée qui le détache du fond (le contour vient de border-border). */
 .app-shell {
+  position: relative;
+  z-index: 0; /* au-dessus du grain ::before (z-index:-1) */
   box-shadow: 0 10px 40px -14px rgb(0 0 0 / 0.22), 0 2px 10px -6px rgb(0 0 0 / 0.14);
 }
 .dark .app-shell {
   box-shadow: 0 24px 70px -24px rgb(0 0 0 / 0.75), 0 0 0 1px hsl(var(--border));
+}
+
+/* Zone de contenu : halo indigo TRÈS discret en haut pour que le pane ne soit pas plat.
+   Porté par la colonne non-scrollante → reste pinné quand le contenu défile. */
+.app-content {
+  background-image: radial-gradient(
+    1200px 380px at 50% -12%,
+    hsl(var(--primary) / 0.05),
+    transparent 70%
+  );
+}
+.dark .app-content {
+  background-image: radial-gradient(
+    1200px 380px at 50% -12%,
+    hsl(var(--primary) / 0.08),
+    transparent 70%
+  );
 }
 
 /* === Atomes visuels portés de la maquette « operator preview » === */

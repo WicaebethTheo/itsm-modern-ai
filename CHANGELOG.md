@@ -5,6 +5,24 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-06-01 — 0.8.13 — Background atmosphérique + démo statique hébergeable
+
+Travail frontend, sans changement de comportement métier :
+
+- **Fond de la console** : le backdrop n'est plus un aplat. Mesh indigo multi-couches
+  (sobre, palette « Operator Preview »), **grain** SVG subtil en overlay et halo discret en
+  haut de la zone de contenu — entièrement en CSS, **sous** le contenu (`pointer-events:none`,
+  `z-index` maîtrisés), respect de `prefers-reduced-motion`. Le Login reçoit le même backdrop.
+- **Démo hébergeable hors produit** : nouveau flag de build **`VITE_DEMO=true`** qui force le
+  mode démo (données mockées `demo.ts`, zéro backend) **quel que soit le chemin** — la démo
+  n'est plus liée à la route `/demo`. Permet un build statique servi à la racine d'un
+  sous-domaine dédié (cf. dossier `ITSM-Modern-Ai-Demo`). Le `basename` du routeur s'adapte :
+  racine pour le build dédié, `/demo` pour la démo in-product, inchangé pour l'app réelle.
+- **Langue par défaut = EN au premier démarrage** : sans préférence stockée, la console
+  s'ouvre désormais en anglais (seul un choix explicite « fr » bascule en français) ;
+  `index.html` passe en `lang="en"`. La locale des tests est figée sur `fr` pour conserver
+  les assertions existantes ; le nouveau défaut est couvert par `i18n.test.tsx`.
+
 ## 2026-05-31 — 0.8.12 — Audit 4 agents : honnêteté DPO + accessibilité
 
 Corrections suite à la revue multi-agents de la 0.8.11 :
