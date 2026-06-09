@@ -14,7 +14,7 @@ Enterprise »), même si une clé valide est collée.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ...domain.licensing import FEATURE_CATALOG, LicenseStatus
 from ...services.license_service import LicenseService
@@ -47,7 +47,10 @@ class LicenseView(BaseModel):
 
 
 class LicenseUpdate(BaseModel):
-    key: str
+    # Un jeton légitime fait quelques centaines d'octets ; on borne l'entrée pour éviter
+    # un parse coûteux (b64 + json) d'un « jeton » multi-Mo (DoS), cohérent avec les
+    # max_length du reste de l'API.
+    key: str = Field(max_length=8192)
 
 
 def _installed_keys(request: Request) -> frozenset[str]:

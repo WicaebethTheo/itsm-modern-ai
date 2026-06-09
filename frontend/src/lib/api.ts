@@ -38,7 +38,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.8.13";
+export const APP_VERSION = "0.8.14";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo MENEBOODE";
@@ -438,7 +438,11 @@ const ok = <T>(v: T): Promise<T> => Promise.resolve(v);
 // ── Endpoints regroupés par domaine ──────────────────────────────────────────
 export const Api = {
   authStatus: () => (DEMO ? ok(demo.authStatus) : api.get<AuthStatus>("/api/auth/status")),
-  login: (password: string) => api.post<AuthStatus>("/api/auth/login", { password }),
+  // En mode démo : AUCUN appel réseau. Un visiteur qui confond la démo publique avec sa
+  // propre instance enverrait sinon un vrai mot de passe admin sur le réseau (le serveur
+  // statique de la démo ne doit jamais le voir). On renvoie un statut authentifié simulé.
+  login: (password: string) =>
+    DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/login", { password }),
   logout: () => (DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/logout")),
 
   health: () => (DEMO ? ok(demo.health) : api.get<Health>("/health")),

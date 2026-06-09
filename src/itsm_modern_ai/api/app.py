@@ -197,10 +197,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     configure_logging(level=settings.log_level, fmt=settings.log_format)
 
+    # Docs interactives (`/docs`, `/redoc`, `/openapi.json`) DÉSACTIVÉES par défaut :
+    # en prod elles exposeraient sans auth le schéma complet de l'API (noms des champs
+    # secrets compris). On ne les monte qu'en dev (`EXPOSE_API_DOCS=true`).
+    _docs_on = settings.expose_api_docs
     app = FastAPI(
         title="ITSM Modern AI — moteur de triage (headless)",
         version=__version__,
         lifespan=lifespan,
+        docs_url="/docs" if _docs_on else None,
+        redoc_url="/redoc" if _docs_on else None,
+        openapi_url="/openapi.json" if _docs_on else None,
     )
     app.state.settings = settings
 
@@ -233,6 +240,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # TLS terminé par le reverse proxy (FR-26) ; flag Secure pilotable par config
         # (défaut sûr = True en prod ; mettre False pour dev/tests en HTTP local).
         https_only=settings.session_https_only,
+        # Expiration absolue du cookie (défaut 12 h) : borne le rejeu d'une session
+        # oubliée/volée. 0 → on laisse Starlette sans max_age explicite.
+        max_age=settings.session_max_age_seconds or None,
     )
 
     # Public : health (FR-27), status, auth.

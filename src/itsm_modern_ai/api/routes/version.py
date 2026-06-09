@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from ... import __version__
+from ...adapters.llm._http import make_guarded_event_hooks
 from ...services.runtime_config import RuntimeConfigService
 from ..deps import get_config_service
 from ..security import require_auth
@@ -60,13 +61,20 @@ def is_newer(latest: str | None, current: str) -> bool:
         return False
 
 
-async def _fetch_latest(url: str, timeout: float) -> dict | None:
+async def _fetch_latest(url: str, timeout: float, *, guard: bool) -> dict | None:
     """Dernière version publiée + notes (best-effort). None si indisponible.
 
     Renvoie {"version": "x.y.z", "notes": str | None}.
+
+    Durcissement SSRF : le même garde anti-rebinding que les clients LLM/GLPI est posé
+    en `event_hooks` (il refire à CHAQUE saut de redirection) → une `update_check_url`
+    pointée sur un hôte interne / IMDS (169.254.169.254) est refusée à l'exécution.
     """
+    hooks = make_guarded_event_hooks(guard=guard, allow_local=False)
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True, event_hooks=hooks or {}
+        ) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             ctype = resp.headers.get("content-type", "")
@@ -105,7 +113,11 @@ async def version(
     now = time.monotonic()
     cache = getattr(request.app.state, "update_check_cache", None)
     if not cache or cache.get("url") != url or (now - cache.get("ts", 0)) > ttl:
-        info = await _fetch_latest(url, float(request.app.state.settings.glpi_timeout_seconds or 10))
+        info = await _fetch_latest(
+            url,
+            float(request.app.state.settings.glpi_timeout_seconds or 10),
+            guard=request.app.state.settings.ssrf_guard_enabled,
+        )
         cache = {"url": url, "ts": now, "info": info}
         request.app.state.update_check_cache = cache
 

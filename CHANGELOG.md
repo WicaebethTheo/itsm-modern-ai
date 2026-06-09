@@ -5,6 +5,25 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-06-09 — 0.8.14 — Durcissement sécurité (audit)
+
+Corrections issues d'un audit cybersécurité complet — aucun changement du pipeline de triage :
+
+- **XSS stocké (HIGH)** : le brouillon LLM (sortie non fiable, prompt-injectable) est
+  désormais **échappé HTML** avant dépôt en Suivi GLPI, en mode public (réponse au
+  demandeur) comme privé (lu par le technicien) — `render_followup` dans `services/triage.py`.
+- **Docs API exposées (MED)** : `/docs`, `/redoc`, `/openapi.json` **désactivées par
+  défaut** (le schéma complet, noms de champs secrets compris, n'est plus public sans auth).
+  Réactivables en dev via `EXPOSE_API_DOCS=true`.
+- **SSRF (MED)** : le vérificateur de mise à jour passe par le **même garde anti-rebinding**
+  (par saut de redirection) que les clients LLM/GLPI, et `update_check_url` est **validée à
+  la sauvegarde** (rejet loopback/IP privée/metadata cloud).
+- **Cookie de session** : expiration absolue (défaut 12 h, `SESSION_MAX_AGE_SECONDS`).
+- **Licence** : borne de taille du jeton (8 Ko) côté API et domaine → pas de parse coûteux.
+- **Fail-open masquage (Enterprise)** : alerte WARNING par cycle quand `pii_advanced` est
+  **installé mais non licencié** (le masquage IBAN/secrets retombe sinon en silence).
+- **Hygiène** : `install.sh` pose `chmod 600` sur `.env` ; rappel de retrait d'`ADMIN_PASSWORD`.
+
 ## 2026-06-01 — 0.8.13 — Background atmosphérique + démo statique hébergeable
 
 Travail frontend, sans changement de comportement métier :

@@ -184,6 +184,17 @@ class RuntimeConfigService:
     def set(self, key: str, value: str) -> None:
         if key not in PLAIN_KEYS:
             raise ValueError(f"{key} n'est pas un réglage surchargeable")
+        # Anti-SSRF à la sauvegarde : l'URL du flux de versions doit pointer un hôte
+        # public routable (rejet loopback / IP privée / metadata cloud), au même titre
+        # que les base_url GLPI/LLM validées côté pydantic. Défense en profondeur en plus
+        # du garde runtime posé dans le version-checker.
+        if key == "update_check_url" and value.strip():
+            from ..domain.url_safety import UrlSafetyError, validate_base_url
+
+            try:
+                value = validate_base_url(value.strip(), allow_local=False)
+            except UrlSafetyError as exc:
+                raise ValueError(str(exc)) from exc
         self._upsert(key, value, is_secret=False)
 
     def _upsert(self, key: str, value: str, *, is_secret: bool) -> None:

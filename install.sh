@@ -152,7 +152,10 @@ if [ ! -f .env ]; then
   say "Creating .env from .env.example (MASTER_KEY generated on first start in ./data)"
   cp .env.example .env
 fi
-check_add ".env file" ok
+# Durcissement : .env peut contenir un secret d'amorçage (ITSM_ADMIN_PASSWORD/ADMIN_PASSWORD
+# en mode non-interactif) → propriétaire seul (jamais world-readable).
+chmod 600 .env 2>/dev/null || true
+check_add ".env file (chmod 600)" ok
 export ITSM_HOST_PORT="$PORT"
 
 # ── 2b) Self-update (--update): pull the latest code BEFORE rebuilding ─────────

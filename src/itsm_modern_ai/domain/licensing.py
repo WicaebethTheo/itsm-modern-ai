@@ -143,6 +143,11 @@ class LicenseStatus:
 COMMUNITY_STATUS = LicenseStatus(edition="community", valid=False)
 
 
+# Garde-fou de taille : un jeton légitime fait quelques centaines d'octets. On refuse
+# au-delà pour éviter un parse coûteux (b64 + json) d'une entrée géante (DoS parse).
+_MAX_TOKEN_LEN = 8192
+
+
 def _b64url_decode(s: str) -> bytes:
     pad = "=" * (-len(s) % 4)
     return base64.urlsafe_b64decode(s + pad)
@@ -169,6 +174,8 @@ def verify_license(token: str, *, today: date) -> LicenseStatus:
     token = (token or "").strip()
     if not token:
         return COMMUNITY_STATUS
+    if len(token) > _MAX_TOKEN_LEN:
+        return LicenseStatus(edition="community", valid=False, error="jeton trop volumineux")
 
     parts = token.split(".")
     if len(parts) != 4 or parts[0] != _TOKEN_PREFIX or parts[1] != _TOKEN_VERSION:

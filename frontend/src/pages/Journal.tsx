@@ -6,7 +6,7 @@ import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
-import { Api, type DecisionEntry } from "@/lib/api";
+import { Api, DEMO, type DecisionEntry } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { confidenceTone, priorityLabel, priorityTone } from "@/lib/labels";
 import { ScrollText } from "lucide-react";
@@ -61,18 +61,21 @@ export function Journal() {
             : undefined
         }
         right={
-          <>
-            <a href="/api/export/decisions.csv">
-              <Button variant="outline" size="sm">
-                {t("Export décisions", "Export decisions")}
-              </Button>
-            </a>
-            <a href="/api/export/llm-calls.csv">
-              <Button variant="outline" size="sm">
-                {t("Export appels LLM", "Export LLM calls")}
-              </Button>
-            </a>
-          </>
+          // En démo, les exports CSV pointent vers un backend absent (405) → masqués.
+          DEMO ? undefined : (
+            <>
+              <a href="/api/export/decisions.csv">
+                <Button variant="outline" size="sm">
+                  {t("Export décisions", "Export decisions")}
+                </Button>
+              </a>
+              <a href="/api/export/llm-calls.csv">
+                <Button variant="outline" size="sm">
+                  {t("Export appels LLM", "Export LLM calls")}
+                </Button>
+              </a>
+            </>
+          )
         }
       />
       <table className="w-full text-[12.5px]">

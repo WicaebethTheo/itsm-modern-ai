@@ -103,6 +103,16 @@ class Settings(BaseSettings):
     # DÉSACTIVÉ par défaut → inerte en production. À n'activer qu'en labo/test.
     debug_tools_enabled: bool = False
 
+    # Documentation interactive de l'API (Swagger `/docs`, ReDoc `/redoc`, `/openapi.json`).
+    # DÉSACTIVÉE par défaut : en prod elle exposerait sans auth le schéma complet des
+    # endpoints (et les noms de champs secrets). À n'activer qu'en dev.
+    expose_api_docs: bool = False
+
+    # Expiration (absolue) du cookie de session admin, en secondes. Défaut 12 h : au-delà,
+    # le cookie n'est plus accepté et l'admin doit se reconnecter (limite le rejeu d'un
+    # cookie volé / d'une session oubliée). 0 = pas d'expiration explicite (déconseillé).
+    session_max_age_seconds: int = 43200
+
     # Dashboard inversé (FR-23) — fenêtre glissante et plafond de lecture GLPI.
     dashboard_window_days: int = 7
     dashboard_max_tickets: int = 500

@@ -12,6 +12,7 @@ n'est appliqué sans action humaine, aucun rejet humain n'est enregistré (FR-18
 
 from __future__ import annotations
 
+import html as _html
 import logging
 from collections.abc import Callable
 from contextlib import AbstractContextManager
@@ -65,9 +66,14 @@ def render_followup(outcome: TriageOutcome, refs: Referentials, *, applied: bool
     """
     d = outcome.decision
     assert d is not None
+    # Le brouillon est une sortie LLM NON FIABLE : un demandeur peut prompt-injecter du
+    # markup. GLPI rend le contenu d'un suivi en HTML → on échappe le brouillon AVANT de
+    # l'insérer, dans les deux modes (public au demandeur ET privé lu par le technicien).
+    # On n'échappe QUE la partie non fiable, jamais le gabarit interne de confiance.
+    safe_draft = _html.escape(d.draft)
     if applied:
         # Modes auto : l'IA répond directement au demandeur (Suivi public, brouillon seul).
-        return d.draft
+        return safe_draft
 
     cat = refs.categories.get(d.category, str(d.category))
     try:
@@ -88,7 +94,7 @@ def render_followup(outcome: TriageOutcome, refs: Referentials, *, applied: bool
         f"• Affectation suggérée : {assignee}\n"
         f"• Confiance : {d.confidence:.0%}\n\n"
         "Brouillon de réponse (à valider, jamais envoyé automatiquement) :\n"
-        f"{d.draft}\n\n"
+        f"{safe_draft}\n\n"
         "— Vous gardez la main : ignorer cette suggestion n'est ni bloqué ni enregistré."
     )
 

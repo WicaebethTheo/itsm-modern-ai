@@ -383,3 +383,20 @@ async def test_no_advanced_masker_in_community(temp_db):
     )
     await svc.evaluate_text(1, "Dossier MATR-42 à traiter", REFS)
     assert "MATR-42" in llm.last_user
+
+
+def test_render_followup_escapes_untrusted_llm_draft():
+    """Sécurité : le brouillon LLM (potentiellement prompt-injecté) est échappé HTML
+    avant dépôt en Suivi GLPI, en mode public (appliqué) ET privé (suggestion)."""
+    from itsm_modern_ai.domain.models import TriageOutcome, TriageReason
+    from itsm_modern_ai.services.triage import render_followup
+
+    evil = '<img src=x onerror=alert(document.cookie)> <script>steal()</script>'
+    d = Decision(category=1, priority=3, technician_id=11, draft=evil, confidence=0.95)
+    outcome = TriageOutcome(accepted=True, reason=TriageReason.ACCEPTED, decision=d)
+
+    public = render_followup(outcome, REFS, applied=True)
+    private = render_followup(outcome, REFS, applied=False)
+    for content in (public, private):
+        assert "<script>" not in content and "<img" not in content
+        assert "&lt;script&gt;" in content  # le markup est neutralisé, pas perdu

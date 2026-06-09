@@ -137,10 +137,19 @@ def build_triage_service(
         from ..services.license_service import LicenseService
 
         _registry = build_registry()
-        pii_advanced = (
-            FEATURE_PII_ADVANCED in _registry.installed_features()
-            and LicenseService(cfg).has_feature(FEATURE_PII_ADVANCED)
-        )
+        _pii_installed = FEATURE_PII_ADVANCED in _registry.installed_features()
+        pii_advanced = _pii_installed and LicenseService(cfg).has_feature(FEATURE_PII_ADVANCED)
+        # Alerte fail-open : si le code Enterprise du masquage avancé est INSTALLÉ mais que
+        # la licence est absente/expirée, le masquage IBAN/cartes/secrets/IP-MAC retombe en
+        # silence (flags ci-dessous forcés à False) — un client qui l'a acheté comme contrôle
+        # de conformité enverrait alors ces données EN CLAIR au LLM. On le signale au niveau
+        # WARNING à chaque (re)construction du pipeline (≈ par cycle de polling).
+        if _pii_installed and not pii_advanced:
+            logger.warning(
+                "PII avancé INSTALLÉ mais licence absente/expirée → masquage "
+                "IBAN/cartes/secrets/IP-MAC DÉSACTIVÉ (données transmises en clair au LLM). "
+                "Renouveler la licence ou suspendre le polling."
+            )
         # Provider Enterprise (masquage avancé NIR/SIRET/regex) appliqué après le masque
         # de base — None en Community (ou licence absente).
         advanced_masker = _registry.provider(FEATURE_PII_ADVANCED) if pii_advanced else None
