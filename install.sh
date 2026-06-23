@@ -44,11 +44,18 @@ c_cyan=$'\033[1;36m'; c_red=$'\033[1;31m'; c_grn=$'\033[1;32m'; c_yel=$'\033[1;3
 say()  { printf '%s▶ %s%s\n' "$c_cyan" "$1" "$c_off"; }
 warn() { printf '%s! %s%s\n' "$c_yel" "$1" "$c_off"; }
 die()  { printf '%s✗ %s%s\n' "$c_red" "$1" "$c_off" >&2; exit 1; }
-ask()  { # ask "question" → 0 if yes. --yes => yes; no TTY => no.
+ask()  { # 0 = oui. --yes => oui ; TTY (stdin OU /dev/tty, ex. curl|sh) => demande (defaut OUI) ; sinon => oui (auto, CI).
   $ASSUME_YES && return 0
-  [ -t 0 ] || return 1
-  local r; read -r -p "$(printf '%s? %s [y/N] %s' "$c_yel" "$1" "$c_off")" r
-  [[ "$r" =~ ^[oOyY]$ ]]
+  local r=""
+  if [ -t 0 ]; then
+    read -r -p "$(printf '%s? %s [O/n] %s' "$c_yel" "$1" "$c_off")" r
+  elif [ -r /dev/tty ] && [ -t 1 ]; then
+    printf '%s? %s [O/n] %s' "$c_yel" "$1" "$c_off" > /dev/tty
+    IFS= read -r r < /dev/tty || r=""
+  else
+    return 0   # non-interactif (CI) : on installe les prerequis automatiquement
+  fi
+  case "$r" in [nN]*) return 1 ;; *) return 0 ;; esac
 }
 
 CHECKS=()

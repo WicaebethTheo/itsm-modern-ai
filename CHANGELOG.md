@@ -5,6 +5,15 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-06-23 — 0.9.3 — Installeur : installe TOUS les prérequis (git + Docker + compose)
+
+- Le one-liner `curl … | sh` **installe git** s'il manque (avant le clone), puis `install.sh`
+  **installe Docker et le plugin compose** s'ils manquent — l'installation fonctionne sur une
+  VM nue.
+- `ask()` lit le terminal via `/dev/tty` (donc les confirmations marchent sous `curl | sh`),
+  **défaut = oui**, et en mode non-interactif (CI) installe automatiquement les prérequis.
+- Annonce Discord automatique des nouvelles releases (workflow GitHub).
+
 ## 2026-06-23 — 0.9.2 — Maj : lien doc, check par défaut, message port 8000
 
 - **UI** : correction du lien `GITHUB_URL` (org `tmeneboode` → `WicaebethTheo`, ne 404 plus) ;
