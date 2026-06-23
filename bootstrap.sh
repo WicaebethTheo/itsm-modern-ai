@@ -8,16 +8,16 @@
 # offers to install missing parts, starts the service and prints a checklist).
 #
 # Env overrides:
-#   ITSM_REPO_URL  git URL of the Community repo (default: internal GitLab)
-#   ITSM_REF       branch/tag to install (default: master)
+#   ITSM_REPO_URL  git URL of the Community repo (default: public GitHub)
+#   ITSM_REF       branch/tag to install (default: main)
 #   ITSM_DIR       target directory (default: itsm-modern-ai)
 #
 # NOTE: the repo must be reachable anonymously (public) — or set ITSM_REPO_URL with an
 # embedded token for a private repo, e.g. https://oauth2:<TOKEN>@host/root/itsm-...git
 set -eu
 
-REPO_URL="${ITSM_REPO_URL:-https://gitlab.lab.wicaebeth.com/root/itsm-modern-ai-v2.git}"
-REF="${ITSM_REF:-master}"
+REPO_URL="${ITSM_REPO_URL:-https://github.com/WicaebethTheo/itsm-modern-ai.git}"
+REF="${ITSM_REF:-main}"
 DIR="${ITSM_DIR:-itsm-modern-ai}"
 
 say() { printf '\033[1;36m▶ %s\033[0m\n' "$1"; }

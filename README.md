@@ -15,10 +15,10 @@
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Tailwind v4](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
-[![Tests](https://img.shields.io/badge/tests-308_pytest_%C2%B7_71_vitest_%C2%B7_4_e2e-success)](docs/testing.md)
-[![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_default-6B46C1)](docs/llm-providers.md)
+[![Tests](https://img.shields.io/badge/tests-316_pytest_%C2%B7_71_vitest-success)](https://docs.itsm-modern-ai.com)
+[![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_default-6B46C1)](https://docs.itsm-modern-ai.com)
 
-[Démarrage rapide](#démarrage-rapide) · [Fonctionnalités](docs/features.md) · [Architecture](docs/architecture.md) · [Documentation](#documentation)
+[Démarrage rapide](#démarrage-rapide) · [Documentation](https://docs.itsm-modern-ai.com) · [Site](https://itsm-modern-ai.com)
 
 </div>
 
@@ -28,7 +28,7 @@
 
 GLPI gère bien les tickets structurés. **ITSM Modern AI** prend en charge le reste — la « Queue longue » : tickets flous, mal formulés, sans champ posé. Le LLM propose, le **code valide et décide** (whitelist déterministe, masquage PII avant tout appel LLM, fallback unique « à trier »). On-premise, souverain (Mistral EU par défaut), open-core MIT.
 
-➜ **[Pourquoi ce produit existe](docs/architecture.md#pourquoi-ce-produit-existe)** · **[Comment ça marche](docs/architecture.md#pipeline-immuable)**
+➜ **[Documentation complète](https://docs.itsm-modern-ai.com)** · **[Site produit](https://itsm-modern-ai.com)**
 
 ---
 
@@ -37,10 +37,12 @@ GLPI gère bien les tickets structurés. **ITSM Modern AI** prend en charge le r
 ### Avec Docker (recommandé, on-prem)
 
 ```bash
-# En une ligne (clone + install) — nécessite que le dépôt soit accessible :
+# En une ligne (clone GitHub + install) :
 curl -fsSL https://itsm-modern-ai.com/install | sh
 
-# Ou depuis le dépôt cloné :
+# Ou manuellement :
+git clone https://github.com/WicaebethTheo/itsm-modern-ai.git
+cd itsm-modern-ai
 ./install.sh                     # vérifie les prérequis, démarre, demande un mot de passe admin
 ./install.sh --bundle itsm.tar.gz   # install hors-ligne depuis une image (air-gap)
 open http://localhost:8000       # console web (SPA React)
@@ -69,7 +71,7 @@ docker compose exec itsm python -m itsm_modern_ai.admin_setup   # mot de passe a
 - `./update.sh` (**recommandé**) : **sauvegarde `./data` d'abord** (pg_dump / copie SQLite) puis récupère la nouvelle version, recrée, migrations auto, rollback affiché si besoin.
 - `./install.sh --update` (rapide, **sans sauvegarde**) : `git pull` + rebuild + redémarrage ; c'est aussi la voie du one-liner `curl … | sh`.
 
-Détails : [`docs/install.md`](docs/install.md#mise-à-jour).
+Détails : **[docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)**.
 
 Tout se configure ensuite **dans l'interface** : connexion GLPI, choix du fournisseur LLM, scan GLPI, sélection des catégories/entités/techniciens/groupes du périmètre, fiches en prose, modes par entité. **Aucun secret dans `.env`** — les tokens GLPI et clés LLM sont poussés via l'UI et chiffrés Fernet au repos.
 
@@ -85,7 +87,7 @@ make run         # uvicorn + scheduler → http://localhost:8000
 make ui-dev      # http://localhost:5173
 ```
 
-Détail des suites de tests et conventions qualité : [`docs/testing.md`](docs/testing.md).
+Détail des suites de tests et conventions qualité : **[documentation en ligne](https://docs.itsm-modern-ai.com)**.
 
 ---
 
@@ -111,31 +113,17 @@ Détail des suites de tests et conventions qualité : [`docs/testing.md`](docs/t
 - **Conteneur non-root**, rate-limit login (avec `X-Forwarded-For` derrière proxy).
 - **Export CSV DPO** + rétention RGPD automatisée.
 
-Détails : [`SECURITY.md`](SECURITY.md) (politique de divulgation) · [`docs/dpo.md`](docs/dpo.md) (fiche DPO + console) · [`docs/llm-providers.md`](docs/llm-providers.md) (souveraineté par fournisseur).
+Détails : **[Sécurité & limites](https://docs.itsm-modern-ai.com/security-limits/)** · **[documentation en ligne](https://docs.itsm-modern-ai.com)**.
 
 ---
 
 ## Documentation
 
-| | |
-|---|---|
-| [`docs/architecture.md`](docs/architecture.md) | Pipeline immuable, structure hexagonale, pourquoi ce produit |
-| [`docs/features.md`](docs/features.md) | Fonctionnalités détaillées (whitelist curée, fiches en prose, etc.) |
-| [`docs/modes.md`](docs/modes.md) | Modes d'exécution (`suggestion` / `semi_auto` / `full_auto`) |
-| [`docs/llm-providers.md`](docs/llm-providers.md) | 4 fournisseurs LLM + souveraineté |
-| [`docs/glpi-api-v2.md`](docs/glpi-api-v2.md) | Connecteur GLPI API V2 (OAuth2, GLPI 11) — **Beta** |
-| [`docs/postgresql.md`](docs/postgresql.md) | Portage PostgreSQL (driver, pool, compose) — **Beta** |
-| [`docs/supporter.md`](docs/supporter.md) | Devenir Supporter : déverrouiller les features par licence (open-core) |
-| [`docs/api.md`](docs/api.md) | Référence des endpoints REST |
-| [`docs/testing.md`](docs/testing.md) | Suites de tests + CI |
-| [`docs/install.md`](docs/install.md) | Installation on-prem en ½ page |
-| [`docs/dpo.md`](docs/dpo.md) | Fiche DPO 1 page (validation RGPD) |
-| [`docs/spike.md`](docs/spike.md) | Spike Epic 1 — protocole et résultats |
-| [`docs/project-context.md`](docs/project-context.md) | Invariants non-négociables (à lire avant de coder) |
-| [`docs/roadmap.md`](docs/roadmap.md) | Pistes ouvertes |
-| [`docs/design/`](docs/design/) | Specs design (palette de couleurs, cartes) |
-| [`CHANGELOG.md`](CHANGELOG.md) | Historique des changements |
-| [`SECURITY.md`](SECURITY.md) | Politique de sécurité et divulgation |
+📖 **Toute la documentation est en ligne : [docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)**
+
+Installation on-prem, architecture (pipeline immuable), connecteurs GLPI (legacy + API V2), fournisseurs LLM & souveraineté, portage PostgreSQL, modes d'exécution, fiche DPO/RGPD, référence API, et guide **[Supporter](https://docs.itsm-modern-ai.com/supporter/)**.
+
+Site produit : **[itsm-modern-ai.com](https://itsm-modern-ai.com)**.
 
 ---
 
@@ -145,7 +133,7 @@ Détails : [`SECURITY.md`](SECURITY.md) (politique de divulgation) · [`docs/dpo
 
 Les features **Supporter** se déverrouillent **en place** par une **clé de licence signée (Ed25519, vérifiée hors-ligne — zéro phone-home, compatible air-gap)** : masquage **IBAN/cartes + secrets (mots de passe/tokens/clés API) + IP/MAC** et identifiants FR **NIR/SIRET**. *(Patterns regex personnalisés, multi-entités avancé et exports planifiés / DPO+ : sur la roadmap.)* Elles apparaissent dans la console (page **Supporter**) mais restent **verrouillées** tant qu'aucune licence valide n'est fournie. La clé de **signature** reste dans le dépôt privé de signature des licences ; seule la clé publique de vérification est embarquée.
 
-**Devenir Supporter** sans rien perdre (même `./data`, aucun swap d'image) : **coller la clé de licence dans la page Supporter** de la console — elle déverrouille les features en place. Pour désactiver, **retirer la clé sur cette même page** (retour à Community). `LICENSE_KEY` dans `.env` reste un pré-amorçage optionnel pour les déploiements automatisés. Détails : [`docs/supporter.md`](docs/supporter.md).
+**Devenir Supporter** sans rien perdre (même `./data`, aucun swap d'image) : **coller la clé de licence dans la page Supporter** de la console — elle déverrouille les features en place. Pour désactiver, **retirer la clé sur cette même page** (retour à Community). `LICENSE_KEY` dans `.env` reste un pré-amorçage optionnel pour les déploiements automatisés. Détails : **[docs.itsm-modern-ai.com/supporter](https://docs.itsm-modern-ai.com/supporter/)**.
 
 ## Licence
 

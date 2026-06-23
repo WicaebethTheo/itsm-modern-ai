@@ -164,7 +164,7 @@ export ITSM_HOST_PORT="$PORT"
 # In offline/bundle mode (no git checkout) the pull is skipped (use --bundle to update).
 if [ "$SELF_UPDATE" = true ]; then
   if [ -d .git ] && command -v git >/dev/null 2>&1; then
-    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo master)"
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
     say "Updating source (git pull, branch: $branch)…"
     if git fetch --depth 1 origin "$branch" && git reset --hard "origin/$branch"; then
       check_add "Source updated (git)" ok
