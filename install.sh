@@ -100,7 +100,7 @@ for p in apt-get dnf yum zypper pacman apk; do command -v "$p" >/dev/null 2>&1 &
 
 pkg_install() { # pkg_install "pkg1 pkg2"
   case "$PKG" in
-    apt-get) $SUDO apt-get update -qq && $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y $1 ;;
+    apt-get) $SUDO apt-get update -qq && $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y $1 ;;
     dnf|yum) $SUDO "$PKG" install -y $1 ;;
     zypper)  $SUDO zypper --non-interactive install $1 ;;
     pacman)  $SUDO pacman -S --noconfirm $1 ;;

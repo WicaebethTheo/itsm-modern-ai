@@ -25,7 +25,7 @@ die() { printf '\033[1;31m✗ %s\033[0m\n' "$1" >&2; exit 1; }
 
 SUDO=""; [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO="sudo"
 pkg_install() {
-  if   command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update -qq && $SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
+  if   command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update -qq && $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y "$@"
   elif command -v dnf     >/dev/null 2>&1; then $SUDO dnf install -y "$@"
   elif command -v yum     >/dev/null 2>&1; then $SUDO yum install -y "$@"
   elif command -v zypper  >/dev/null 2>&1; then $SUDO zypper --non-interactive install "$@"
