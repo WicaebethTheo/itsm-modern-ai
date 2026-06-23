@@ -152,11 +152,22 @@ command -v docker >/dev/null 2>&1 && check_add "Docker CLI" ok || die "Docker no
 
 # Docker daemon reachable + permissions
 if ! docker info >/dev/null 2>&1; then
-  warn "Docker daemon not responding (not started, or missing permissions)."
-  if command -v systemctl >/dev/null 2>&1 && ask "Try to start the docker service"; then
-    $SUDO systemctl enable --now docker || true
+  warn "Daemon Docker injoignable — tentative de demarrage..."
+  $SUDO systemctl enable --now docker 2>/dev/null || $SUDO service docker start 2>/dev/null || true
+  # Le daemon met quelques secondes a etre pret apres un demarrage/install -> on patiente.
+  for _ in $(seq 1 20); do docker info >/dev/null 2>&1 && break; sleep 1; done
+fi
+if ! docker info >/dev/null 2>&1; then
+  if $SUDO docker info >/dev/null 2>&1; then
+    warn "Le daemon tourne mais votre utilisateur n'a pas acces au socket Docker."
+    warn "Ajoutez-vous au groupe : sudo usermod -aG docker \"\$USER\" puis reconnectez-vous (ou relancez en root)."
+  else
+    warn "Le daemon Docker n'a pas demarre. Diagnostic :"
+    { $SUDO systemctl status docker --no-pager -l 2>/dev/null | tail -15; } \
+      || { $SUDO journalctl -u docker --no-pager -n 15 2>/dev/null; } || true
+    warn "Conteneur Proxmox/LXC ? Docker exige un LXC PRIVILEGIE (ou options nesting=1 + keyctl=1), sinon utilisez une vraie VM."
   fi
-  docker info >/dev/null 2>&1 || die "Docker daemon unreachable. Start it (sudo systemctl start docker) or add your user to the 'docker' group (then re-login)."
+  die "Daemon Docker injoignable (voir ci-dessus). Demarrez-le (sudo systemctl start docker) puis relancez."
 fi
 check_add "Docker daemon" ok
 
