@@ -1,47 +1,27 @@
-# Déploiement on-prem : un seul service + volume SQLite (pilote, pas de HA).
-#
-# PERSISTANCE DE LA CONFIG : toute la configuration (connexion GLPI, clés LLM,
-# périmètre, etc.) vit dans ./data (base SQLite + master.key). Elle survit à
-# `docker compose up`/`restart`/`build`. Elle n'est PERDUE que si :
-#   - vous lancez `docker compose down -v` (le -v supprime le volume), ou
-#   - le dossier ./data est supprimé/non persistant, ou
-#   - MASTER_KEY change (les secrets chiffrés deviennent illisibles).
-# → FIXEZ MASTER_KEY dans .env et ne faites jamais `down -v` en prod.
+# ITSM Modern AI - deploiement on-prem (1 service + volume SQLite).
+# La config (GLPI, cles LLM, perimetre) vit dans ./data (DB + master.key).
+# NE JAMAIS faire `docker compose down -v` (-v supprime ./data). Fixez MASTER_KEY dans .env.
 services:
   itsm:
     build: .
-    # Image UNIQUE : tout le code (y compris les features Supporter) est livré dedans.
-    # Les features restent verrouillées tant qu'une licence valide n'est pas fournie
-    # (LICENSE_KEY ci-dessous ou collée via l'UI). Pas de swap d'image.
+    # Image unique : tout le code (dont les features Supporter) est livre dedans,
+    # verrouille tant qu'aucune licence valide n'est fournie. Pas de swap d'image.
     image: itsm-modern-ai:latest
     container_name: itsm-modern-ai
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      # La DB et la master key vivent dans le volume monté. Défaut = SQLite (pilote).
-      # Pour PostgreSQL (Beta) : définir ITSM_DATABASE_URL dans .env, p.ex.
-      #   ITSM_DATABASE_URL=postgresql+psycopg://itsm:itsm@postgres:5432/itsm
-      # puis lancer `docker compose --profile postgres up -d --build`.
+      # Defaut SQLite. PostgreSQL (Beta) : ITSM_DATABASE_URL dans .env + profile postgres.
       DATABASE_URL: ${ITSM_DATABASE_URL:-sqlite:////app/data/itsm.db}
-      # Licence Supporter (open-core). Vide = Community. Vérifiée HORS-LIGNE (Ed25519).
-      # Peut aussi être collée via l'UI (page Supporter) ; l'env pré-licencie le déploiement.
+      # Licence Supporter (vide = Community) ; aussi collable via l'UI (page Supporter).
       LICENSE_KEY: ${LICENSE_KEY:-}
     ports:
-      # Port HÔTE pilotable (install.sh --port). Port interne fixe = 8000.
+      # Port hote pilotable via install.sh --port ; port interne fixe = 8000.
       - "${ITSM_HOST_PORT:-8000}:8000"
     volumes:
-      # Persistance : base SQLite + master key. Les fiches techniciens, la clé LLM
-      # et la connexion GLPI se configurent dans l'interface web (rien à monter).
       - ./data:/app/data
-    # ── Durcissement (audit 2026-05) ────────────────────────────────────────────
-    # Pas d'escalade de privilèges, puis abandon de TOUTES les capabilities Linux
-    # SAUF le strict minimum requis par l'entrypoint au démarrage (VALIDÉ par un run
-    # réel : un `cap_drop:[ALL]` total fait échouer le boot) :
-    #   - CHOWN + DAC_OVERRIDE : l'entrypoint (root) ajuste l'ownership du volume
-    #     /app/data au 1er démarrage (volume parfois root sur déploiement existant) ;
-    #   - SETUID + SETGID : `gosu` redescend ensuite en utilisateur non-root `app`.
-    # Une fois en `app`, le process moteur ne détient plus aucun privilège.
+    # Durcissement : pas d'escalade ; drop ALL caps sauf le minimum requis au boot.
     security_opt:
       - "no-new-privileges:true"
     cap_drop:
@@ -51,27 +31,17 @@ services:
       - DAC_OVERRIDE
       - SETUID
       - SETGID
-    # read_only : système de fichiers racine en lecture seule (anti-tamper). L'app
-    # n'écrit QUE dans le volume /app/data (DB SQLite + master.key) ; tout le reste
-    # (code, venv) est immuable. /tmp est fourni en tmpfs car SQLite/Python peuvent
-    # y créer des fichiers temporaires, et le venv uv (UV_LINK_MODE=copy) n'écrit
-    # plus après le build. VALIDÉ par run réel : alembic + SQLite n'écrivent que
-    # dans /app/data, le boot reste vert (/health=200) en read_only.
+    # FS racine en lecture seule ; l'app n'ecrit que dans /app/data. /tmp en tmpfs.
     read_only: true
     tmpfs:
       - /tmp
     healthcheck:
-      # Sonde RÉELLE de l'état (probe=true → sonde aussi le LLM si configuré) ;
-      # 503 si dégradé → le healthcheck échoue vraiment. urlopen lève sur 503,
-      # donc le `except`/code de sortie non nul marque le conteneur unhealthy.
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health?probe=true').status==200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
-    # Limites de ressources (compatible `docker compose up` via le runtime, et
-    # `docker stack deploy` via deploy.resources). Bornage mémoire/CPU = garde-fou
-    # anti-emballement (boucle LLM, fuite) sur un hôte mutualisé.
+    # Bornage CPU/memoire (anti-emballement sur hote mutualise).
     deploy:
       resources:
         limits:
@@ -79,18 +49,14 @@ services:
           memory: 512M
         reservations:
           memory: 128M
-    # Rotation des logs JSON du conteneur (évite le remplissage disque de l'hôte).
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
 
-  # ── PostgreSQL (Beta) — service OPTIONNEL, activé par le profile `postgres` ─────
-  # NON lancé par défaut → `docker compose up` reste en SQLite (comportement inchangé).
-  # Activer : `docker compose --profile postgres up -d --build` (+ ITSM_DATABASE_URL dans
-  # .env pointant sur `postgres`). Au 1er boot, l'app peut redémarrer (restart) le temps
-  # que Postgres soit prêt — `pool_pre_ping` + restart:unless-stopped rattrapent la course.
+  # PostgreSQL (Beta) - service optionnel (profile `postgres`) ; sinon SQLite par defaut.
+  # Activer : docker compose --profile postgres up -d --build (+ ITSM_DATABASE_URL dans .env).
   postgres:
     image: postgres:16-alpine
     container_name: itsm-postgres

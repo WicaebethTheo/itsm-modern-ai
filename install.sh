@@ -297,10 +297,20 @@ fi
 
 # ── 5) Admin account — REQUIRED (the console must never be left unprotected) ────
 admin_is_set() { docker compose exec -T itsm python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1; }
+# Peut-on demander interactivement ? stdin = TTY direct, OU un /dev/tty utilisable même
+# quand stdin est un pipe (cas du one-liner `curl … | sh`).
+can_prompt() { [ -t 0 ] || { [ -r /dev/tty ] && [ -w /dev/tty ]; }; }
 run_admin_setup() {  # "$@" → extra flags ; returns the setup exit code
-  if [ -t 0 ]; then docker compose exec itsm python -m itsm_modern_ai.admin_setup "$@"
-  elif [ -n "${ITSM_ADMIN_PASSWORD:-}" ]; then docker compose exec -T -e ITSM_ADMIN_PASSWORD itsm python -m itsm_modern_ai.admin_setup "$@"
-  else die "No interactive terminal and ITSM_ADMIN_PASSWORD unset — an admin password is REQUIRED."; fi
+  if [ -t 0 ]; then
+    docker compose exec itsm python -m itsm_modern_ai.admin_setup "$@"
+  elif [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    # one-liner `curl … | sh` : stdin = pipe, mais le terminal reste accessible via /dev/tty
+    docker compose exec itsm python -m itsm_modern_ai.admin_setup "$@" < /dev/tty
+  elif [ -n "${ITSM_ADMIN_PASSWORD:-}" ]; then
+    docker compose exec -T -e ITSM_ADMIN_PASSWORD itsm python -m itsm_modern_ai.admin_setup "$@"
+  else
+    die "Pas de terminal interactif et ITSM_ADMIN_PASSWORD non defini - mot de passe admin REQUIS."
+  fi
 }
 if [ "$RESET" = true ]; then
   say "Resetting the administrator password (required)"; run_admin_setup --force || true
@@ -309,16 +319,16 @@ elif admin_is_set; then
 fi
 # Enforce: a password MUST be set. Interactive → retry until set (typo/too short).
 if ! admin_is_set; then
-  if [ -t 0 ]; then
+  if can_prompt; then
     tries=0
     until admin_is_set; do
-      tries=$((tries+1)); [ "$tries" -gt 5 ] && die "Admin password still not set after several attempts."
-      say "Set the administrator password — REQUIRED (min. 8 characters)"
-      run_admin_setup || warn "Not set (mismatch or too short) — try again."
+      tries=$((tries+1)); [ "$tries" -gt 5 ] && die "Mot de passe admin toujours non defini apres plusieurs tentatives."
+      say "Definissez le mot de passe administrateur - REQUIS (min. 8 caracteres)"
+      run_admin_setup || warn "Non defini (incoherence ou trop court) - reessayez."
     done
   else
     run_admin_setup || true
-    admin_is_set || die "Could not set the admin password from ITSM_ADMIN_PASSWORD (min. 8 chars)."
+    admin_is_set || die "Impossible de definir le mot de passe admin depuis ITSM_ADMIN_PASSWORD (min. 8 caracteres)."
   fi
 fi
 # Hard gate: refuse to finish if there is still no admin password.
@@ -375,9 +385,18 @@ for line in "${CHECKS[@]}"; do
 done
 echo
 if $allgood; then
-  printf '%s✅ Installation successful — console: http://localhost:%s%s\n' "$c_grn" "$PORT" "$c_off"
-  echo "   Configure GLPI, the LLM provider and the scope from the web console."
-  echo "   Become Supporter later: paste your license key in the Supporter page of the console."
+  # IP LAN de la machine (acces distant) ; localhost ne marche qu'en local.
+  host_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
+  [ -n "$host_ip" ] || host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  printf '%s== Installation reussie ==%s\n' "$c_grn" "$c_off"
+  if [ -n "$host_ip" ]; then
+    printf '   Console : %shttp://%s:%s%s\n' "$c_grn" "$host_ip" "$PORT" "$c_off"
+    printf '             http://localhost:%s (sur cette machine)\n' "$PORT"
+  else
+    printf '   Console : %shttp://localhost:%s%s\n' "$c_grn" "$PORT" "$c_off"
+  fi
+  echo "   Configurez GLPI, le fournisseur LLM et le perimetre depuis la console web."
+  echo "   Devenir Supporter : collez votre cle de licence dans la page Supporter."
 else
-  die "Some checks failed (see above)."
+  die "Certains controles ont echoue (voir ci-dessus)."
 fi
