@@ -254,12 +254,14 @@ if [ "$DO_BUILD" = true ]; then
   # far more setups. If BuildKit/buildx IS installed it's used transparently.
   docker build -t "$IMAGE" . || die "Image build failed (see output above)."
   say "Starting"
-  docker compose up -d || die "Start failed (see: docker compose logs)."
+  # --force-recreate : remplace un conteneur perime/casse (p.ex. dont le dossier ./data
+  # monte a ete supprime). Sans danger : les donnees vivent dans le volume ./data de l'hote.
+  docker compose up -d --force-recreate || die "Start failed (see: docker compose logs)."
   check_add "Image built" ok
 else
   docker image inspect "$IMAGE" >/dev/null 2>&1 || die "Image $IMAGE absent. Provide --bundle or drop --no-build."
   say "Starting with image $IMAGE (no build)"
-  docker compose up -d || die "Start failed (see: docker compose logs)."
+  docker compose up -d --force-recreate || die "Start failed (see: docker compose logs)."
   check_add "Image present ($IMAGE)" ok
 fi
 
