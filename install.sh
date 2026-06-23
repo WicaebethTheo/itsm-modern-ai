@@ -171,7 +171,12 @@ else check_add "Disk space (>=2 GB)" "warn:$(( free_kb/1024 )) MB free"; warn "L
 # Host port free?
 if (exec 3<>"/dev/tcp/127.0.0.1/${PORT}") 2>/dev/null; then
   exec 3>&- 3<&- 2>/dev/null || true
-  warn "Port ${PORT} seems already in use (maybe an existing instance)."
+  warn "Port ${PORT} deja utilise (probablement une instance existante)."
+  if ! instance_exists; then
+    warn "Aucune instance dans CE dossier, mais le port ${PORT} est pris : une instance tourne ailleurs."
+    warn "Pour la METTRE A JOUR, placez-vous dans SON dossier (celui qui contient docker-compose.yml et ./data) puis relancez ./install.sh."
+    warn "Pour un 2e deploiement separe ici : relancez avec --port <autre_port>."
+  fi
   check_add "Port ${PORT} free" "warn:in use"
 else
   check_add "Port ${PORT} free" ok

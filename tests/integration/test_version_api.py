@@ -15,6 +15,7 @@ from itsm_modern_ai.config.settings import Settings
 def _settings(tmp_path, **kw) -> Settings:
     kw.setdefault("dev_open_admin", True)
     kw.setdefault("session_https_only", False)
+    kw.setdefault("update_check_url", "")  # tests hors-ligne ; la prod active le check par défaut
     return Settings(
         _env_file=None,
         database_url=f"sqlite:///{tmp_path / 'v.db'}",
@@ -30,12 +31,12 @@ def client(tmp_path):
         yield c
 
 
-def test_version_no_check_by_default(client):
+def test_version_no_check_when_url_empty(client):
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
     assert body["current"] == __version__
-    # Par défaut : aucune URL → pas d'appel sortant, pas de MAJ signalée (souverain).
+    # URL vide (air-gap / opt-out) → aucun appel sortant, pas de MAJ signalée.
     assert body["check_enabled"] is False
     assert body["latest"] is None
     assert body["update_available"] is False

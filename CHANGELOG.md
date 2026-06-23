@@ -5,6 +5,16 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-06-23 — 0.9.2 — Maj : lien doc, check par défaut, message port 8000
+
+- **UI** : correction du lien `GITHUB_URL` (org `tmeneboode` → `WicaebethTheo`, ne 404 plus) ;
+  le badge « mise à jour disponible » renvoie vers la **doc de mise à jour**
+  (docs.itsm-modern-ai.com/update).
+- **Vérification de mise à jour activée par défaut** (best-effort, lit seulement le dernier
+  numéro de version publié, aucune donnée envoyée) ; air-gap = `UPDATE_CHECK_URL=` vide.
+- **Installeur** : si le port 8000 est pris mais qu'aucune instance n'est dans le dossier
+  courant, message clair → se placer dans le dossier de l'instance pour la mettre à jour.
+
 ## 2026-06-23 — 0.9.1 — Installeur on-prem robuste + correctifs UI
 
 - **Installeur via `curl … | sh`** : le mot de passe admin est désormais lu depuis `/dev/tty`

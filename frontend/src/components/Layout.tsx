@@ -3,7 +3,7 @@ import { LangToggle } from "@/components/LangToggle";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useResource } from "@/hooks/useResource";
-import { Api, GITHUB_URL } from "@/lib/api";
+import { Api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { type IconName, NAV, navByPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
@@ -108,12 +108,12 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
         {v ? (
           v.update_available ? (
             <a
-              href={`${GITHUB_URL}/releases`}
+              href="https://docs.itsm-modern-ai.com/update/"
               target="_blank"
               rel="noopener noreferrer"
               title={t(
-                `Mise à jour disponible (v${v.latest}). Mettre à jour : ./install.sh --update`,
-                `Update available (v${v.latest}). Update: ./install.sh --update`,
+                `Mise à jour disponible (v${v.latest}). Comment mettre à jour →`,
+                `Update available (v${v.latest}). How to update →`,
               )}
               className="hidden items-center gap-1 rounded-full border border-accent-indigo/40 bg-accent-indigo/10 px-2 py-0.5 text-[11px] font-medium text-accent-indigo md:flex"
             >

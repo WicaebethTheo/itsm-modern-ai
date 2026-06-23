@@ -86,11 +86,11 @@ class Settings(BaseSettings):
     # stocké en base ; l'env LICENSE_KEY permet de pré-licencier l'image unique.
     license_key: str = ""
 
-    # Vérification de mise à jour (OPT-IN, souverain). Vide (défaut) = AUCUN appel sortant
-    # (air-gap respecté). Si défini, le moteur interroge cette URL (best-effort, en cache)
-    # pour connaître la dernière version publiée. Le flux doit renvoyer du JSON
-    # {"version": "x.y.z"} (ou {"tag_name": ...}) ou la version en texte brut.
-    update_check_url: str = ""
+    # Vérification de mise à jour. ACTIVÉE par défaut : best-effort, en cache, l'instance
+    # lit UNIQUEMENT le dernier numéro de version publié (aucune donnée envoyée). Pour un
+    # déploiement air-gap / 100 % hors-ligne : mettre UPDATE_CHECK_URL= (vide) dans .env.
+    # Le flux doit renvoyer du JSON {"version": "x.y.z"} (ou {"tag_name": ...}) ou du texte brut.
+    update_check_url: str = "https://api.github.com/repos/WicaebethTheo/itsm-modern-ai/releases/latest"
     # Fraîcheur du cache de vérification (s). Le moteur ré-interroge le flux au plus une
     # fois par fenêtre → une release publiée est détectée AUTOMATIQUEMENT sous ce délai,
     # sans redémarrage. Défaut 1 h ; baisser (ex. 60) pour un test quasi immédiat.
