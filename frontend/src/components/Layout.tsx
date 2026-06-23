@@ -94,18 +94,15 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
           <Heart className="h-3.5 w-3.5" fill={isSupporter ? "currentColor" : "none"} />
           Supporter
         </NavLink>
-        {/* Édition courante (à gauche de la version/MAJ). */}
-        {license.data ? (
+        {/* Édition courante. Quand une licence est active, le bouton violet ci-dessus
+            indique déjà "Supporter" → on n'affiche le badge que pour l'état Community
+            (sinon double "Supporter" : bouton + badge). */}
+        {license.data && !isSupporter ? (
           <span
-            className={cn(
-              "hidden rounded-full px-2 py-0.5 text-[11px] font-medium md:inline",
-              isSupporter
-                ? "border border-accent-purple/30 bg-accent-purple/10 text-accent-purple"
-                : "bg-muted text-muted-foreground",
-            )}
+            className="hidden rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground md:inline"
             title={t("Édition", "Edition")}
           >
-            {isSupporter ? "Supporter" : "Community"}
+            Community
           </span>
         ) : null}
         {v ? (

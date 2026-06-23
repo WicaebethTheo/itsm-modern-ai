@@ -5,6 +5,15 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-06-23 — 0.9.1 — Installeur on-prem robuste + correctifs UI
+
+- **Installeur via `curl … | sh`** : le mot de passe admin est désormais lu depuis `/dev/tty`
+  (fonctionne avec le one-liner) ; le message final affiche l'URL avec l'**IP de la machine**
+  (+ localhost). `docker compose up -d --force-recreate` remplace un conteneur périmé dont le
+  montage `./data` aurait été supprimé. `.env.example` et `docker-compose.yml` réécrits en ASCII
+  (fin du charabia sur les terminaux non-UTF-8) et allégés.
+- **UI** : correction du double badge « Supporter » (bouton + badge) quand une licence est active.
+
 ## 2026-06-23 — 0.9.0 — Édition unique : fonctions Supporter intégrées, déverrouillées en collant une licence dans la page Supporter
 
 Édition **unique** : un **seul dépôt, une seule image** qui contient désormais tout le
