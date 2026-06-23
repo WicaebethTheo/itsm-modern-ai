@@ -5,40 +5,40 @@
 
 ## Promesse exacte
 
-**Coordonnées masquées avant l'appel LLM — la portée DÉPEND DE L'ÉDITION.** Ce **n'est pas**
-une « anonymisation ». Lisez attentivement le périmètre par édition ci-dessous.
+**Coordonnées masquées avant l'appel LLM — la portée DÉPEND DE LA LICENCE.** Ce **n'est pas**
+une « anonymisation ». Lisez attentivement le périmètre ci-dessous.
 
 ## Portée du masquage (à lire attentivement)
 
-Le masquage (FR-14) repose sur des **expressions régulières** (heuristiques) et **diffère selon
-l'édition** (open-core) :
+Le masquage (FR-14) repose sur des **expressions régulières** (heuristiques). Le code est
+livré dans l'image unique ; sa portée **diffère selon la licence** (open-core) :
 
-**Édition Community (gratuite)** — masque uniquement :
+**Sans licence (édition Community, gratuite)** — masque uniquement :
 - adresses **email** → `[EMAIL]` ;
 - numéros de **téléphone** (FR et international E.164) → `[PHONE]`.
 
-> ⚠️ **En Community, les IBAN, cartes bancaires, IP/MAC, mots de passe / tokens / clés API
+> ⚠️ **Sans licence, les IBAN, cartes bancaires, IP/MAC, mots de passe / tokens / clés API
 > NE sont PAS masqués** : ils sont transmis **EN CLAIR** au LLM **et** conservés en clair dans
 > le journal des appels (table `llm_calls`). **À porter explicitement à la connaissance de la
 > DPO** avant toute mise en production avec des données réelles.
 
-**Édition Enterprise (licence)** — ajoute le masquage de :
+**Avec une licence Supporter** — déverrouille en place le masquage de :
 - **IBAN** → `[IBAN]`, **cartes bancaires** (validation Luhn) → `[CARD]` ;
 - **adresses IP** (IPv4) / **MAC** → `[IP]` / `[MAC]` ;
 - **mots de passe / tokens** et **clés cloud** (AWS `AKIA…`, Google `AIza…`) → `[SECRET]` / `[CLOUD_KEY]` ;
 - identifiants FR **NIR / SIRET** → `[NIR]` / `[SIRET]`.
 
-> Les **patterns regex personnalisés** sont une capacité de l'overlay **non encore exposée à la
+> Les **patterns regex personnalisés** sont une capacité **non encore exposée à la
 > configuration** : la console les affiche « à venir » et ils **ne masquent rien** pour l'instant.
 > À ne PAS présenter comme actifs à la DPO tant que leur configuration n'est pas livrée.
 
 > En modes `semi_auto`/`full_auto`, le **brouillon généré par le LLM est re-masqué** (selon
-> l'édition) avant toute publication publique au demandeur.
+> la licence) avant toute publication publique au demandeur.
 
-Dans **toutes** les éditions, le masquage **NE masque PAS** les **noms de personnes** ni les
+Dans **tous** les cas, le masquage **NE masque PAS** les **noms de personnes** ni les
 **adresses postales** (reconnaissance d'entités nommées non implémentée). Des données
 nominatives peuvent donc apparaître en clair dans le contenu transmis au LLM. La promesse est
-« coordonnées masquées selon l'édition », **pas** « aucune donnée nominative ».
+« coordonnées masquées selon la licence », **pas** « aucune donnée nominative ».
 
 ## Résidence des données
 
@@ -62,16 +62,15 @@ Le masquage intervient **avant** tout appel LLM (ordre du pipeline immuable). Se
 La console expose une page **« Confidentialité (DPO) »** (`/privacy`, sous l'auth locale) qui
 permet de vérifier en réunion, **sans lire le code**, ce qui est réellement masqué :
 
-- **Tableau des catégories PII** avec leur statut **effectif selon l'édition installée**
+- **Tableau des catégories PII** avec leur statut **effectif selon la licence active**
   (email + téléphone *Actif (Community)* ; IBAN/cartes, secrets/tokens/clés API, IP/MAC et
-  NIR/SIRET *Verrouillé · Enterprise* en édition Community ; patterns regex personnalisés
-  *À venir*). Le statut est lu depuis le moteur, pas codé en dur — il reflète l'image **et**
-  la licence actives.
-- **Avertissement honnête** affiché en Community : les catégories verrouillées transitent et
+  NIR/SIRET *Verrouillé · Supporter* sans licence ; patterns regex personnalisés
+  *À venir*). Le statut est lu depuis le moteur, pas codé en dur — il reflète la licence active.
+- **Avertissement honnête** affiché sans licence : les catégories verrouillées transitent et
   sont journalisées **en clair** (à valider explicitement avant toute donnée réelle).
 - **Outil « Tester le masquage »** : colle un texte d'exemple, l'API applique le masquage
-  **réel** (état + édition courants) et renvoie le texte masqué — utile pour démontrer que
-  `[EMAIL]` est masqué mais qu'un IBAN reste en clair en Community.
+  **réel** (état + licence courants) et renvoie le texte masqué — utile pour démontrer que
+  `[EMAIL]` est masqué mais qu'un IBAN reste en clair sans licence.
 - **Rappel des durées de rétention** et **lien vers le journal `llm_calls`**.
 - **Export d'un rapport DPO** (`GET /api/privacy/report.md`) : un Markdown daté listant
   l'édition, les catégories masquées et les fenêtres de rétention — pièce jointe pour le dossier.

@@ -74,7 +74,7 @@ export const demo: {
 } = {
   authStatus: { authenticated: true, auth_configured: false },
   info: {
-    version: "0.8.14",
+    version: "0.9.0",
     title: "ITSM Modern AI — moteur de triage (headless)",
     endpoints: [
       { path: "/health", methods: ["GET"] },
@@ -294,13 +294,13 @@ export const demo: {
     last_run_by: "scheduler",
   },
   version: {
-    current: "0.8.14",
+    current: "0.9.0",
     latest: null,
     update_available: false,
     check_enabled: false,
     latest_notes: null,
   },
-  // Démo : édition Community → tout le catalogue Enterprise est verrouillé.
+  // Démo : édition Community → tout le catalogue Supporter est verrouillé.
   license: {
     edition: "community",
     valid: true,
@@ -347,7 +347,7 @@ export const demo: {
       },
     ],
   },
-  // Démo : édition Community → email + téléphone masqués ; le reste = Enterprise (inactif).
+  // Démo : édition Community → email + téléphone masqués ; le reste = Supporter (inactif).
   privacy: {
     edition_advanced: false,
     retention_decisions_days: 365,
@@ -375,7 +375,7 @@ export const demo: {
         label_fr: "IBAN & cartes de paiement",
         label_en: "IBAN & payment cards",
         example: "FR76 3000 4000 …",
-        scope: "enterprise",
+        scope: "supporter",
         active: false,
       },
       {
@@ -383,7 +383,7 @@ export const demo: {
         label_fr: "Secrets, tokens, mots de passe, clés API",
         label_en: "Secrets, tokens, passwords, API keys",
         example: "sk-•••••, Bearer •••",
-        scope: "enterprise",
+        scope: "supporter",
         active: false,
       },
       {
@@ -391,7 +391,7 @@ export const demo: {
         label_fr: "IP & MAC",
         label_en: "IP & MAC",
         example: "10.0.1.42, a4:5e:60:…",
-        scope: "enterprise",
+        scope: "supporter",
         active: false,
       },
       {
@@ -399,7 +399,7 @@ export const demo: {
         label_fr: "NIR / SIRET",
         label_en: "NIR / SIRET",
         example: "1 85 12 …, 552 120 …",
-        scope: "enterprise",
+        scope: "supporter",
         active: false,
       },
       {

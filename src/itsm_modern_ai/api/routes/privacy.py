@@ -1,7 +1,7 @@
 """Confidentialité / DPO — état du masquage PII par catégorie + outil de test + rapport.
 
-Reflète FIDÈLEMENT le découpage open-core : Community masque e-mail + téléphone ; IBAN/
-cartes, secrets, IP/MAC, NIR/SIRET et regex custom sont gatés Enterprise (FEATURE_PII_ADVANCED).
+Reflète FIDÈLEMENT le découpage open-core : sans licence on masque e-mail + téléphone ; IBAN/
+cartes, secrets, IP/MAC, NIR/SIRET et regex custom sont gatés Supporter (FEATURE_PII_ADVANCED).
 Page destinée à la DPO/RSSI (cf. docs/dpo.md). Protégé par l'auth locale (FR-24).
 """
 
@@ -29,7 +29,7 @@ class PiiCategory(BaseModel):
     label_fr: str
     label_en: str
     example: str
-    scope: str  # "community" | "enterprise" | "roadmap" (capacité pas encore livrée)
+    scope: str  # "community" | "supporter" | "roadmap" (capacité pas encore livrée)
     active: bool  # réellement masqué dans l'état courant
 
 
@@ -76,14 +76,14 @@ def _categories(advanced: bool, flags: dict[str, bool]) -> list[PiiCategory]:
         PiiCategory(key="phone", label_fr="Numéros de téléphone", label_en="Phone numbers",
                     example="+33 6 12 34 56 78", scope="community", active=flags["phone"]),
         PiiCategory(key="iban", label_fr="IBAN & cartes bancaires", label_en="IBAN & payment cards",
-                    example="FR76 3000 4000 …", scope="enterprise", active=flags["iban"]),
+                    example="FR76 3000 4000 …", scope="supporter", active=flags["iban"]),
         PiiCategory(key="secret", label_fr="Secrets (tokens, mots de passe, clés API)",
                     label_en="Secrets (tokens, passwords, API keys)", example="sk-•••••, Bearer •••",
-                    scope="enterprise", active=flags["secret"]),
+                    scope="supporter", active=flags["secret"]),
         PiiCategory(key="network", label_fr="Adresses IP & MAC", label_en="IP & MAC addresses",
-                    example="10.0.1.42, a4:5e:60:…", scope="enterprise", active=flags["network"]),
+                    example="10.0.1.42, a4:5e:60:…", scope="supporter", active=flags["network"]),
         PiiCategory(key="nir_siret", label_fr="NIR / SIRET", label_en="NIR / SIRET",
-                    example="1 85 12 …, 552 120 …", scope="enterprise", active=advanced),
+                    example="1 85 12 …, 552 120 …", scope="supporter", active=advanced),
         # Patterns regex personnalisés : la capacité existe dans l'overlay (AdvancedPiiMasker
         # .from_rules) mais n'est pas encore exposée à la configuration → jamais active en prod.
         # Annoncé « à venir » (roadmap), jamais « masqué », pour ne pas tromper la DPO.
@@ -127,7 +127,7 @@ def dpo_report(request: Request, cfg: RuntimeConfigService = Depends(get_config_
     s = cfg.settings
     with db.session_scope() as session:
         n = journal.count_llm_calls(session)
-    edition = "Enterprise" if advanced else "Community"
+    edition = "Supporter" if advanced else "Community"
     lines = [
         "# Rapport DPO — ITSM Modern AI",
         f"_Généré le {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')} · édition {edition}_",
@@ -142,8 +142,8 @@ def dpo_report(request: Request, cfg: RuntimeConfigService = Depends(get_config_
             status = "Masqué"
         elif c.scope == "roadmap":
             status = "À venir (non implémenté)"
-        elif c.scope == "enterprise":
-            status = "VERROUILLÉ (Enterprise)"
+        elif c.scope == "supporter":
+            status = "VERROUILLÉ (Supporter)"
         else:
             status = "Désactivé"
         lines.append(f"| {c.label_fr} | `{c.example}` | {status} |")

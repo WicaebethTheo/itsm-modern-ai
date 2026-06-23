@@ -32,11 +32,11 @@ def test_privacy_community_split(client):
     body = client.get("/api/privacy").json()
     assert body["edition_advanced"] is False
     cats = {c["key"]: c for c in body["categories"]}
-    # Community : email + phone masqués ; le reste = enterprise, inactif.
+    # Sans licence : email + phone masqués ; le reste = supporter, inactif.
     assert cats["email"]["scope"] == "community" and cats["email"]["active"] is True
     assert cats["phone"]["active"] is True
     for k in ("iban", "secret", "network", "nir_siret"):
-        assert cats[k]["scope"] == "enterprise"
+        assert cats[k]["scope"] == "supporter"
         assert cats[k]["active"] is False
     # Patterns regex custom = capacité pas encore livrée → annoncée « roadmap », jamais active
     # (honnêteté DPO : ne pas afficher « masqué » tant que from_rules n'est pas câblé).
@@ -50,7 +50,7 @@ def test_test_mask_community_masks_email_not_iban(client):
     assert r.status_code == 200
     out = r.json()["masked"]
     assert "[EMAIL]" in out  # email masqué (Community)
-    assert "FR7630004000031234567890143" in out  # IBAN NON masqué (Enterprise)
+    assert "FR7630004000031234567890143" in out  # IBAN NON masqué (Supporter, sans licence)
     assert "[IBAN]" not in out
 
 

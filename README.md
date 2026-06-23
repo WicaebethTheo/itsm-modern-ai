@@ -9,7 +9,7 @@
 *The LLM proposes, the code decides — GLPI ticket triage with deterministic guardrails.*
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.8.14-blueviolet)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.9.0-blueviolet)](pyproject.toml)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
@@ -104,8 +104,8 @@ Détail des suites de tests et conventions qualité : [`docs/testing.md`](docs/t
 
 - **On-premise**, aucun phone-home, aucun appel sortant hors fournisseur LLM configuré.
 - **Secrets chiffrés Fernet** au repos ; `master.key` montée comme volume Docker (`0600`).
-- **Masquage PII avant le LLM** : e-mail + téléphone en Community ; IBAN/cartes, secrets (mots de passe/tokens/clés API), IP/MAC et identifiants FR (NIR/SIRET) en **Enterprise**. ⚠️ Sans Enterprise, IBAN et secrets sont envoyés **en clair** au LLM (avertissement affiché dans la console + fiche DPO).
-- **Console DPO** dédiée (page *Confidentialité (DPO)*) : tableau des catégories PII masquées par édition, outil de test du masquage, et **export d'un rapport DPO** (Markdown) — pour valider le flux de données en réunion.
+- **Masquage PII avant le LLM** : e-mail + téléphone toujours inclus ; IBAN/cartes, secrets (mots de passe/tokens/clés API), IP/MAC et identifiants FR (NIR/SIRET) débloqués par une licence **Supporter**. ⚠️ Sans licence, IBAN et secrets sont envoyés **en clair** au LLM (avertissement affiché dans la console + fiche DPO).
+- **Console DPO** dédiée (page *Confidentialité (DPO)*) : tableau des catégories PII masquées, outil de test du masquage, et **export d'un rapport DPO** (Markdown) — pour valider le flux de données en réunion.
 - **Page Coûts & quotas** : dépense LLM des dernières 24 h vs plafond journalier glissant.
 - **Pas de métrique nominative** par technicien (anti-mouchard).
 - **Conteneur non-root**, rate-limit login (avec `X-Forwarded-For` derrière proxy).
@@ -125,7 +125,7 @@ Détails : [`SECURITY.md`](SECURITY.md) (politique de divulgation) · [`docs/dpo
 | [`docs/llm-providers.md`](docs/llm-providers.md) | 4 fournisseurs LLM + souveraineté |
 | [`docs/glpi-api-v2.md`](docs/glpi-api-v2.md) | Connecteur GLPI API V2 (OAuth2, GLPI 11) — **Beta** |
 | [`docs/postgresql.md`](docs/postgresql.md) | Portage PostgreSQL (driver, pool, compose) — **Beta** |
-| [`docs/enterprise-upgrade.md`](docs/enterprise-upgrade.md) | Passer en édition Enterprise sans rien perdre (open-core) |
+| [`docs/supporter.md`](docs/supporter.md) | Devenir Supporter : déverrouiller les features par licence (open-core) |
 | [`docs/api.md`](docs/api.md) | Référence des endpoints REST |
 | [`docs/testing.md`](docs/testing.md) | Suites de tests + CI |
 | [`docs/install.md`](docs/install.md) | Installation on-prem en ½ page |
@@ -141,15 +141,15 @@ Détails : [`SECURITY.md`](SECURITY.md) (politique de divulgation) · [`docs/dpo
 
 ## Éditions (open-core)
 
-Ce dépôt est l'**édition Community** (le cœur, MIT) : triage à garde-fous, connecteurs GLPI **legacy + V2**, PostgreSQL, masquage PII **e-mail + téléphone**, modes par entité. Tout est fonctionnel et gratuit.
+Édition **UNIQUE** : un seul dépôt, une seule image. Tout le code est livré ici (MIT) — triage à garde-fous, connecteurs GLPI **legacy + V2**, PostgreSQL, masquage PII **e-mail + téléphone**, modes par entité — **plus** les fonctionnalités **Supporter** (leur code est présent mais **verrouillé**).
 
-L'**édition Enterprise** ajoute, par-dessus la même base, des fonctionnalités payantes débloquées par une **clé de licence signée (Ed25519, vérifiée hors-ligne — zéro phone-home, compatible air-gap)** : masquage **IBAN/cartes + secrets (mots de passe/tokens/clés API) + IP/MAC** et identifiants FR **NIR/SIRET**. *(Patterns regex personnalisés, multi-entités avancé et exports planifiés / DPO+ : sur la roadmap.)* Ces options apparaissent dans la console (page **Store**) mais restent **verrouillées** sans licence — leur code n'est pas livré dans l'édition Community (garantie de séparation).
+Les features **Supporter** se déverrouillent **en place** par une **clé de licence signée (Ed25519, vérifiée hors-ligne — zéro phone-home, compatible air-gap)** : masquage **IBAN/cartes + secrets (mots de passe/tokens/clés API) + IP/MAC** et identifiants FR **NIR/SIRET**. *(Patterns regex personnalisés, multi-entités avancé et exports planifiés / DPO+ : sur la roadmap.)* Elles apparaissent dans la console (page **Supporter**) mais restent **verrouillées** tant qu'aucune licence valide n'est fournie. La clé de **signature** reste dans le dépôt privé de signature des licences ; seule la clé publique de vérification est embarquée.
 
-**Passer en Enterprise** sans rien perdre (même `./data`, swap d'image + licence) : [`docs/enterprise-upgrade.md`](docs/enterprise-upgrade.md) ou `./upgrade-to-enterprise.sh`.
+**Devenir Supporter** sans rien perdre (même `./data`, aucun swap d'image) : **coller la clé de licence dans la page Supporter** de la console — elle déverrouille les features en place. Pour désactiver, **retirer la clé sur cette même page** (retour à Community). `LICENSE_KEY` dans `.env` reste un pré-amorçage optionnel pour les déploiements automatisés. Détails : [`docs/supporter.md`](docs/supporter.md).
 
 ## Licence
 
-[MIT](LICENSE) — open-core, monétisation par le service (support SLA, install/config, prestations, modules Enterprise). 
+[MIT](LICENSE) — open-core, monétisation par le service (support SLA, install/config, prestations, licences Supporter). Tout le code applicatif est public dans ce dépôt ; seule la clé privée de signature des licences reste hors dépôt.
 
 ---
 

@@ -1,14 +1,13 @@
-"""Point d'extension open-core — découverte des modules Enterprise (entry points).
+"""Registre des features et chargement des plugins (open-core, édition unique).
 
-Le core ne connaît PAS l'implémentation des features payantes : il expose un registre
-et un loader. Le package overlay `itsm_modern_ai_enterprise`, s'il est installé, déclare
-un entry point dans le groupe `itsm_modern_ai.plugins` ; sa fonction `register(registry)`
-enregistre les implémentations.
+Les features Supporter sont LIVRÉES dans cette image (package `itsm_modern_ai.features`)
+mais restent verrouillées tant qu'une licence valide ne les autorise pas. `build_registry()`
+enregistre ces features intégrées, puis charge tout plugin externe déclaré via entry point
+dans le groupe `itsm_modern_ai.plugins`.
 
-Conséquence (et garantie de la séparation) : sur l'image **Community**, le code payant
-n'est tout simplement pas installé → `installed_features()` est vide → la feature reste
-verrouillée même avec une licence. Sur l'image **Enterprise**, l'implémentation est là ;
-elle s'active si la **licence** l'autorise (cf. services/license_service).
+Conséquence : `installed_features()` contient toujours les 3 clés Supporter (le code est
+présent). L'activation réelle dépend de la **licence** (cf. services/license_service) :
+`active = installed ∧ entitled`.
 """
 
 from __future__ import annotations
@@ -23,13 +22,13 @@ ENTRY_POINT_GROUP = "itsm_modern_ai.plugins"
 
 
 class PluginRegistry:
-    """Registre des implémentations de features fournies par les plugins installés."""
+    """Registre des implémentations de features fournies par l'image et les plugins installés."""
 
     def __init__(self) -> None:
         self._features: dict[str, Any] = {}
 
     def register_feature(self, key: str, provider: Any) -> None:
-        """Déclare qu'une feature payante est IMPLÉMENTÉE (code présent dans l'image)."""
+        """Déclare qu'une feature gatée est IMPLÉMENTÉE (code présent dans l'image)."""
         if key in self._features:
             logger.warning("feature plugin '%s' déjà enregistrée — écrasée", key)
         self._features[key] = provider
@@ -61,5 +60,9 @@ def load_plugins(registry: PluginRegistry) -> PluginRegistry:
 
 
 def build_registry() -> PluginRegistry:
-    """Fabrique un registre et y charge les plugins installés."""
-    return load_plugins(PluginRegistry())
+    """Fabrique un registre, y enregistre les features intégrées puis les plugins externes."""
+    registry = PluginRegistry()
+    from . import features
+
+    features.register(registry)
+    return load_plugins(registry)

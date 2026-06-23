@@ -7,7 +7,7 @@ import { Api, GITHUB_URL } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { type IconName, NAV, navByPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
-import { LogOut } from "lucide-react";
+import { Heart, LogOut } from "lucide-react";
 import { useCallback, useEffect } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
@@ -59,8 +59,8 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
   const version = useResource(useCallback(() => Api.version(), []));
   const v = version.data;
   const license = useResource(useCallback(() => Api.getLicense(), []));
-  // Édition = Enterprise uniquement si une feature est réellement active (cohérent Store).
-  const isEnterprise = (license.data?.features ?? []).some((f) => f.active);
+  // Édition = Supporter uniquement si une feature est réellement active (cohérent Store).
+  const isSupporter = (license.data?.features ?? []).some((f) => f.active);
   // Re-vérifie périodiquement (page ouverte) → l'indicateur de MAJ se met à jour seul,
   // sans recharger ni redémarrer. Le backend met le résultat en cache (TTL configurable).
   const reloadVersion = version.reload;
@@ -80,18 +80,32 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
         )}
       </div>
       <div className="flex shrink-0 items-center gap-3">
+        {/* Accès rapide à la page Supporter (licence). Violet, en haut à droite. */}
+        <NavLink
+          to="/store"
+          title={t("Supporter — licence & fonctionnalités", "Supporter — license & features")}
+          className={cn(
+            "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+            isSupporter
+              ? "border-accent-purple/40 bg-accent-purple/20 text-accent-purple"
+              : "border-accent-purple/30 bg-accent-purple/10 text-accent-purple hover:bg-accent-purple/20",
+          )}
+        >
+          <Heart className="h-3.5 w-3.5" fill={isSupporter ? "currentColor" : "none"} />
+          Supporter
+        </NavLink>
         {/* Édition courante (à gauche de la version/MAJ). */}
         {license.data ? (
           <span
             className={cn(
               "hidden rounded-full px-2 py-0.5 text-[11px] font-medium md:inline",
-              isEnterprise
-                ? "border border-accent-indigo/30 bg-accent-indigo/10 text-accent-indigo"
+              isSupporter
+                ? "border border-accent-purple/30 bg-accent-purple/10 text-accent-purple"
                 : "bg-muted text-muted-foreground",
             )}
             title={t("Édition", "Edition")}
           >
-            {isEnterprise ? "Enterprise" : "Community"}
+            {isSupporter ? "Supporter" : "Community"}
           </span>
         ) : null}
         {v ? (

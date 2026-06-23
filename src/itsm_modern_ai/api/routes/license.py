@@ -1,14 +1,14 @@
-"""Endpoint licence (Store) — édition active, features verrouillées/débloquées, saisie de clé.
+"""Endpoint licence (page Supporter) — édition active, features verrouillées/débloquées, saisie de clé.
 
 Vérification 100 % hors-ligne (Ed25519). Protégé par l'auth locale (FR-24).
 
 Une feature est :
-- **installed** : son code est présent dans l'image (plugin Enterprise installé) ;
+- **installed** : son code est présent dans l'image (toujours vrai en édition unique) ;
 - **entitled** : la licence l'autorise ;
 - **active**  : installed ET entitled (seul cas où elle fonctionne réellement).
 
-Sur l'image Community, `installed=False` partout → tout reste verrouillé (« passez
-Enterprise »), même si une clé valide est collée.
+Sans licence valide, `entitled=False` partout → les features restent verrouillées
+(« devenez Supporter »), même si le code est livré dans l'image.
 """
 
 from __future__ import annotations
@@ -31,13 +31,13 @@ class FeatureView(BaseModel):
     label_en: str
     description_fr: str
     description_en: str
-    installed: bool  # code présent dans l'image (plugin Enterprise)
+    installed: bool  # code présent dans l'image (toujours vrai en édition unique)
     entitled: bool  # autorisé par la licence
     active: bool  # installed ET entitled
 
 
 class LicenseView(BaseModel):
-    edition: str  # community | enterprise
+    edition: str  # community | supporter
     valid: bool
     customer: str | None = None
     issued_at: str | None = None

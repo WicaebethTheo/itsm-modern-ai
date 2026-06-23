@@ -114,7 +114,7 @@ class TriageService:
         default_mode: ExecutionMode = ExecutionMode.SUGGESTION,
         auto_min_confidence: float | None = None,
         mask_flags: dict[str, bool] | None = None,
-        advanced_masker=None,  # passe Enterprise (FEATURE_PII_ADVANCED) appliquée après le masque de base
+        advanced_masker=None,  # passe Supporter (FEATURE_PII_ADVANCED) appliquée après le masque de base
         glpi_base_url: str | None = None,
         confidence_threshold: float | None = None,
         cost_cap_eur_per_day: float | None = None,
@@ -146,11 +146,11 @@ class TriageService:
         )
         # Motifs de masquage actifs (FR-14). Vide → tous actifs (défaut sûr).
         self._mask_flags = mask_flags or {}
-        # Masquage avancé Enterprise (NIR/SIRET, regex custom) — None en Community.
+        # Masquage avancé Supporter (NIR/SIRET, regex custom) — None sans licence valide.
         self._advanced_masker = advanced_masker
 
     def _advanced(self, text: str) -> str:
-        """Passe de masquage Enterprise après le masque de base (no-op en Community)."""
+        """Passe de masquage Supporter après le masque de base (no-op sans licence)."""
         return self._advanced_masker.mask(text) if self._advanced_masker is not None else text
 
     async def _call_llm(self, system: str, user: str) -> LlmResult:

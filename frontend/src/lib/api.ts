@@ -38,7 +38,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.8.14";
+export const APP_VERSION = "0.9.0";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo MENEBOODE";
@@ -356,9 +356,9 @@ export interface SandboxResult {
   draft: string | null;
 }
 
-// ── Licence Enterprise (open-core) ───────────────────────────────────────────
+// ── Licence Supporter (open-core) ────────────────────────────────────────────
 
-export type LicenseEdition = "community" | "enterprise";
+export type LicenseEdition = "community" | "supporter";
 
 export interface LicenseFeature {
   key: string; // "pii_advanced" | "multi_entity" | "scheduled_exports"
@@ -366,7 +366,7 @@ export interface LicenseFeature {
   label_en: string;
   description_fr: string;
   description_en: string;
-  installed: boolean; // code présent dans l'image (Enterprise)
+  installed: boolean; // code présent dans l'image (Supporter)
   entitled: boolean; // autorisé par la licence
   active: boolean; // installed && entitled (= réellement débloqué)
 }
@@ -395,7 +395,7 @@ export interface PiiCategory {
   label_fr: string;
   label_en: string;
   example: string;
-  scope: "community" | "enterprise" | "roadmap"; // roadmap = capacité pas encore livrée
+  scope: "community" | "supporter" | "roadmap"; // roadmap = capacité pas encore livrée
   active: boolean; // réellement masqué dans l'état courant
 }
 export interface PrivacyView {
@@ -457,7 +457,7 @@ export const Api = {
   glpiWhoami: () => (DEMO ? ok(demo.glpiAccount) : api.get<GlpiAccount>("/api/glpi/whoami")),
   resetGlpi: () => (DEMO ? ok({ ok: true }) : api.post<{ ok: boolean }>("/api/glpi/reset")),
 
-  // Licence Enterprise (open-core) — activation/réinitialisation hors-ligne.
+  // Licence Supporter (open-core) — activation/réinitialisation hors-ligne.
   version: () => (DEMO ? ok(demo.version) : api.get<VersionInfo>("/api/version")),
 
   // Confidentialité / DPO + coûts.

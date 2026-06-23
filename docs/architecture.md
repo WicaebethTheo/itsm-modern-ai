@@ -12,7 +12,7 @@ Le produit est conçu pour :
 
 - **DSI françaises de PME** : déploiement on-premise, défaut souverain (Mistral EU), interface FR/EN, validation DPO facile.
 - **Migration douce** : commence en mode `suggestion` (Suivi privé, aucune mutation GLPI) → bascule en `semi_auto`/`full_auto` quand la confiance est calibrée.
-- **Open-core** : code MIT, monétisation par le service (support SLA, install/config, modules Enterprise hors-cible PME).
+- **Open-core (édition unique)** : tout le code est MIT et public ; monétisation par le service (support SLA, install/config) et les **licences Supporter** qui déverrouillent en place des features déjà livrées dans l'image.
 
 ## Pipeline immuable
 

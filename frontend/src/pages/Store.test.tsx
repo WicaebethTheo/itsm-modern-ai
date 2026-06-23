@@ -20,7 +20,7 @@ vi.mock("@/lib/api", async (orig) => {
   };
 });
 
-// Image ENTERPRISE, non licenciée : le code est installé (installed:true) mais aucune
+// Code SUPPORTER présent, non licencié : le code est installé (installed:true) mais aucune
 // licence valide → l'activation par clé est proposée.
 const ENT_UNLICENSED: LicenseView = {
   edition: "community",
@@ -37,9 +37,9 @@ const ENT_UNLICENSED: LicenseView = {
   })),
 };
 
-// Image ENTERPRISE, licence valide → tout actif.
+// Code SUPPORTER présent, licence valide → tout actif.
 const ENT_ACTIVE: LicenseView = {
-  edition: "enterprise",
+  edition: "supporter",
   valid: true,
   customer: "ACME Corp",
   issued_at: "2026-01-01",
@@ -53,7 +53,7 @@ const ENT_ACTIVE: LicenseView = {
   })),
 };
 
-// Image ENTERPRISE, clé refusée (valid:false) → bannière d'erreur, activation visible.
+// Code SUPPORTER présent, clé refusée (valid:false) → bannière d'erreur, activation visible.
 const ENT_INVALID: LicenseView = { ...ENT_UNLICENSED, valid: false, error: "signature invalide" };
 
 describe("Store (licence open-core)", () => {
@@ -65,36 +65,36 @@ describe("Store (licence open-core)", () => {
     vi.mocked(Api.version).mockResolvedValue(demo.version);
   });
 
-  it("Community : pas de champ d'activation, encart d'upgrade + features verrouillées", async () => {
+  it("Community : encart d'activation Supporter + features verrouillées", async () => {
     renderWithToast(<Store />);
     expect(await screen.findByText("Community")).toBeInTheDocument();
-    // Aucune feature installée (image Community) → pas d'activation par clé.
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Activer" })).not.toBeInTheDocument();
-    // À la place : l'encart d'upgrade.
-    expect(screen.getByText("Passer en édition Enterprise")).toBeInTheDocument();
+    // Sans code installé, on propose d'activer une licence Supporter (carte d'activation).
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Activer ma licence Supporter" }),
+    ).toBeInTheDocument();
     // Les 3 features, toutes verrouillées.
-    expect(screen.getAllByText("Enterprise")).toHaveLength(3);
+    expect(screen.getAllByText("Supporter").length).toBeGreaterThanOrEqual(3);
     expect(screen.queryByText("Débloqué")).not.toBeInTheDocument();
   });
 
-  it("Image Enterprise : active une clé valide → édition Enterprise + features débloquées", async () => {
+  it("Code Supporter présent : active une clé valide → licence Supporter + features débloquées", async () => {
     vi.mocked(Api.setLicense).mockResolvedValue(ENT_ACTIVE);
     vi.mocked(Api.getLicense).mockResolvedValueOnce(ENT_UNLICENSED).mockResolvedValue(ENT_ACTIVE);
     renderWithToast(<Store />);
-    // Sur l'image Enterprise non licenciée, le champ d'activation est présent.
+    // Sur le code Supporter non licencié, le champ d'activation est présent.
     await screen.findByRole("textbox");
 
     await userEvent.type(screen.getByRole("textbox"), "JETON-VALIDE");
     await userEvent.click(screen.getByRole("button", { name: "Activer" }));
 
     await waitFor(() => expect(Api.setLicense).toHaveBeenCalledWith("JETON-VALIDE"));
-    expect(await screen.findByText("Enterprise", { selector: "span" })).toBeInTheDocument();
+    expect(await screen.findByText("Supporter", { selector: "span" })).toBeInTheDocument();
     expect(await screen.findAllByText("Débloqué")).toHaveLength(3);
     expect(await screen.findByText("Licence activée.")).toBeInTheDocument();
   });
 
-  it("Image Enterprise : clé invalide → bannière d'erreur (valid:false)", async () => {
+  it("Code Supporter présent : clé invalide → bannière d'erreur (valid:false)", async () => {
     vi.mocked(Api.setLicense).mockResolvedValue(ENT_INVALID);
     vi.mocked(Api.getLicense).mockResolvedValueOnce(ENT_UNLICENSED).mockResolvedValue(ENT_INVALID);
     renderWithToast(<Store />);
@@ -106,7 +106,7 @@ describe("Store (licence open-core)", () => {
     expect(await screen.findByText(/Licence invalide.*signature invalide/)).toBeInTheDocument();
   });
 
-  it("Image Enterprise : réinitialise la licence → retour Community", async () => {
+  it("Code Supporter présent : réinitialise la licence → retour Community", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.mocked(Api.getLicense).mockResolvedValueOnce(ENT_ACTIVE).mockResolvedValue(ENT_UNLICENSED);
     renderWithToast(<Store />);

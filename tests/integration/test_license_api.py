@@ -1,7 +1,8 @@
-"""Endpoint /api/license (Store) — édition, saisie de clé, features verrouillées.
+"""Endpoint /api/license (page Supporter) — édition, saisie de clé, features.
 
-Sur l'image Community (aucun plugin Enterprise installé), toutes les features ont
-`installed=False` → `active=False` même avec une licence valide collée.
+Édition unique : les 3 features Supporter sont LIVRÉES dans l'image (`installed=True`)
+mais restent verrouillées (`active=False`) tant qu'aucune licence valide ne les autorise.
+Une clé valide les rend ACTIVES (installed ∧ entitled).
 """
 
 from __future__ import annotations
@@ -39,24 +40,25 @@ def test_default_edition_is_community(client):
     assert r.status_code == 200
     body = r.json()
     assert body["edition"] == "community" and body["valid"] is False
-    # Le catalogue des 3 features est exposé, toutes verrouillées.
+    # Le catalogue des 3 features est exposé : code LIVRÉ (installed) mais verrouillé (inactif).
     keys = {f["key"] for f in body["features"]}
     assert keys == {"pii_advanced", "multi_entity", "scheduled_exports"}
-    assert all(f["active"] is False and f["installed"] is False for f in body["features"])
+    assert all(f["installed"] is True for f in body["features"])
+    assert all(f["active"] is False and f["entitled"] is False for f in body["features"])
 
 
-def test_paste_valid_key_marks_enterprise_but_features_not_installed(client):
+def test_paste_valid_key_activates_features(client):
     r = client.post("/api/license", json={"key": VALID})
     assert r.status_code == 200
     body = r.json()
-    # La licence est valide (édition enterprise, entitled=True)…
-    assert body["edition"] == "enterprise" and body["valid"] is True
+    # La licence est valide (édition supporter, entitled=True)…
+    assert body["edition"] == "supporter" and body["valid"] is True
     assert body["customer"] == "ACME DSI"
     assert all(f["entitled"] for f in body["features"])
-    # …mais sur l'image Community le code n'est pas installé → inactif.
-    assert all(f["installed"] is False and f["active"] is False for f in body["features"])
-    # Persistance : un GET ultérieur reflète l'édition enterprise.
-    assert client.get("/api/license").json()["edition"] == "enterprise"
+    # …et le code est livré dans l'image unique → features ACTIVES.
+    assert all(f["installed"] is True and f["active"] is True for f in body["features"])
+    # Persistance : un GET ultérieur reflète l'édition supporter.
+    assert client.get("/api/license").json()["edition"] == "supporter"
 
 
 def test_paste_invalid_key_is_rejected_and_not_stored(client):
@@ -75,7 +77,7 @@ def test_expired_key_reports_error(client):
 
 def test_delete_license_returns_to_community(client):
     client.post("/api/license", json={"key": VALID})
-    assert client.get("/api/license").json()["edition"] == "enterprise"
+    assert client.get("/api/license").json()["edition"] == "supporter"
     r = client.request("DELETE", "/api/license")
     assert r.status_code == 200 and r.json()["edition"] == "community"
     assert client.get("/api/license").json()["edition"] == "community"

@@ -68,9 +68,9 @@ export function Privacy() {
           )}
           right={
             view?.edition_advanced ? (
-              <Tag tone="indigo">
+              <Tag tone="purple">
                 <Lock className="h-3 w-3" />
-                Enterprise
+                Supporter
               </Tag>
             ) : (
               <Tag tone="muted">Community</Tag>
@@ -96,8 +96,8 @@ export function Privacy() {
           {!view.edition_advanced && (
             <Banner kind="warning">
               {t(
-                "⚠ Édition Community : les IBAN & cartes, les secrets (mots de passe, tokens, clés API), les IP/MAC et les NIR/SIRET ne sont PAS masqués. Ces données sont envoyées EN CLAIR au LLM et conservées en clair dans le journal. Passez en édition Enterprise pour les masquer.",
-                "⚠ Community edition: IBANs & cards, secrets (passwords, tokens, API keys), IP/MAC and NIR/SIRET are NOT masked. This data is sent IN CLEAR to the LLM and stored in clear in the journal. Upgrade to the Enterprise edition to mask it.",
+                "⚠ Édition Community : les IBAN & cartes, les secrets (mots de passe, tokens, clés API), les IP/MAC et les NIR/SIRET ne sont PAS masqués. Ces données sont envoyées EN CLAIR au LLM et conservées en clair dans le journal. Activez votre licence Supporter pour les masquer.",
+                "⚠ Community edition: IBANs & cards, secrets (passwords, tokens, API keys), IP/MAC and NIR/SIRET are NOT masked. This data is sent IN CLEAR to the LLM and stored in clear in the journal. Activate your Supporter license to mask it.",
               )}
             </Banner>
           )}
@@ -141,10 +141,10 @@ export function Privacy() {
                           </Tag>
                         ) : c.scope === "roadmap" ? (
                           <Tag tone="muted">{t("À venir", "Coming")}</Tag>
-                        ) : c.scope === "enterprise" ? (
+                        ) : c.scope === "supporter" ? (
                           <span
                             className="inline-flex items-center gap-1"
-                            title={t("Verrouillé · Enterprise", "Locked · Enterprise")}
+                            title={t("Verrouillé · Supporter", "Locked · Supporter")}
                           >
                             <span className="text-[11px] text-muted-foreground">
                               {t("Verrouillé ·", "Locked ·")}

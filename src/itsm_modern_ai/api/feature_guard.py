@@ -1,7 +1,7 @@
-"""Garde de feature Enterprise — `require_feature(key)`.
+"""Garde de feature Supporter — `require_feature(key)`.
 
 Refuse (403 `feature_locked`) si la feature demandée n'est pas ACTIVE, c'est-à-dire si
-son code n'est pas installé (image Community) OU si la licence ne l'autorise pas.
+son code n'est pas installé OU si la licence ne l'autorise pas.
 
 Usage :
 
@@ -43,7 +43,7 @@ def require_feature(key: str) -> Callable[[Request], None]:
                 detail={
                     "code": "feature_locked",
                     "feature": key,
-                    "message": "Fonctionnalité Enterprise — licence requise pour la débloquer.",
+                    "message": "Fonctionnalité Supporter — licence requise pour la débloquer.",
                 },
             )
 

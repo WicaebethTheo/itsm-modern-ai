@@ -128,10 +128,10 @@ def build_triage_service(
         auto_min_confidence = cfg.get_float(
             "auto_min_confidence_default", settings.auto_min_confidence_default
         )
-        # Masquage : e-mail + téléphone TOUJOURS dispo (Community). IBAN/carte + secrets
-        # (mots de passe, tokens, clés API/cloud) sont une feature ENTERPRISE
-        # (FEATURE_PII_ADVANCED). En Community (plugin non installé ou licence absente),
-        # ils sont forcés à False → NON masqués (un bandeau le signale dans l'UI).
+        # Masquage : e-mail + téléphone TOUJOURS dispo. IBAN/carte + secrets
+        # (mots de passe, tokens, clés API/cloud) sont une feature SUPPORTER
+        # (FEATURE_PII_ADVANCED). Sans licence valide, ils sont forcés à False
+        # → NON masqués (un bandeau le signale dans l'UI).
         from ..domain.licensing import FEATURE_PII_ADVANCED
         from ..plugins import build_registry
         from ..services.license_service import LicenseService
@@ -139,7 +139,7 @@ def build_triage_service(
         _registry = build_registry()
         _pii_installed = FEATURE_PII_ADVANCED in _registry.installed_features()
         pii_advanced = _pii_installed and LicenseService(cfg).has_feature(FEATURE_PII_ADVANCED)
-        # Alerte fail-open : si le code Enterprise du masquage avancé est INSTALLÉ mais que
+        # Alerte fail-open : si le code Supporter du masquage avancé est INSTALLÉ mais que
         # la licence est absente/expirée, le masquage IBAN/cartes/secrets/IP-MAC retombe en
         # silence (flags ci-dessous forcés à False) — un client qui l'a acheté comme contrôle
         # de conformité enverrait alors ces données EN CLAIR au LLM. On le signale au niveau
@@ -150,15 +150,15 @@ def build_triage_service(
                 "IBAN/cartes/secrets/IP-MAC DÉSACTIVÉ (données transmises en clair au LLM). "
                 "Renouveler la licence ou suspendre le polling."
             )
-        # Provider Enterprise (masquage avancé NIR/SIRET/regex) appliqué après le masque
-        # de base — None en Community (ou licence absente).
+        # Provider Supporter (masquage avancé NIR/SIRET/regex) appliqué après le masque
+        # de base — None sans licence valide.
         advanced_masker = _registry.provider(FEATURE_PII_ADVANCED) if pii_advanced else None
         mask_flags = {
             "email": cfg.get_bool("mask_email", settings.mask_email),
             "phone": cfg.get_bool("mask_phone", settings.mask_phone),
             "iban": pii_advanced and cfg.get_bool("mask_iban", settings.mask_iban),
             "secret": pii_advanced and cfg.get_bool("mask_secret", settings.mask_secret),
-            # IP/MAC : Enterprise aussi (pas de toggle dédié — suit pii_advanced).
+            # IP/MAC : Supporter aussi (pas de toggle dédié — suit pii_advanced).
             "network": pii_advanced,
         }
         # URL GLPI résolue runtime (UI > .env) : sinon le lien du Journal resterait figé à ""

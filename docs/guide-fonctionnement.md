@@ -1,6 +1,6 @@
 # Guide de fonctionnement — ITSM Modern AI
 
-**Installation chez le client, fonctionnement du moteur, et passage en édition Enterprise.**
+**Installation chez le client, fonctionnement du moteur, et activation des fonctions Supporter.**
 
 ITSM Modern AI est un **moteur de triage IA des tickets GLPI**, *on-premise* et souverain.
 Principe non négociable : **le LLM propose, le code valide et décide.** Le modèle ne reçoit
@@ -8,7 +8,7 @@ jamais les clés de votre GLPI ; chaque action est bornée par du code détermin
 
 - **Mono-conteneur** : Python/FastAPI sert l'API **et** l'UI React sur le port `8000`.
 - **Aucune dépendance lourde** : base **SQLite** + secrets chiffrés (Fernet) dans le volume `./data`. Pas de Postgres, pas de Redis requis.
-- **Open-core** : édition **Community** (gratuite, MIT) ; édition **Enterprise** (licence Ed25519 hors-ligne) qui débloque des fonctions avancées — **sans réinstallation**.
+- **Open-core (édition unique)** : tout le code est livré dans une **seule image** (MIT) ; une **licence Supporter** (Ed25519 hors-ligne) débloque **en place** des fonctions avancées — **sans réinstallation ni swap d'image**.
 
 ---
 
@@ -77,8 +77,8 @@ flowchart TD
 - **« À trier »** est la **seule** échappatoire : en cas de doute, le moteur ne fait rien de risqué.
 - Le brouillon LLM est **échappé (HTML)** et **re-masqué** avant toute publication publique.
 
-> **Masquage PII selon l'édition :** Community masque **e-mail + téléphone**. L'édition
-> Enterprise débloque **IBAN/cartes, IP/MAC, secrets (mots de passe/tokens/clés), NIR/SIRET**.
+> **Masquage PII selon la licence :** sans licence, on masque **e-mail + téléphone**. Une
+> licence **Supporter** débloque **IBAN/cartes, IP/MAC, secrets (mots de passe/tokens/clés), NIR/SIRET**.
 
 ---
 
@@ -146,25 +146,25 @@ flowchart LR
 
 ---
 
-## 4. Éditions : Community vs Enterprise
+## 4. Fonctions Supporter : verrouillé vs actif
 
-Une fonction payante est **active** uniquement si **(1) son code est présent** (image Enterprise)
-**ET (2) la licence l'autorise**. Sur l'image Community, le code n'est pas là → tout reste
-verrouillé même avec une clé valide.
+Le code des fonctions Supporter est **livré dans l'image unique** (toujours `installed`).
+Une fonction est **active** uniquement si **la licence l'autorise** (`entitled`). Sans
+licence valide, elle reste verrouillée même si le code est présent —
+`active = installed ∧ entitled`.
 
 ```mermaid
 flowchart TD
-    F["Fonction Enterprise<br/>(ex. masquage IBAN/secrets)"] --> I{"Code installé ?<br/>(image Enterprise)"}
-    I -- non --> LOCK["🔒 Verrouillée<br/>(« passez Enterprise »)"]
+    F["Fonction Supporter<br/>(ex. masquage IBAN/secrets)"] --> I{"Code livré ?<br/>(image unique)"}
     I -- oui --> E{"Licence valide<br/>et l'autorise ?"}
-    E -- non --> LOCK
+    E -- non --> LOCK["🔒 Verrouillée<br/>(« devenez Supporter »)"]
     E -- oui --> ON["🟢 Active"]
 
     style LOCK fill:#fecaca,stroke:#b91c1c
     style ON fill:#bbf7d0,stroke:#15803d
 ```
 
-| Capacité | Community | Enterprise |
+| Capacité | Sans licence (Community) | Avec licence Supporter |
 |---|:---:|:---:|
 | Triage IA à garde-fous, modes suggestion/semi/full | ✅ | ✅ |
 | Masquage PII e-mail + téléphone | ✅ | ✅ |
@@ -176,56 +176,49 @@ flowchart TD
 
 ---
 
-## 5. Passage en Enterprise (sans réinstallation)
+## 5. Devenir Supporter (depuis la page Supporter)
 
-Le modèle open-core ne crée **pas** un second déploiement : on garde **le même `./data`**
-et on **remplace l'image**. La bascule est réversible.
+Édition unique : pas de second déploiement, **pas de swap d'image**. On garde **la même
+image** et **le même `./data`** ; on **colle simplement une clé de licence dans la page
+Supporter** de la console. Réversible : retirer la clé sur cette même page revient à Community.
 
-```bash
-# 1) Récupérer l'image Enterprise (registre privé, ou archive hors-ligne)
-#    puis, dans le dossier du déploiement :
-./upgrade-to-enterprise.sh "<clé-de-licence>"
-#    variante air-gap : ./upgrade-to-enterprise.sh "<clé>" image.tar
-```
+1. Ouvrez la console et allez sur la page **Supporter**.
+2. **Collez la clé de licence** (`itsm-lic.v1.…`) et validez.
+3. La clé est **vérifiée hors-ligne** (Ed25519). Valide → les fonctions s'activent **en place**.
 
 ```mermaid
 sequenceDiagram
     actor Op as Opérateur
-    participant Sh as upgrade-to-enterprise.sh
-    participant Ent as Image Enterprise
-    participant Env as .env
-    participant Dk as Docker Compose
+    participant UI as Page Supporter (console)
+    participant Eng as Moteur (vérif Ed25519)
     participant Data as ./data (inchangé)
 
-    Op->>Sh: ./upgrade-to-enterprise.sh "<clé>"
-    Sh->>Ent: vérifie la licence HORS-LIGNE (Ed25519)
-    Note over Sh,Ent: aucune I/O sur ./data — validation pure
+    Op->>UI: colle la clé de licence
+    UI->>Eng: vérifie la licence HORS-LIGNE
+    Note over UI,Eng: aucun appel sortant — validation pure
     alt clé invalide
-        Sh-->>Op: ❌ bascule annulée (rien n'a changé)
+        Eng-->>Op: ❌ refusée (rien n'est stocké, rien ne change)
     else clé valide
-        Sh->>Env: ITSM_IMAGE=…enterprise + LICENSE_KEY=<clé>
-        Sh->>Dk: docker compose up -d (même volume ./data)
-        Dk->>Data: réutilise config, journal, secrets
-        Sh->>Dk: health check
-        Sh-->>Op: ✅ Enterprise actif (fonctions débloquées)
+        Eng->>Data: stocke la clé (config chiffrée)
+        Eng-->>Op: ✅ Supporter actif (fonctions débloquées en place)
     end
 ```
 
-**Garanties de la bascule :**
+**Garanties :**
 - **Données conservées** : même volume `./data` → aucune reconfiguration, aucun secret à ressaisir.
-- **Sûre** : la licence est validée **avant** tout changement ; une clé invalide annule la bascule sans rien modifier.
-- **Réversible** : retour à Community à tout moment —
+- **Sûre** : la licence est validée **avant** stockage ; une clé invalide n'est pas enregistrée.
+- **Réversible** : retirez la clé sur la page Supporter → re-verrouillage immédiat (retour Community).
 
-  ```bash
-  ./upgrade-to-enterprise.sh --rollback   # remet ITSM_IMAGE / LICENSE_KEY à vide
-  ```
+> **Pré-amorçage optionnel** : pour livrer une instance déjà licenciée (déploiement
+> automatisé), définissez `LICENSE_KEY=itsm-lic.v1.…` dans `.env` avant le premier démarrage.
+> La page Supporter reste la méthode normale.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Community
-    Community --> Enterprise: upgrade-to-enterprise.sh "<clé>"<br/>(swap image, même ./data)
-    Enterprise --> Community: --rollback
-    note right of Enterprise
+    Community --> Supporter: coller la clé (page Supporter)<br/>(même image, même ./data)
+    Supporter --> Community: retirer la clé (page Supporter)
+    note right of Supporter
         Masquage avancé débloqué
         Licence vérifiée hors-ligne
     end note
@@ -237,7 +230,7 @@ stateDiagram-v2
 
 - **Hébergement** : 100 % chez vous (mono-conteneur). Aucun backend éditeur dont vous dépendez.
 - **Données** : avec Ollama, le contenu ne quitte **jamais** votre réseau ; avec Mistral, il reste sur une infrastructure **UE**.
-- **Masquage PII** appliqué **avant** tout appel LLM (portée selon l'édition).
+- **Masquage PII** appliqué **avant** tout appel LLM (portée selon la licence).
 - **Zéro phone-home** par défaut ; vérification de mise à jour **opt-in** ; licence **hors-ligne**.
 - **Auditable** : chaque décision est journalisée (entrées masquées, réponse, validation, action).
 

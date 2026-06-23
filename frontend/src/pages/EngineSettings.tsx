@@ -59,7 +59,7 @@ export function EngineSettings() {
   // Mode d'exécution par défaut global (FR-17) — appliqué aux entités sans mode explicite.
   const [modeDefault, setModeDefault] = useState<ExecutionMode>("suggestion");
   const c = cfg.data;
-  // Masquage IBAN + secrets = feature Enterprise (FEATURE_PII_ADVANCED). En Community,
+  // Masquage IBAN + secrets = feature Supporter (FEATURE_PII_ADVANCED). En Community,
   // ces motifs sont verrouillés et NON masqués (envoyés en clair) → bandeau d'alerte.
   const license = useResource(useCallback(() => Api.getLicense(), []));
   const piiAdvanced =
@@ -104,7 +104,7 @@ export function EngineSettings() {
     }
   }
 
-  // IBAN/secret comptent comme masqués seulement si l'Enterprise est actif.
+  // IBAN/secret comptent comme masqués seulement si la licence Supporter est active.
   const maskedCount = [
     mask.email,
     mask.phone,
@@ -372,8 +372,8 @@ export function EngineSettings() {
               ) : (
                 <Banner kind="error">
                   {t(
-                    "⚠ Édition Community : les IBAN et les secrets (mots de passe, tokens, clés API) ne sont PAS masqués et sont envoyés EN CLAIR au LLM. Passez en édition Enterprise pour les masquer.",
-                    "⚠ Community edition: IBANs and secrets (passwords, tokens, API keys) are NOT masked and are sent IN CLEAR to the LLM. Upgrade to the Enterprise edition to mask them.",
+                    "⚠ Édition Community : les IBAN et les secrets (mots de passe, tokens, clés API) ne sont PAS masqués et sont envoyés EN CLAIR au LLM. Activez votre licence Supporter pour les masquer.",
+                    "⚠ Community edition: IBANs and secrets (passwords, tokens, API keys) are NOT masked and are sent IN CLEAR to the LLM. Activate your Supporter license to mask them.",
                   )}
                 </Banner>
               )}

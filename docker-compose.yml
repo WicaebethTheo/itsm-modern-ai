@@ -10,13 +10,10 @@
 services:
   itsm:
     build: .
-    # Édition pilotée par le TAG D'IMAGE (déploiement unique, upgrade = swap d'image) :
-    #   - vide / défaut → édition Community (image buildée depuis ce dépôt) ;
-    #   - ITSM_IMAGE=itsm-modern-ai-enterprise:latest → édition Enterprise (image fournie).
-    # ⚠️ En Enterprise, lancer `docker compose up -d` SANS `--build` (l'image Enterprise est
-    # pré-construite/chargée ; `--build` reconstruirait le core et écraserait le tag).
-    image: ${ITSM_IMAGE:-itsm-modern-ai-community:latest}
-    # Nom NEUTRE (sans édition) → l'upgrade Community→Enterprise ne renomme pas le conteneur.
+    # Image UNIQUE : tout le code (y compris les features Supporter) est livré dedans.
+    # Les features restent verrouillées tant qu'une licence valide n'est pas fournie
+    # (LICENSE_KEY ci-dessous ou collée via l'UI). Pas de swap d'image.
+    image: itsm-modern-ai:latest
     container_name: itsm-modern-ai
     restart: unless-stopped
     env_file:
@@ -27,8 +24,8 @@ services:
       #   ITSM_DATABASE_URL=postgresql+psycopg://itsm:itsm@postgres:5432/itsm
       # puis lancer `docker compose --profile postgres up -d --build`.
       DATABASE_URL: ${ITSM_DATABASE_URL:-sqlite:////app/data/itsm.db}
-      # Licence Enterprise (open-core). Vide = Community. Vérifiée HORS-LIGNE (Ed25519).
-      # Peut aussi être collée via l'UI (page Store) ; l'env pré-licencie le déploiement.
+      # Licence Supporter (open-core). Vide = Community. Vérifiée HORS-LIGNE (Ed25519).
+      # Peut aussi être collée via l'UI (page Supporter) ; l'env pré-licencie le déploiement.
       LICENSE_KEY: ${LICENSE_KEY:-}
     ports:
       # Port HÔTE pilotable (install.sh --port). Port interne fixe = 8000.

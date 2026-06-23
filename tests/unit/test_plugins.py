@@ -1,7 +1,12 @@
-"""Loader à plugins (entry points) — registre des features Enterprise installées."""
+"""Loader à plugins (entry points) — registre des features Supporter installées."""
 
 from __future__ import annotations
 
+from itsm_modern_ai.domain.licensing import (
+    FEATURE_MULTI_ENTITY,
+    FEATURE_PII_ADVANCED,
+    FEATURE_SCHEDULED_EXPORTS,
+)
 from itsm_modern_ai.plugins import PluginRegistry, build_registry, load_plugins
 
 
@@ -46,6 +51,8 @@ def test_faulty_plugin_is_ignored(monkeypatch):
     assert reg.installed_features() == frozenset()
 
 
-def test_community_image_has_no_enterprise_plugins():
-    # Dans l'environnement de test (package Enterprise non installé), aucun plugin.
-    assert build_registry().installed_features() == frozenset()
+def test_builtin_supporter_features_are_installed():
+    # Édition unique : les 3 features Supporter sont LIVRÉES dans l'image (code présent),
+    # même si leur activation dépend de la licence (entitled).
+    installed = build_registry().installed_features()
+    assert {FEATURE_PII_ADVANCED, FEATURE_MULTI_ENTITY, FEATURE_SCHEDULED_EXPORTS} <= installed

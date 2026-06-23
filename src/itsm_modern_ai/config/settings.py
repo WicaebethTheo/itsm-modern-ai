@@ -81,9 +81,9 @@ class Settings(BaseSettings):
     system_prompt: str = ""
     system_prompt_max_chars: int = 8000  # garde-fou de longueur
 
-    # Licence Enterprise (open-core). Jeton signé Ed25519, vérifié HORS-LIGNE (zéro
-    # phone-home). Vide = édition Community. Normalement saisi via l'UI (Store) et stocké
-    # en base ; l'env LICENSE_KEY permet de pré-licencier une image (ex. build Enterprise).
+    # Licence Supporter (open-core). Jeton signé Ed25519, vérifié HORS-LIGNE (zéro
+    # phone-home). Vide = édition Community. Normalement saisi via l'UI (page Supporter) et
+    # stocké en base ; l'env LICENSE_KEY permet de pré-licencier l'image unique.
     license_key: str = ""
 
     # Vérification de mise à jour (OPT-IN, souverain). Vide (défaut) = AUCUN appel sortant

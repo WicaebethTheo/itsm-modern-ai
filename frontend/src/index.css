@@ -16,6 +16,7 @@
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-accent-indigo: hsl(var(--accent-indigo));
+  --color-accent-purple: hsl(var(--accent-purple));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
   --color-success: hsl(var(--success));
@@ -49,6 +50,7 @@
   --accent: 210 16% 93%;
   --accent-foreground: 222 47% 11%;
   --accent-indigo: 239 84% 55%;
+  --accent-purple: 280 84% 60%;
   --destructive: 0 72% 45%;
   --destructive-foreground: 0 0% 100%;
   --success: 152 55% 33%;
@@ -73,6 +75,7 @@
   --accent: 240 14% 12%; /* hover de surface */
   --accent-foreground: 240 27% 92%;
   --accent-indigo: 236 100% 82%; /* #a4a6ff — texte sur fond indigo translucide */
+  --accent-purple: 280 84% 72%; /* texte sur fond violet translucide */
   --destructive: 0 91% 71%; /* #f87171 */
   --destructive-foreground: 0 0% 100%;
   --success: 142 70% 58%; /* #4ade80 */

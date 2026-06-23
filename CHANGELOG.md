@@ -5,6 +5,29 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-06-23 — 0.9.0 — Édition unique : fonctions Supporter intégrées, déverrouillées en collant une licence dans la page Supporter
+
+Édition **unique** : un **seul dépôt, une seule image** qui contient désormais tout le
+code, y compris les fonctions **Supporter** — livrées dans l'image mais **gatées par
+licence**. On les déverrouille **en place** en collant une clé de licence signée dans la
+**page Supporter** de la console.
+
+- **Features Supporter intégrées** : `pii_advanced` (masquage NIR/SIRET + patterns custom),
+  `multi_entity` (résolution hiérarchique des politiques) et `scheduled_exports` (exports
+  planifiés) vivent maintenant dans `src/itsm_modern_ai/features/`. `build_registry()` les
+  enregistre toujours (code **installed**) ; elles ne s'**activent** qu'avec une licence
+  valide (**entitled**) — `active = installed ∧ entitled`.
+- **Concept Supporter** : édition `"supporter"`, propriété `is_supporter`, libellés/messages
+  403 et page dédiée. Les clés de features, le préfixe de jeton `itsm-lic` et la clé publique
+  de vérification Ed25519 sont **inchangés**.
+- **Une seule image** : `docker-compose.yml` utilise un tag fixe `itsm-modern-ai:latest`.
+  Déverrouillage **en place** depuis la **page Supporter** (coller / retirer la clé) ;
+  `LICENSE_KEY=…` dans `.env` reste un pré-amorçage optionnel pour les déploiements automatisés.
+- **Activation 100 % UI** : tout passe par la page Supporter (coller la clé pour activer,
+  la retirer pour revenir à Community). Aucune ligne de commande requise ; données intactes.
+- **Sécurité** : la clé **privée** de signature des licences reste dans le dépôt privé de
+  signature des licences ; seule la vérification (clé publique) est ici.
+
 ## 2026-06-09 — 0.8.14 — Durcissement sécurité (audit)
 
 Corrections issues d'un audit cybersécurité complet — aucun changement du pipeline de triage :
@@ -20,7 +43,7 @@ Corrections issues d'un audit cybersécurité complet — aucun changement du pi
   la sauvegarde** (rejet loopback/IP privée/metadata cloud).
 - **Cookie de session** : expiration absolue (défaut 12 h, `SESSION_MAX_AGE_SECONDS`).
 - **Licence** : borne de taille du jeton (8 Ko) côté API et domaine → pas de parse coûteux.
-- **Fail-open masquage (Enterprise)** : alerte WARNING par cycle quand `pii_advanced` est
+- **Fail-open masquage (Supporter)** : alerte WARNING par cycle quand `pii_advanced` est
   **installé mais non licencié** (le masquage IBAN/secrets retombe sinon en silence).
 - **Hygiène** : `install.sh` pose `chmod 600` sur `.env` ; rappel de retrait d'`ADMIN_PASSWORD`.
 
@@ -47,7 +70,7 @@ Travail frontend, sans changement de comportement métier :
 Corrections suite à la revue multi-agents de la 0.8.11 :
 
 - **Honnêteté DPO (bloquant)** : la catégorie **« patterns regex personnalisés »** était
-  affichée *Actif/Masqué* en Enterprise alors qu'aucun motif n'est configurable (la capacité
+  affichée *Actif/Masqué* en Supporter alors qu'aucun motif n'est configurable (la capacité
   `AdvancedPiiMasker.from_rules` existe mais n'est pas exposée). Elle passe en statut **« À
   venir »** (scope `roadmap`, jamais active) dans la page, le rapport DPO et la doc — pour ne
   pas tromper la DPO. NIR/SIRET reste réellement masqué.
@@ -63,9 +86,9 @@ Corrections suite à la revue multi-agents de la 0.8.11 :
 ## 2026-05-31 — 0.8.11 — Console DPO + page Coûts & quotas
 
 - **Nouvelle page « Confidentialité (DPO) »** (`/privacy`) destinée à la DPO/RSSI :
-  tableau des catégories PII avec leur statut **réel par édition** (email + téléphone
-  masqués en Community ; IBAN/cartes, secrets/tokens/clés API, IP/MAC, NIR/SIRET et
-  patterns regex custom **verrouillés · Enterprise**), bandeau d'avertissement honnête en
+  tableau des catégories PII avec leur statut **réel selon la licence** (email + téléphone
+  masqués sans licence ; IBAN/cartes, secrets/tokens/clés API, IP/MAC, NIR/SIRET et
+  patterns regex custom **verrouillés · Supporter**), bandeau d'avertissement honnête en
   Community (ces motifs transitent et sont journalisés **en clair**), **outil « Tester le
   masquage »** (applique le masquage réel à un texte), lien vers le journal `llm_calls`,
   rappel des durées de rétention, et **export d'un rapport DPO** (`GET /api/privacy/report.md`).
@@ -75,7 +98,7 @@ Corrections suite à la revue multi-agents de la 0.8.11 :
 - **Backend** : routes `GET /api/privacy`, `POST /api/privacy/test-mask`,
   `GET /api/privacy/report.md`, `GET /api/cost` (protégées par l'auth locale).
 - **Cohérence masquage** : le masquage **IP/MAC** suit désormais un flag `network` dédié
-  (gaté Enterprise comme dans la fiche DPO), au lieu d'être couplé au flag `phone`.
+  (gaté Supporter comme dans la fiche DPO), au lieu d'être couplé au flag `phone`.
 
 ## 2026-05-31 — 0.8.10 — Audit 4 agents : câblage pii_advanced + honnêteté docs
 
@@ -83,16 +106,16 @@ Corrections suite à la revue multi-agents de la 0.8.11 :
   réellement appliqué dans le pipeline de triage quand licencié (était enregistré mais
   jamais consommé). Couvert par tests.
 - **Docs honnêtes** : `dpo.md` / `README` / `SECURITY.md` reflètent le découpage masquage
-  par édition (Community = email+phone ; Enterprise = IBAN/secrets/IP-MAC/NIR-SIRET) +
-  caveat « en clair » Community (transit ET journal `llm_calls`). NER retiré (non implémenté).
-- multi-entités + exports planifiés marqués **« à venir »** dans le Store (non câblés).
+  selon la licence (sans licence = email+phone ; avec licence Supporter = IBAN/secrets/IP-MAC/NIR-SIRET) +
+  caveat « en clair » sans licence (transit ET journal `llm_calls`). NER retiré (non implémenté).
+- multi-entités + exports planifiés marqués **« à venir »** dans la page Supporter (non câblés).
 - NITs : alerte d'expiration en `warning`, `prefers-reduced-motion`, garde `--update`/
-  `--bundle` (bootstrap), timeout santé upgrade, overlay Enterprise aligné en 0.8.10.
+  `--bundle` (bootstrap), timeout santé mise à jour, code Supporter aligné en 0.8.10.
 
-## 2026-05-31 — 0.8.9 — Masquage IBAN + secrets en Enterprise
+## 2026-05-31 — 0.8.9 — Masquage IBAN + secrets en Supporter
 
-- En **Community**, seuls **e-mail et téléphone** sont masqués. **IBAN/cartes** et
-  **secrets** (mots de passe, tokens, clés API) passent en feature **Enterprise**
+- Sans licence, seuls **e-mail et téléphone** sont masqués. **IBAN/cartes** et
+  **secrets** (mots de passe, tokens, clés API) passent en feature **Supporter**
   (`FEATURE_PII_ADVANCED`) — toggles verrouillés + **bandeau d'avertissement** clair
   (« envoyés EN CLAIR au LLM »). Docs/Sécurité mises à jour pour refléter ce découpage.
 
@@ -107,7 +130,7 @@ Corrections suite à la revue multi-agents de la 0.8.11 :
 
 ## 2026-05-31 — 0.8.6 — Audit multi-agents : cohérences
 
-- Overlay Enterprise **réaligné** sur la version du cœur (était figé en 0.7.0).
+- Code Supporter **réaligné** sur la version du cœur (était figé en 0.7.0).
 - `.env.example` : `UPDATE_CHECK_TTL_SECONDS` documenté. Doc de MAJ clarifiée
   (`update.sh` = avec sauvegarde ; `install.sh --update` = rapide). **`les conventions internes`** ajouté
   (conventions : bump version + CHANGELOG + release + docs à jour à chaque changement).
@@ -118,7 +141,7 @@ Corrections suite à la revue multi-agents de la 0.8.11 :
 - **Store** : carte « Mise à jour disponible » (notes de release + commande
   `./install.sh --update` + bouton Copier + lien releases). Action privilégiée laissée
   à l'hôte (aucun socket Docker exposé). `/api/version` remonte `latest_notes`.
-- **Barre du haut** : badge d'édition (Community / Enterprise) à gauche de l'indicateur
+- **Barre du haut** : badge d'édition (Community / Supporter) à gauche de l'indicateur
   de version/MAJ.
 
 ## 2026-05-31 — 0.8.3 — Vérification de mise à jour automatique
@@ -138,26 +161,25 @@ Corrections suite à la revue multi-agents de la 0.8.11 :
   builder classique (sans buildx) ; bootstrap `curl | sh`. `SESSION_HTTPS_ONLY=false` par
   défaut (pilote HTTP). Sidebar : « Moteur en marche » sans la version (0.8.2).
 
-## 2026-05-31 — 0.8.0 — Open-core : édition Community + overlay Enterprise + licence
+## 2026-05-31 — 0.8.0 — Open-core : édition Community + fonctions sous licence
 
-Scission en deux éditions partageant la même base (architecture overlay) :
+Mise en place de l'open-core : un cœur gratuit + des fonctions débloquées par licence,
+partageant la même base :
 
-- **Renommage** du dépôt en **édition Community** (le cœur, MIT). Conteneur/image Docker
-  renommés `itsm-modern-ai-community`.
+- **Renommage** du dépôt en **édition Community** (le cœur, MIT).
 - **Système de licence** signé **Ed25519, vérifié 100 % hors-ligne** (zéro phone-home,
   compatible air-gap) : `domain/licensing.py` (vérif + catalogue de features),
-  `services/license_service.py`, endpoint `/api/license` (Store), garde `require_feature`.
-  La clé **débloque** des features déjà installées — elle ne télécharge rien.
+  `services/license_service.py`, endpoint `/api/license`, garde `require_feature`.
+  La clé **débloque** des features — elle ne télécharge rien.
 - **Loader à plugins** (`plugins.py`, entry points `itsm_modern_ai.plugins`) : le core
-  découvre les modules Enterprise s'ils sont installés. Sur l'image Community, aucun n'est
-  installé → features payantes verrouillées même avec une licence valide (garantie de la
-  séparation : le code payant n'est pas livré).
-- **Page Store** (UI) : édition active, saisie/réinitialisation de clé, catalogue des
-  features (verrouillées « Enterprise » vs débloquées).
-- **Features Enterprise** (overlay privé, non livré ici) : masquage PII avancé
-  (NIR/SIRET/regex custom), multi-entités avancé, exports planifiés/DPO+. Le masquage de
-  base, les connecteurs GLPI (legacy + V2) et Postgres **restent en Community**.
-- Tests : **295 pytest · 64 vitest** (+ suite dédiée côté overlay Enterprise).
+  découvre les fournisseurs de features installés. Sans licence valide, les features
+  sous licence restent verrouillées.
+- **Page de licence** (UI) : édition active, saisie/réinitialisation de clé, catalogue des
+  features (verrouillées vs débloquées).
+- **Features sous licence** : masquage PII avancé (NIR/SIRET/regex custom), multi-entités
+  avancé, exports planifiés/DPO+. Le masquage de base, les connecteurs GLPI (legacy + V2)
+  et Postgres **restent gratuits**.
+- Tests : **295 pytest · 64 vitest** (+ suite dédiée pour les features sous licence).
 
 ## 2026-05-30 — Audit multi-agents (6) : correctifs ops & frontend
 

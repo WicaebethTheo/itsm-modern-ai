@@ -1,8 +1,8 @@
 """Vérification de licence Ed25519 hors-ligne (open-core).
 
 Les jetons sont des FIXTURES pré-signées par la clé privée de l'éditeur (qui vit
-uniquement dans le dépôt Enterprise privé) — on teste donc la VÉRIFICATION, pas la
-signature, sans jamais exposer la clé privée dans le dépôt Community.
+uniquement dans le dépôt de licence privé) — on teste donc la VÉRIFICATION, pas la
+signature, sans jamais exposer la clé privée dans ce dépôt.
 """
 
 from __future__ import annotations
@@ -21,25 +21,25 @@ from itsm_modern_ai.domain.licensing import (
 
 TODAY = date(2026, 5, 31)
 
-# Licence enterprise valide (ACME DSI), 3 features, expire 2099-12-31.
+# Licence supporter valide (ACME DSI), 3 features, expire 2099-12-31.
 VALID = (
-    "itsm-lic.v1.eyJjdXN0b21lciI6IkFDTUUgRFNJIiwiZWRpdGlvbiI6ImVudGVycHJpc2UiLCJleHBpcmVz"
-    "X2F0IjoiMjA5OS0xMi0zMSIsImZlYXR1cmVzIjpbInBpaV9hZHZhbmNlZCIsIm11bHRpX2VudGl0eSIsInNj"
-    "aGVkdWxlZF9leHBvcnRzIl0sImlzc3VlZF9hdCI6IjIwMjYtMDEtMDEifQ.GulOzYrGtI1ihbx4hfVqHGNP"
-    "m1AbmBrAQ169HvoEWt1HtlqPIFrgywO_JA4ZUR0t0tz7GJKc2F4CfdPK05wSAw"
+    "itsm-lic.v1.eyJjdXN0b21lciI6IkFDTUUgRFNJIiwiZWRpdGlvbiI6InN1cHBvcnRlciIsImV4cGlyZXNf"
+    "YXQiOiIyMDk5LTEyLTMxIiwiZmVhdHVyZXMiOlsicGlpX2FkdmFuY2VkIiwibXVsdGlfZW50aXR5Iiwic2No"
+    "ZWR1bGVkX2V4cG9ydHMiXSwiaXNzdWVkX2F0IjoiMjAyNi0wMS0wMSJ9.4NcY0txyZdNg6vHBWpqPhqu0m_"
+    "EnZIsTYXNkte6vdx4tTPycPHqpvC5BAEXZuLGUs6aZDJHO_sKZYo-WNORVAA"
 )
 # Licence expirée (2021-01-01).
 EXPIRED = (
-    "itsm-lic.v1.eyJjdXN0b21lciI6Ik9MRCBDb3JwIiwiZWRpdGlvbiI6ImVudGVycHJpc2UiLCJleHBpcmVz"
-    "X2F0IjoiMjAyMS0wMS0wMSIsImZlYXR1cmVzIjpbIm11bHRpX2VudGl0eSJdLCJpc3N1ZWRfYXQiOiIyMDIw"
-    "LTAxLTAxIn0.xkO10QjHcUXLYKp4qr6Q1JteoQk_shkvHeN_N2MJBqg3rzHwnvUok1A4omFvlrwbEaE1qDPI"
-    "0KhtsS3O7q5lCQ"
+    "itsm-lic.v1.eyJjdXN0b21lciI6Ik9MRCBDb3JwIiwiZWRpdGlvbiI6InN1cHBvcnRlciIsImV4cGlyZXNf"
+    "YXQiOiIyMDIxLTAxLTAxIiwiZmVhdHVyZXMiOlsibXVsdGlfZW50aXR5Il0sImlzc3VlZF9hdCI6IjIwMjAt"
+    "MDEtMDEifQ.VDzt6urqZWZkE6nd9uEzaJ6ocDWimBNnKgnQiKafpBeWzSvlSoLrhkzUcBYuo0rSkDyfuas4J"
+    "H3DbMWVacNwCQ"
 )
 
 
 def test_valid_license_unlocks_features():
     st = verify_license(VALID, today=TODAY)
-    assert st.valid and st.is_enterprise
+    assert st.valid and st.is_supporter
     assert st.customer == "ACME DSI"
     assert st.features == {FEATURE_PII_ADVANCED, FEATURE_MULTI_ENTITY, FEATURE_SCHEDULED_EXPORTS}
     assert st.has_feature(FEATURE_MULTI_ENTITY)

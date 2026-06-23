@@ -108,7 +108,7 @@ def mask(
     Chaque motif est activable/désactivable (défaut : tous actifs = défaut sûr, FR-14).
     Toggles : `email`, `phone` (Community) ; `iban` (couvre carte bancaire), `secret`
     (couvre clés cloud à haute entropie), `network` (IP/MAC) — ces trois derniers gatés
-    Enterprise par le pipeline. Défaut `True` partout (masker complet, rétrocompatible).
+    Supporter par le pipeline. Défaut `True` partout (masker complet, rétrocompatible).
     ⚠️ Désactiver un motif envoie cette donnée EN CLAIR au LLM — choix explicite de l'admin.
     """
     counts = {
@@ -160,7 +160,7 @@ def mask(
     # grignoté par la regex téléphone. Suit le toggle `iban` (donnée bancaire).
     if iban:
         out = _luhn_sub(out)
-    # IP / MAC : données réseau, toggle `network` dédié (gaté Enterprise par le pipeline).
+    # IP / MAC : données réseau, toggle `network` dédié (gaté Supporter par le pipeline).
     if network:
         out = _count_sub(_IPV4_RE, IP_PLACEHOLDER, "ip", out)
         out = _count_sub(_MAC_RE, MAC_PLACEHOLDER, "mac", out)

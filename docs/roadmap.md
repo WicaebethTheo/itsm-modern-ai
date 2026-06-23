@@ -7,7 +7,7 @@
 ### Court terme
 
 - **Couverture E2E étendue** — actuellement 3 parcours Playwright (login → dashboard, navigation → journal, sandbox). À ajouter : Scope/Modes (configuration du périmètre en parcours réel), EngineSettings (masquage PII configurable), Technicians (édition des fiches).
-- **Store / Automations marketplace** — placeholders UI en place ; backing en cours pour la rétention RGPD. Reste à brancher les automations restantes (notifications, exports planifiés, etc.).
+- **Page Supporter / Automations marketplace** — placeholders UI en place ; backing en cours pour la rétention RGPD. Reste à brancher les automations restantes (notifications, exports planifiés, etc.).
 
 ### Moyen terme
 
@@ -22,7 +22,7 @@
 
 ### Long terme
 
-- **Modules Enterprise** (open-core) — multi-tenant, SSO SAML, audit log signé ISO, self-service AD hors-bande. Hors cible PME, monétisés à l'unité.
+- **Modules Supporter** (open-core) — multi-tenant, SSO SAML, audit log signé ISO, self-service AD hors-bande. Hors cible PME, déverrouillés à l'unité par licence.
 - **NER française complète** pour le masquage PII (V1 = regex email/tél/IBAN/secret). Couvrira noms/adresses, à valider DPO.
 - **Calibration du seuil de confiance** par catégorie et par entité (V1 = seuil unique global, configurable).
 

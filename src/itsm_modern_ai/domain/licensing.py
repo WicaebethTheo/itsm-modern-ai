@@ -1,8 +1,8 @@
-"""Vérification de licence Enterprise — Ed25519, 100 % hors-ligne (zéro phone-home).
+"""Vérification de licence Supporter — Ed25519, 100 % hors-ligne (zéro phone-home).
 
-Modèle « open-core » : le code Community ne contient JAMAIS le code des features
-payantes (elles vivent dans le package overlay `itsm_modern_ai_enterprise`). Cette
-licence ne *télécharge* rien — elle **débloque** ce qui est déjà installé.
+Modèle « open-core » à édition unique : le code des features Supporter EST livré dans
+cette image (package `itsm_modern_ai.features`) mais reste verrouillé. Cette licence ne
+*télécharge* rien — elle **débloque** ce qui est déjà installé.
 
 Format d'un jeton de licence (compact, type PASETO simplifié) :
 
@@ -11,11 +11,10 @@ Format d'un jeton de licence (compact, type PASETO simplifié) :
 Le `payload_json` est sérialisé canoniquement (clés triées, sans espaces). La signature
 porte sur les octets `v1.<b64url(payload)>` (le contexte de version est signé pour
 empêcher tout downgrade). Seule la **clé publique** est embarquée ici ; la clé privée
-de signature reste côté éditeur (outil `itsm-license` du dépôt Enterprise privé).
+de signature reste côté éditeur (outil de signature du dépôt de licence privé).
 
 ⚠️ Garde-fous de sécurité honnêtes (cf. discussion produit) : une licence côté client
-est un *frein contractuel*, pas un DRM inviolable. La vraie séparation Community/Enterprise
-est assurée par le fait que le code payant n'est PAS livré en Community.
+est un *frein contractuel*, pas un DRM inviolable.
 
 Module PUR : aucune I/O, aucun import d'adaptateur. Testable en isolation.
 """
@@ -32,16 +31,16 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 # ── Clé publique de l'éditeur (embarquée) ──────────────────────────────────────
 # Raw Ed25519 public key (32 octets, hex). La clé PRIVÉE correspondante vit
-# UNIQUEMENT dans l'outil de signature du dépôt Enterprise privé — jamais ici.
+# UNIQUEMENT dans l'outil de signature du dépôt de licence privé — jamais ici.
 PUBLISHER_PUBLIC_KEY_HEX = "9fcb935c17520b3d9bfbb3b1d5bcd2c1cc7e8ffde6c5bbe89129423978f350b8"
 
 _TOKEN_PREFIX = "itsm-lic"
 _TOKEN_VERSION = "v1"
 
 
-# ── Catalogue des features payantes (connu du core, implémenté par l'overlay) ──
-# Le core déclare les CLÉS et leurs métadonnées (pour l'UI Store) sans connaître
-# l'implémentation : celle-ci est fournie par le package Enterprise via entry points.
+# ── Catalogue des features Supporter (clés + métadonnées pour l'UI) ────────────
+# Le core déclare les CLÉS et leurs métadonnées (pour la page Supporter) ; les
+# implémentations sont fournies par le package `itsm_modern_ai.features` intégré.
 FEATURE_PII_ADVANCED = "pii_advanced"
 FEATURE_MULTI_ENTITY = "multi_entity"
 FEATURE_SCHEDULED_EXPORTS = "scheduled_exports"
@@ -110,7 +109,7 @@ class License:
     """Charge utile vérifiée d'une licence."""
 
     customer: str
-    edition: str  # "enterprise"
+    edition: str  # "supporter"
     features: frozenset[str]
     issued_at: date | None = None
     expires_at: date | None = None
@@ -123,7 +122,7 @@ class License:
 class LicenseStatus:
     """Résultat de vérification — toujours exploitable (jamais d'exception remontée)."""
 
-    edition: str  # "community" | "enterprise"
+    edition: str  # "community" | "supporter"
     valid: bool
     features: frozenset[str] = frozenset()
     customer: str | None = None
@@ -133,8 +132,8 @@ class LicenseStatus:
     catalog: tuple[FeatureSpec, ...] = field(default=FEATURE_CATALOG)
 
     @property
-    def is_enterprise(self) -> bool:
-        return self.valid and self.edition == "enterprise"
+    def is_supporter(self) -> bool:
+        return self.valid and self.edition == "supporter"
 
     def has_feature(self, key: str) -> bool:
         return self.valid and key in self.features
@@ -194,7 +193,7 @@ def verify_license(token: str, *, today: date) -> LicenseStatus:
     try:
         payload = json.loads(_b64url_decode(payload_b64))
         customer = str(payload["customer"])
-        edition = str(payload.get("edition", "enterprise"))
+        edition = str(payload.get("edition", "supporter"))
         raw_features = payload.get("features", [])
         if not isinstance(raw_features, list):
             raise ValueError("features doit être une liste")

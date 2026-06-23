@@ -3,15 +3,15 @@ import { useT } from "@/lib/i18n";
 import { Lock } from "lucide-react";
 
 /**
- * Petit badge « Enterprise » verrouillé — signale une fonctionnalité non débloquée
+ * Petit badge « Supporter » verrouillé — signale une fonctionnalité non débloquée
  * (édition Community ou licence sans droit). Réutilisé dans la page Store.
  */
 export function LockedBadge() {
   const t = useT();
   return (
-    <Tag tone="indigo">
+    <Tag tone="purple">
       <Lock className="h-3 w-3" />
-      {t("Enterprise", "Enterprise")}
+      {t("Supporter", "Supporter")}
     </Tag>
   );
 }

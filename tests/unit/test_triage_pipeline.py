@@ -348,14 +348,14 @@ async def test_cost_cap_blocks_subsequent_tickets_same_day(temp_db):
 
 
 class _StubAdvancedMasker:
-    """Masker Enterprise factice : masque un motif que le masque de base ne couvre pas."""
+    """Masker Supporter factice : masque un motif que le masque de base ne couvre pas."""
 
     def mask(self, text: str) -> str:
         return text.replace("MATR-42", "[MATR]")
 
 
 async def test_advanced_masker_applied_after_base(temp_db):
-    """Le masker Enterprise (FEATURE_PII_ADVANCED) est appliqué APRÈS le masque de base
+    """Le masker Supporter (FEATURE_PII_ADVANCED) est appliqué APRÈS le masque de base
     sur le texte envoyé au LLM (NIR/SIRET/regex custom)."""
     llm = FakeLlm(decision=_accepted_decision())
     svc = TriageService(
@@ -372,7 +372,7 @@ async def test_advanced_masker_applied_after_base(temp_db):
 
 
 async def test_no_advanced_masker_in_community(temp_db):
-    """Sans masker Enterprise (Community), le texte n'est pas masqué au-delà du base."""
+    """Sans masker Supporter (licence absente), le texte n'est pas masqué au-delà du base."""
     llm = FakeLlm(decision=_accepted_decision())
     svc = TriageService(
         itsm=FakeItsm(),

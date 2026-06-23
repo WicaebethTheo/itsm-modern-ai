@@ -26,6 +26,9 @@ WORKDIR /app
 # ET PostgreSQL (profile compose `postgres`) sans rebuild dédié.
 # hatchling (editable) a besoin du package et du README dès l'install.
 COPY pyproject.toml uv.lock README.md ./
+# Image UNIQUE : tout `src/` est embarqué, y compris les features Supporter
+# (`itsm_modern_ai/features/`). Elles restent verrouillées tant qu'aucune licence
+# valide n'est fournie (déverrouillage en place, pas de swap d'image).
 COPY src ./src
 RUN uv sync --frozen --no-dev --no-install-project --extra postgres \
     && uv pip install --no-deps -e .

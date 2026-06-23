@@ -120,8 +120,9 @@ async def lifespan(app: FastAPI):
     app.state.secrets_box = make_secrets_box(settings)
     app.state.whitelist_cache = WhitelistCache()
 
-    # Open-core : découverte des plugins Enterprise installés (entry points). Sur l'image
-    # Community, aucun plugin → toutes les features payantes restent verrouillées.
+    # Open-core : enregistre les features Supporter intégrées + découvre les plugins externes
+    # (entry points). Les features sont livrées dans l'image mais restent verrouillées tant
+    # qu'aucune licence valide ne les autorise.
     from ..plugins import build_registry
 
     app.state.plugin_registry = build_registry()

@@ -36,10 +36,10 @@ export function Store() {
 
   const lic = license.data;
   const features = lic?.features ?? [];
-  // Image Enterprise = le code d'au moins une feature payante est installé. Sur l'image
-  // Community, RIEN n'est installé → une clé ne débloque rien : on masque l'activation.
-  const enterpriseImage = features.some((f) => f.installed);
-  // Badge honnête : "Enterprise" uniquement si une feature est RÉELLEMENT active
+  // Le code des features Supporter est présent dès qu'au moins une feature est installée.
+  // L'image unique embarque toujours le code → une clé valide suffit à débloquer.
+  const supporterCodePresent = features.some((f) => f.installed);
+  // Badge honnête : "Supporter" uniquement si une feature est RÉELLEMENT active
   // (installée ET licenciée), pas seulement parce qu'une clé est présente.
   const anyActive = features.some((f) => f.active);
   const invalidError = lic && !lic.valid ? lic.error : null;
@@ -102,14 +102,14 @@ export function Store() {
         <PanelHead
           title={t("Édition", "Edition")}
           subtitle={t(
-            "Open-core : l'édition Enterprise se débloque avec une clé — hors-ligne, aucune donnée ne sort.",
-            "Open-core: the Enterprise edition unlocks with a key — offline, no data leaves.",
+            "Open-core : les fonctionnalités Supporter se débloquent avec une clé — hors-ligne, aucune donnée ne sort.",
+            "Open-core: Supporter features unlock with a key — offline, no data leaves.",
           )}
           right={
             anyActive ? (
-              <Tag tone="indigo">
+              <Tag tone="purple">
                 <Check className="h-3 w-3" />
-                Enterprise
+                Supporter
               </Tag>
             ) : (
               <Tag tone="muted">Community</Tag>
@@ -120,12 +120,12 @@ export function Store() {
           <span className="text-muted-foreground">
             {anyActive
               ? t(
-                  "Édition Enterprise active — détails de la licence ci-dessous.",
-                  "Enterprise edition active — license details below.",
+                  "Licence Supporter active — détails de la licence ci-dessous.",
+                  "Supporter license active — license details below.",
                 )
               : t(
-                  "Édition Community — fonctionnalités Enterprise verrouillées.",
-                  "Community edition — Enterprise features locked.",
+                  "Édition Community — fonctionnalités Supporter verrouillées.",
+                  "Community edition — Supporter features locked.",
                 )}
           </span>
         </CardContent>
@@ -169,15 +169,15 @@ export function Store() {
         </Card>
       ) : null}
 
-      {enterpriseImage ? (
+      {supporterCodePresent ? (
         anyActive ? (
           /* Licence ACTIVE : statut + renouvellement (remplacer par une nouvelle clé). */
           <Card>
             <PanelHead
               title={t("Licence active", "Active license")}
               subtitle={t(
-                "Licence Enterprise valide. Renouvelez-la avec une nouvelle clé avant l'expiration.",
-                "Valid Enterprise license. Renew it with a new key before it expires.",
+                "Licence Supporter valide. Renouvelez-la avec une nouvelle clé avant l'expiration.",
+                "Valid Supporter license. Renew it with a new key before it expires.",
               )}
               right={
                 <Tag tone="green">
@@ -254,7 +254,7 @@ export function Store() {
             </CardContent>
           </Card>
         ) : (
-          /* Image Enterprise SANS licence valide (absente ou EXPIRÉE) : activation/renouvellement. */
+          /* Code Supporter présent SANS licence valide (absente ou EXPIRÉE) : activation/renouvellement. */
           <Card>
             <PanelHead
               title={t("Activer une licence", "Activate a license")}
@@ -292,43 +292,52 @@ export function Store() {
           </Card>
         )
       ) : (
-        /* Image Community : pas d'activation (une clé ne débloque rien ici). On guide
-           vers la bascule Enterprise. */
+        /* Code Supporter absent de l'image (cas démo Community) : on guide vers
+           l'activation d'une licence Supporter. */
         <Card>
           <PanelHead
-            title={t("Passer en édition Enterprise", "Upgrade to the Enterprise edition")}
+            title={t("Activer ma licence Supporter", "Activate my Supporter license")}
             subtitle={t(
-              "Sur l'édition Community, le code des modules payants n'est pas livré : une clé seule ne débloque rien ici.",
-              "On the Community edition, the paid modules' code is not shipped: a key alone unlocks nothing here.",
+              "Collez la clé fournie pour débloquer les fonctionnalités Supporter — vérification hors-ligne, aucune donnée ne sort.",
+              "Paste the key you were provided to unlock Supporter features — offline verification, no data leaves.",
             )}
           />
-          <CardContent className="flex flex-col gap-3 p-5 text-[12.5px]">
-            <p className="text-muted-foreground">
-              {t(
-                "La bascule conserve toute votre configuration (même volume de données). Elle remplace l'image par l'édition Enterprise et applique votre clé de licence :",
-                "Upgrading keeps your whole configuration (same data volume). It swaps the image for the Enterprise edition and applies your license key:",
-              )}
-            </p>
-            <pre className="overflow-x-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-[12px]">
-              ./upgrade-to-enterprise.sh "{t("<votre-clé>", "<your-key>")}"
-            </pre>
+          <CardContent className="flex flex-col gap-3 p-5">
+            {invalidError ? (
+              <Banner kind="error">
+                {t("Licence invalide", "Invalid license")} : {invalidError}
+              </Banner>
+            ) : null}
+            <Textarea
+              value={key}
+              placeholder={t("Coller le jeton de licence…", "Paste the license token…")}
+              className="min-h-24 font-mono text-[12px]"
+              onChange={(e) => setKey(e.target.value)}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={activate} disabled={activating || !key.trim()}>
+                {activating
+                  ? t("Activation…", "Activating…")
+                  : t("Activer ma licence Supporter", "Activate Supporter license")}
+              </Button>
+            </div>
             <p className="text-[11.5px] text-muted-foreground/80">
               {t(
-                "Détails : docs/enterprise-upgrade.md. La licence est vérifiée hors-ligne (aucun appel sortant).",
-                "Details: docs/enterprise-upgrade.md. The license is verified offline (no outbound call).",
+                "La licence est vérifiée hors-ligne (Ed25519, aucun appel sortant).",
+                "The license is verified offline (Ed25519, no outbound call).",
               )}
             </p>
           </CardContent>
         </Card>
       )}
 
-      {/* Catalogue des fonctionnalités Enterprise. */}
+      {/* Catalogue des fonctionnalités Supporter. */}
       <Card>
         <PanelHead
-          title={t("Fonctionnalités Enterprise", "Enterprise features")}
+          title={t("Fonctionnalités Supporter", "Supporter features")}
           subtitle={t(
-            "Modules débloqués par licence sur l'édition Enterprise.",
-            "Modules unlocked by license on the Enterprise edition.",
+            "Modules débloqués par une licence Supporter.",
+            "Modules unlocked by a Supporter license.",
           )}
         />
         <CardContent className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
@@ -354,8 +363,8 @@ export function Store() {
               {!f.active ? (
                 <p className="mt-2 text-[11px] text-muted-foreground/80">
                   {t(
-                    "Passez en édition Enterprise pour débloquer.",
-                    "Switch to the Enterprise edition to unlock.",
+                    "Activez votre licence Supporter pour débloquer.",
+                    "Activate your Supporter license to unlock.",
                   )}
                 </p>
               ) : null}

@@ -14,7 +14,7 @@ vi.mock("@/lib/api", async (orig) => {
   };
 });
 
-// Fixture Community : seuls e-mail + téléphone sont actifs, le reste est Enterprise/inactif.
+// Fixture Community : seuls e-mail + téléphone sont actifs, le reste est Supporter/inactif.
 const COMMUNITY: PrivacyView = {
   edition_advanced: false,
   retention_decisions_days: 30,
@@ -42,7 +42,7 @@ const COMMUNITY: PrivacyView = {
       label_fr: "IBAN & cartes",
       label_en: "IBAN & cards",
       example: "[IBAN]",
-      scope: "enterprise",
+      scope: "supporter",
       active: false,
     },
     {
@@ -50,7 +50,7 @@ const COMMUNITY: PrivacyView = {
       label_fr: "Secrets / tokens",
       label_en: "Secrets / tokens",
       example: "[SECRET]",
-      scope: "enterprise",
+      scope: "supporter",
       active: false,
     },
     {
@@ -58,7 +58,7 @@ const COMMUNITY: PrivacyView = {
       label_fr: "IP & MAC",
       label_en: "IP & MAC",
       example: "[IP]",
-      scope: "enterprise",
+      scope: "supporter",
       active: false,
     },
     {
@@ -66,7 +66,7 @@ const COMMUNITY: PrivacyView = {
       label_fr: "NIR / SIRET",
       label_en: "NIR / SIRET",
       example: "[NIR]",
-      scope: "enterprise",
+      scope: "supporter",
       active: false,
     },
     {
@@ -74,7 +74,7 @@ const COMMUNITY: PrivacyView = {
       label_fr: "Regex personnalisée",
       label_en: "Custom regex",
       example: "[CUSTOM]",
-      scope: "enterprise",
+      scope: "supporter",
       active: false,
     },
   ],
@@ -102,11 +102,11 @@ describe("Privacy", () => {
     expect(screen.getByText("IBAN & cartes")).toBeInTheDocument();
   });
 
-  it("affiche un badge Enterprise verrouillé pour les catégories payantes", async () => {
+  it("affiche un badge Supporter verrouillé pour les catégories payantes", async () => {
     renderPrivacy();
     await screen.findByText("IBAN & cartes");
-    // LockedBadge rend le texte « Enterprise » ; au moins une occurrence (iban, secret…).
-    expect(screen.getAllByText("Enterprise").length).toBeGreaterThan(0);
+    // LockedBadge rend le texte « Supporter » ; au moins une occurrence (iban, secret…).
+    expect(screen.getAllByText("Supporter").length).toBeGreaterThan(0);
   });
 
   it("affiche le bandeau d'alerte Community", async () => {

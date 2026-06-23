@@ -47,7 +47,7 @@ export const NAV: NavSection[] = [
     en: "Advanced",
     items: [
       { to: "/sandbox", fr: "Bac à sable", en: "Sandbox" },
-      { to: "/store", fr: "Store", en: "Store" },
+      { to: "/store", fr: "Supporter", en: "Supporter" },
       { to: "/automations", fr: "Automations", en: "Automations" },
       { to: "/debug", fr: "Développement", en: "Development" },
     ],

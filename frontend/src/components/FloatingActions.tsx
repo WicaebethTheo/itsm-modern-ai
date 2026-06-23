@@ -13,11 +13,11 @@ function GithubIcon() {
 }
 
 /** Widgets flottants bas-droite : lien GitHub (toujours) + « café » (Community seulement,
- *  masqué en édition Enterprise = client payant). La version vit dans la barre du haut. */
+ *  masqué pour un Supporter = client payant). La version vit dans la barre du haut. */
 export function FloatingActions() {
   const t = useT();
   const lic = useResource(useCallback(() => Api.getLicense(), []));
-  const isEnterprise = (lic.data?.features ?? []).some((f) => f.installed);
+  const isSupporter = (lic.data?.features ?? []).some((f) => f.installed);
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2">
@@ -31,7 +31,7 @@ export function FloatingActions() {
       >
         <GithubIcon />
       </a>
-      {!isEnterprise ? (
+      {!isSupporter ? (
         <a
           href={BUYMEACOFFEE_URL}
           target="_blank"

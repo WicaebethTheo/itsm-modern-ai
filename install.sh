@@ -179,15 +179,17 @@ if [ "$SELF_UPDATE" = true ]; then
 fi
 
 # ── 3) Image: offline bundle OR build from source ─────────────────────────────
-IMAGE="${ITSM_IMAGE:-itsm-modern-ai-community:latest}"
+# Image UNIQUE : un seul tag, fixé par docker-compose.yml. Les features Supporter sont
+# livrées dedans et déverrouillées par licence (pas de swap d'image).
+IMAGE="itsm-modern-ai:latest"
 if [ -n "$BUNDLE" ]; then
   [ -f "$BUNDLE" ] || die "Bundle not found: $BUNDLE"
   say "Loading image from $BUNDLE (offline)"
   loaded="$(docker load -i "$BUNDLE" | sed -n 's/^Loaded image: //p' | head -1)"
-  [ -n "$loaded" ] && IMAGE="$loaded"
+  # Retague l'image chargée sous le tag attendu par compose (édition unique).
+  [ -n "$loaded" ] && [ "$loaded" != "$IMAGE" ] && docker tag "$loaded" "$IMAGE"
   DO_BUILD=false
 fi
-export ITSM_IMAGE="$IMAGE"
 
 if [ "$DO_BUILD" = auto ]; then
   if docker image inspect "$IMAGE" >/dev/null 2>&1; then DO_BUILD=false; else DO_BUILD=true; fi
@@ -325,7 +327,7 @@ echo
 if $allgood; then
   printf '%s✅ Installation successful — console: http://localhost:%s%s\n' "$c_grn" "$PORT" "$c_off"
   echo "   Configure GLPI, the LLM provider and the scope from the web console."
-  echo "   Upgrade to Enterprise later: ./upgrade-to-enterprise.sh \"<key>\""
+  echo "   Become Supporter later: paste your license key in the Supporter page of the console."
 else
   die "Some checks failed (see above)."
 fi
