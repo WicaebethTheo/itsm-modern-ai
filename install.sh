@@ -4,11 +4,15 @@
 # Checks prerequisites (offers to install missing ones), prepares config, starts the
 # service, creates the admin account, then prints a final CHECKLIST of system state.
 #
+# Une seule commande pour TOUT : installer ET mettre à jour. Si une instance existe
+# déjà dans ce dossier, un menu propose « Mettre à jour » (sauvegarde ./data incluse)
+# ou « Réinstaller ». Pas de second script à connaître.
+#
 # Usage:
-#   ./install.sh                          # build from source + install
+#   ./install.sh                          # installe ; si déjà installé → menu maj/réinstall
 #   ./install.sh --bundle itsm.tar.gz     # load an offline image (no build)
 #   ./install.sh --no-build               # use an image already present locally
-#   ./install.sh --update                 # UPDATE: git pull latest code + rebuild + restart
+#   ./install.sh --update                 # UPDATE non-interactif : sauvegarde + pull + rebuild
 #   ./install.sh --build                  # force a rebuild of the current code (no pull)
 #   ./install.sh --port 8080              # publish on a different host port
 #   ./install.sh --yes                    # non-interactive (accept proposed installs)
@@ -20,15 +24,15 @@ set -uo pipefail
 cd "$(dirname "$0")"
 
 # ── Options ─────────────────────────────────────────────────────────────────
-RESET=false; ASSUME_YES=false; DO_BUILD=auto; BUNDLE=""; PORT="${ITSM_PORT:-8000}"; SELF_UPDATE=false
+RESET=false; ASSUME_YES=false; DO_BUILD=auto; BUNDLE=""; PORT="${ITSM_PORT:-8000}"; SELF_UPDATE=false; MODE_GIVEN=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --reset-password) RESET=true ;;
     --yes|-y) ASSUME_YES=true ;;
-    --update) DO_BUILD=true; SELF_UPDATE=true ;;  # git pull + rebuild
-    --build) DO_BUILD=true ;;                     # rebuild current code (no pull)
+    --update) DO_BUILD=true; SELF_UPDATE=true; MODE_GIVEN=true ;;  # git pull + rebuild
+    --build) DO_BUILD=true; MODE_GIVEN=true ;;    # rebuild current code (no pull)
     --no-build) DO_BUILD=false ;;
-    --bundle) BUNDLE="${2:-}"; shift ;;
+    --bundle) BUNDLE="${2:-}"; MODE_GIVEN=true; shift ;;
     --port) PORT="${2:-8000}"; shift ;;
     -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -49,6 +53,32 @@ ask()  { # ask "question" → 0 if yes. --yes => yes; no TTY => no.
 
 CHECKS=()
 check_add() { CHECKS+=("$1"$'\t'"$2"); }
+
+# ── Sélecteur Installer / Mettre à jour ───────────────────────────────────────
+# Une seule commande à connaître. Si une instance existe déjà dans ce dossier, on
+# propose le choix Mettre à jour (sauvegarde ./data incluse) ou Réinstaller —
+# inutile de connaître/lancer un second script. En non-interactif (pipe sans TTY,
+# CI), on choisit la mise à jour par défaut. Le menu est court-circuité si un mode
+# explicite est passé (--update, --bundle, --build, --reset-password).
+instance_exists() { [ -d data ] && { [ -f data/master.key ] || ls data/*.db* >/dev/null 2>&1; }; }
+if [ "$RESET" = false ] && [ "$MODE_GIVEN" = false ] && instance_exists; then
+  choice=1
+  if [ -r /dev/tty ] && [ -t 1 ]; then
+    {
+      printf '\n%s▶ Une instance ITSM Modern AI est déjà installée ici.%s\n' "$c_cyan" "$c_off"
+      printf '   1) Mettre à jour    — sauvegarde ./data, dernière version, reconstruit  [défaut]\n'
+      printf '   2) Réinstaller / reconfigurer\n'
+      printf '   3) Quitter\n'
+      printf '%s? Votre choix [1] : %s' "$c_yel" "$c_off"
+    } > /dev/tty
+    IFS= read -r choice < /dev/tty || choice=1
+  fi
+  case "${choice:-1}" in
+    2) say "Réinstallation / reconfiguration de l'instance existante" ;;
+    3) say "Annulé — aucune modification."; exit 0 ;;
+    *) say "Mise à jour de l'instance existante"; SELF_UPDATE=true; DO_BUILD=true ;;
+  esac
+fi
 
 # ── Distro / package-manager detection ────────────────────────────────────────
 OS_ID="unknown"; OS_NAME="unknown"
@@ -158,11 +188,31 @@ chmod 600 .env 2>/dev/null || true
 check_add ".env file (chmod 600)" ok
 export ITSM_HOST_PORT="$PORT"
 
-# ── 2b) Self-update (--update): pull the latest code BEFORE rebuilding ─────────
-# `./install.sh --update` = one-command update: fetch the latest code (git) and rebuild
-# the image; ./data (config + DB + master.key) is preserved across the rebuild.
-# In offline/bundle mode (no git checkout) the pull is skipped (use --bundle to update).
+# ── 2b) Mise à jour : SAUVEGARDE ./data, puis récupère la dernière version ─────
+# La mise à jour (sélecteur ou --update) sauvegarde ./data AVANT toute migration, puis
+# récupère le code (git) et reconstruit l'image ; ./data (config + DB + master.key) est
+# préservé. En mode offline/bundle (pas de checkout git) le pull est ignoré.
+backup_data() {
+  [ -d data ] || return 0
+  local ts bk; ts="$(date +%Y%m%d-%H%M%S)"; bk="backups/$ts"; mkdir -p "$bk"
+  say "Sauvegarde de ./data avant mise à jour → $bk"
+  cp -a data/master.key "$bk/" 2>/dev/null || true
+  if [ -n "$(docker compose ps -q postgres 2>/dev/null || true)" ] || grep -qiE '^ITSM_DATABASE_URL=.*postgres' .env 2>/dev/null; then
+    local pu pd; pu="$(grep -E '^POSTGRES_USER=' .env 2>/dev/null | head -1 | cut -d= -f2-)"; pu="${pu:-itsm}"
+    pd="$(grep -E '^POSTGRES_DB=' .env 2>/dev/null | head -1 | cut -d= -f2-)"; pd="${pd:-itsm}"
+    if docker compose exec -T postgres pg_dump -U "$pu" "$pd" > "$bk/dump.sql" 2>/dev/null; then
+      echo "  dump PostgreSQL OK → $bk/dump.sql"; check_add "Sauvegarde ./data" "ok:$bk"
+    else
+      warn "pg_dump indisponible — sauvegarde DB ignorée (instance arrêtée ?)."; check_add "Sauvegarde ./data" "warn:DB non dumpée"
+    fi
+  else
+    docker compose stop >/dev/null 2>&1 || true   # copie SQLite à froid = cohérente
+    cp -a data/itsm.db* "$bk/" 2>/dev/null || true
+    echo "  sauvegarde SQLite OK"; check_add "Sauvegarde ./data" "ok:$bk"
+  fi
+}
 if [ "$SELF_UPDATE" = true ]; then
+  backup_data
   if [ -d .git ] && command -v git >/dev/null 2>&1; then
     branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
     say "Updating source (git pull, branch: $branch)…"

@@ -67,9 +67,7 @@ docker compose exec itsm python -m itsm_modern_ai.admin_setup   # mot de passe a
 > ⚠️ **Ne JAMAIS faire `docker compose down -v`** : `-v` supprime le volume `./data`
 > qui contient la base SQLite + la `master.key` Fernet. La configuration repart à zéro.
 
-**Mise à jour** — deux voies, données préservées dans les deux cas :
-- `./update.sh` (**recommandé**) : **sauvegarde `./data` d'abord** (pg_dump / copie SQLite) puis récupère la nouvelle version, recrée, migrations auto, rollback affiché si besoin.
-- `./install.sh --update` (rapide, **sans sauvegarde**) : `git pull` + rebuild + redémarrage ; c'est aussi la voie du one-liner `curl … | sh`.
+**Mise à jour** — **une seule commande** : relancez l'installeur (`./install.sh`, ou le one-liner `curl … | sh`). S'il détecte une instance existante, il propose un menu **Mettre à jour / Réinstaller**. La mise à jour **sauvegarde `./data` d'abord** (pg_dump / copie SQLite), récupère la dernière version, reconstruit et applique les migrations — données préservées. *(Non-interactif : `./install.sh --update`.)*
 
 Détails : **[docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)**.
 

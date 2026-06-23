@@ -142,7 +142,7 @@ flowchart LR
 ### Mise en production
 - Toujours derrière un **reverse proxy + TLS** (le conteneur n'est pas exposé en direct).
 - Sauvegarder le volume **`./data`** (config, journal, secrets chiffrés) **et** `MASTER_KEY` séparément. *Perdre `MASTER_KEY` ou `./data` = secrets irrécupérables.*
-- Mise à jour : `./update.sh` (sauvegarde `./data` d'abord) ou `git pull && docker compose up -d --build`.
+- Mise à jour : relancer `./install.sh` (menu **Mettre à jour / Réinstaller**, sauvegarde `./data` incluse) ; non-interactif : `./install.sh --update`.
 
 ---
 

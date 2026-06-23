@@ -42,4 +42,4 @@ Les fonctionnalités Supporter se **reverrouillent** immédiatement ; la donnée
   **privée** de signature reste dans le dépôt privé de signature des licences ; elle n'est
   jamais ici.
 - **Sauvegarde** : comme pour toute mise à jour, sauvegardez `./data` avant (cf.
-  [`docs/install.md`](install.md#mise-à-jour) / `./update.sh`).
+  [`docs/install.md`](install.md#mise-à-jour) / `./install.sh`).

@@ -149,17 +149,20 @@ agrégeable (Loki/ELK). Aucune PII n'est émise (pas de corps de requête, pas d
 
 ## Mise à jour
 
+**Une seule commande** — relancez l'installeur :
+
 ```bash
-./update.sh
+./install.sh
 ```
 
-Le script **sauvegarde d'abord** `./data` (base + master key, horodaté sous `backups/`),
-récupère la nouvelle version (`git pull` si dépôt présent), **reconstruit et redémarre**, puis
-attend que le moteur soit sain. Les **migrations Alembic s'appliquent automatiquement** au
-démarrage (entrypoint), et les **données sont préservées** (le volume `./data` n'est jamais
-touché — **ne JAMAIS faire `docker compose down -v`**).
+S'il détecte une instance existante, un menu propose **Mettre à jour / Réinstaller**. La mise à
+jour **sauvegarde d'abord** `./data` (base + master key, horodaté sous `backups/`), récupère la
+nouvelle version (`git pull` si dépôt présent), **reconstruit et redémarre**, puis attend que le
+moteur soit sain. Les **migrations Alembic s'appliquent automatiquement** au démarrage
+(entrypoint), et les **données sont préservées** (le volume `./data` n'est jamais touché —
+**ne JAMAIS faire `docker compose down -v`**).
 
-- `./update.sh --no-pull` : met à jour sans `git pull` (sources/image déjà à jour).
+- `./install.sh --update` : mise à jour directe, non-interactive (CI, scripts).
 - En cas d'échec (ex. migration KO), le script affiche la procédure de **rollback** : restaurer
   la sauvegarde `backups/<horodatage>/` dans `data/`, revenir à la version précédente
   (`git checkout <tag>` en build local), puis `docker compose up -d --build`.

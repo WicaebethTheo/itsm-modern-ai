@@ -36,12 +36,8 @@ pkg_install() {
 
 command -v git >/dev/null 2>&1 || { say "Installing git"; pkg_install git || die "Please install git first."; }
 
-MODE="install"
 if [ -d "$DIR/.git" ]; then
-  # Existing checkout → UPDATE. The pull + rebuild is delegated to `install.sh --update`
-  # (single source of truth for the update logic). Data in ./data is preserved.
-  say "Existing install found in '$DIR' → update"
-  MODE="update"
+  say "Dépôt déjà présent dans '$DIR' — lancement de l'installeur"
 else
   say "Cloning $REPO_URL (ref: $REF) into '$DIR'"
   git clone --depth 1 --branch "$REF" "$REPO_URL" "$DIR" \
@@ -49,14 +45,6 @@ else
 fi
 
 cd "$DIR"
-if [ "$MODE" = "update" ]; then
-  # `--update` fait un git pull ; incompatible avec une MAJ hors-ligne par bundle. Si
-  # l'utilisateur a passé --bundle, on laisse install.sh gérer le bundle sans git pull.
-  case " $* " in
-    *" --bundle "*) say "Updating from offline bundle"; exec ./install.sh "$@" ;;
-    *) say "Updating (./install.sh --update)"; exec ./install.sh --update "$@" ;;
-  esac
-else
-  say "Launching the installer (./install.sh)"
-  exec ./install.sh "$@"
-fi
+# install.sh est l'unique point d'entrée : il installe, ou — si une instance existe déjà
+# dans ./data — propose un menu « Mettre à jour / Réinstaller » (sauvegarde ./data incluse).
+exec ./install.sh "$@"

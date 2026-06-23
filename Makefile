@@ -4,9 +4,9 @@ install:
 	uv venv --python 3.13
 	uv pip install -e ".[dev]"
 
-# Déploiement on-prem (Docker) : mise à jour avec sauvegarde préalable.
+# Déploiement on-prem (Docker) : mise à jour avec sauvegarde préalable (via l'installeur unique).
 update:
-	./update.sh
+	./install.sh --update
 
 # Sauvegarde horodatée du volume ./data (base SQLite + master.key).
 backup:
