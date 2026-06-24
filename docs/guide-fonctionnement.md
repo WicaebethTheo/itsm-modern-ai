@@ -93,7 +93,7 @@ flowchart TD
 ### Procédure (voie recommandée : `install.sh`)
 
 ```bash
-git clone https://github.com/tmeneboode/itsm-modern-ai.git
+git clone https://github.com/WicaebethTheo/itsm-modern-ai.git
 cd itsm-modern-ai
 ./install.sh          # préflight + .env + build + démarrage + mot de passe admin
 ```
