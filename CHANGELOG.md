@@ -5,6 +5,20 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-06-24 — 0.9.4 — Hotfix installeur (daemon, bash, env) + correctifs UI
+
+- **Installeur** : attend désormais que le **daemon Docker** soit prêt (boucle + diagnostic
+  socket/LXC) au lieu d'échouer sur un `docker info` prématuré ; correctif `env
+  DEBIAN_FRONTEND=noninteractive` (l'install apt cassait en root quand `$SUDO` est vide).
+- **One-liner `curl … | sh`** : installe **bash** en plus de git si absent — `install.sh` est
+  un script bash, le clone+exec échouait sur une VM minimale sans bash.
+- **UI** : le bouton « Offrir un café » était masqué pour **tout le monde** sur l'image unique
+  (test sur `installed`, toujours vrai) → corrigé sur `active` (licence réellement active) ;
+  le lien « notes de version » de la page Supporter renvoyait vers un 404 GitHub → pointe
+  désormais sur **docs.itsm-modern-ai.com/update**.
+- **Mirror GitHub** : `.gitlab-ci.yml` retiré du dépôt public (inerte sur GitHub, exposait
+  l'infra GitLab) ; le CI reste sur GitLab.
+
 ## 2026-06-23 — 0.9.3 — Installeur : installe TOUS les prérequis (git + Docker + compose)
 
 - Le one-liner `curl … | sh` **installe git** s'il manque (avant le clone), puis `install.sh`
