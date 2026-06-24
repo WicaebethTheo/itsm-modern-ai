@@ -17,7 +17,7 @@ function GithubIcon() {
 export function FloatingActions() {
   const t = useT();
   const lic = useResource(useCallback(() => Api.getLicense(), []));
-  const isSupporter = (lic.data?.features ?? []).some((f) => f.installed);
+  const isSupporter = (lic.data?.features ?? []).some((f) => f.active);
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2">

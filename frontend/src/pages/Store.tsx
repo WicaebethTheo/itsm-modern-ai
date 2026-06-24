@@ -7,7 +7,7 @@ import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
-import { Api, GITHUB_URL } from "@/lib/api";
+import { Api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Check } from "lucide-react";
 import { useCallback, useState } from "react";
@@ -158,7 +158,7 @@ export function Store() {
               </Button>
             </div>
             <a
-              href={`${GITHUB_URL}/releases`}
+              href="https://docs.itsm-modern-ai.com/update/"
               target="_blank"
               rel="noopener noreferrer"
               className="text-[12px] text-accent-indigo hover:underline"

@@ -34,7 +34,10 @@ pkg_install() {
   else return 1; fi
 }
 
-command -v git >/dev/null 2>&1 || { say "Installing git"; pkg_install git || die "Please install git first."; }
+# git (clone) ET bash (install.sh est un script bash) requis : on installe ce qui manque.
+for _bin in git bash; do
+  command -v "$_bin" >/dev/null 2>&1 || { say "Installing $_bin"; pkg_install "$_bin" || die "Please install $_bin first."; }
+done
 
 if [ -d "$DIR/.git" ]; then
   say "Dépôt déjà présent dans '$DIR' — lancement de l'installeur"
