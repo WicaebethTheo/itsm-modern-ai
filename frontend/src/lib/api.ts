@@ -41,9 +41,9 @@ export const api = {
 export const APP_VERSION = "0.9.4";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
-export const AUTHOR_NAME = "Théo MENEBOODE";
+export const AUTHOR_NAME = "Théo M.";
 export const GITHUB_URL = "https://github.com/WicaebethTheo/itsm-modern-ai";
-export const BUYMEACOFFEE_URL = "https://buymeacoffee.com/tmeneboode";
+export const BUYMEACOFFEE_URL = "https://buymeacoffee.com/twicaebeth";
 
 export type LlmProvider = "mistral" | "openai" | "ollama" | "anthropic";
 
