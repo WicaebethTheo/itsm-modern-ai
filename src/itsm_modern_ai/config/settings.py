@@ -177,10 +177,15 @@ class Settings(BaseSettings):
     login_window_seconds: int = 300  # fenêtre glissante d'observation des échecs
     login_block_seconds: int = 300  # durée du blocage une fois le seuil franchi
 
-    # Reverse proxy : si True, on lit la 1ʳᵉ valeur de `X-Forwarded-For` pour
-    # déduire l'IP réelle du client (rate-limit login, audit). Défaut sûr : False
-    # (pilote/labo sans proxy). À mettre à True UNIQUEMENT derrière un proxy fiable.
+    # Reverse proxy : si True, on lit `X-Forwarded-For` pour déduire l'IP réelle du
+    # client (rate-limit login, audit). Défaut sûr : False (pilote/labo sans proxy).
+    # À mettre à True UNIQUEMENT derrière un proxy fiable.
     trust_proxy_headers: bool = False
+
+    # Nombre de proxys de CONFIANCE en amont. X-Forwarded-For va de gauche (client,
+    # spoofable) à droite (ajouté par TON proxy) → l'IP fiable est la N-ième en partant
+    # de la DROITE. 1 = un seul reverse proxy devant le moteur.
+    trusted_proxy_hops: int = 1
 
     # Observabilité — logging structuré (durcissement audit 2026-05). `log_level`
     # pilote le seuil racine ; `log_format=json` produit un log structuré (1 ligne =

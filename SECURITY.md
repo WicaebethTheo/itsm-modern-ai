@@ -30,8 +30,8 @@ Déploiement **pilote** prévu pour un **réseau interne non exposé**. La base 
 
 - **Anti-path-traversal (SPA)** : le service de fichiers statiques résout le chemin demandé et **exige qu'il reste sous `dist/`** ; toute tentative de sortie (`../`, `..%2f`) retombe sur l'index SPA — pas de lecture de `master.key`, `itsm.db` ni `.env`.
 - **Anti-SSRF — validation lexicale** (écriture de config) : les URLs de base publiques (GLPI, Mistral, OpenAI, Anthropic) exigent `https://` et un hôte routable ; loopback / IP privée / metadata cloud sont **rejetés** (Ollama local toléré).
-- **Anti-SSRF — garde runtime / anti DNS-rebinding** (`ssrf_guard_enabled`, défaut **`true`**) : avant chaque appel sortant (LLM, GLPI), l'hôte est **résolu** et toute IP interne est **bloquée** (fail-closed sur échec DNS) — donc **avant** toute fuite de token. Atténuation (voir [`docs/audit-2026-05.md`](docs/audit-2026-05.md) §6 pour la limite TOCTOU résiduelle).
-- **Masquage PII avant le LLM — selon la licence (open-core)** : sans licence, seuls **e-mail + téléphone** sont masqués ; le masquage **IBAN/cartes, secrets (mots de passe/tokens/clés API), IP/MAC, NIR/SIRET + regex custom** est une feature **Supporter** (`FEATURE_PII_ADVANCED`) — son code est livré dans l'image mais reste verrouillé tant qu'aucune licence valide ne l'autorise. ⚠️ **Sans licence, IBAN et secrets sont transmis EN CLAIR au LLM et conservés en clair dans le journal `llm_calls`** — un bandeau l'indique dans la console (cf. [`docs/dpo.md`](docs/dpo.md)).
+- **Anti-SSRF — garde runtime / anti DNS-rebinding** (`ssrf_guard_enabled`, défaut **`true`**) : avant chaque appel sortant (LLM, GLPI), l'hôte est **résolu** et toute IP interne est **bloquée** (fail-closed sur échec DNS) — donc **avant** toute fuite de token. Atténuation (limite TOCTOU résiduelle documentée dans l'audit interne 2026-05, §6).
+- **Masquage PII avant le LLM — selon la licence (open-core)** : sans licence, seuls **e-mail + téléphone** sont masqués ; le masquage **IBAN/cartes, secrets (mots de passe/tokens/clés API), IP/MAC, NIR/SIRET + regex custom** est une feature **Supporter** (`FEATURE_PII_ADVANCED`) — son code est livré dans l'image mais reste verrouillé tant qu'aucune licence valide ne l'autorise. ⚠️ **Sans licence, IBAN et secrets sont transmis EN CLAIR au LLM et conservés en clair dans le journal `llm_calls`** — un bandeau l'indique dans la console (cf. la **console DPO** et [docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)).
 - **Re-masquage des brouillons en modes auto** : avant toute publication **publique** (`semi_auto`/`full_auto`), le brouillon LLM est **re-masqué** (PII, selon la licence) et **borné en longueur**.
 - **Bornes de génération LLM** (`max_tokens`) : plafonne coût/latence (consommation non bornée, OWASP LLM10).
 - **Neutralisation de l'injection de formule CSV** : les cellules d'export DPO commençant par `= + - @ \t \r` sont préfixées d'une apostrophe (protège tableurs).
@@ -50,8 +50,32 @@ Déploiement **pilote** prévu pour un **réseau interne non exposé**. La base 
 
 ## Signaler une vulnérabilité
 
-Merci de signaler toute vulnérabilité de manière responsable et privée au mainteneur :
+Merci de signaler toute vulnérabilité de manière **responsable et privée** — n'ouvrez
+pas d'issue, de merge request ni de fil public pour une faille non corrigée.
 
-- Contact : `security@example.com` *(placeholder — à remplacer par l'adresse réelle du mainteneur)*
+**Contact** : **support@itsm-modern-ai.com** (l'alias relaie en privé au mainteneur).
 
-Merci de ne pas divulguer publiquement une faille avant qu'un correctif soit disponible.
+Incluez de quoi reproduire : la version testée (tag `vX.Y.Z` ou SHA), l'endpoint/route
+concerné, le comportement attendu vs constaté, et un PoC minimal si possible.
+
+### Périmètre
+
+En périmètre : le moteur de triage (polling GLPI, routage LLM, validation des décisions,
+authentification/sessions, anti-SSRF, masquage PII, endpoints d'admin/export). Hors
+périmètre : la **mauvaise configuration d'un déploiement** (TLS absent, port exposé, SSH
+faible — responsabilité du déployeur) et les avis de dépendances **sans chemin de code
+atteignable** (merci de joindre une preuve d'atteignabilité).
+
+### Délais visés
+
+Cibles (pas un engagement contractuel — projet à mainteneur unique) :
+
+| Étape | Cible |
+| --- | --- |
+| Accusé de réception | sous 5 jours ouvrés |
+| Triage initial (sévérité, repro) | sous 14 jours |
+| Correctif ou mitigation documentée | sous 90 jours |
+| Divulgation coordonnée après correctif | typiquement 7–30 jours |
+
+Merci de laisser une fenêtre de divulgation raisonnable avant toute publication —
+divulguer avant qu'un correctif soit disponible aggrave la situation des déployeurs.

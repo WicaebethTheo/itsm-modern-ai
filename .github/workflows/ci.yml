@@ -1,0 +1,43 @@
+# CI publique (GitHub) — porte minimale pour les PR sur le mirror : ruff + pytest +
+# build frontend. La CI complète (e2e Playwright, scans de dépendances) reste sur
+# GitLab (.gitlab-ci.yml, strippé du mirror). Python 3.13 requis (pyproject
+# requires-python >=3.13) : on l'épingle explicitement (sinon faux échecs en 3.12).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install uv
+        run: pip install -q uv
+      - name: Install deps (uv.lock figé)
+        run: uv sync --frozen --all-extras
+      - name: ruff
+        run: uv run ruff check src tests
+      - name: pytest
+        run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

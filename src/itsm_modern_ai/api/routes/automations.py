@@ -123,7 +123,8 @@ def run_retention(
     decisions_days = cfg.get_int("retention_decisions_days", s.retention_decisions_days)
     llm_days = cfg.get_int("retention_llm_calls_days", s.retention_llm_calls_days)
     trust = bool(getattr(request.app.state.settings, "trust_proxy_headers", False))
-    initiator = client_ip(request, trust)
+    hops = int(getattr(request.app.state.settings, "trusted_proxy_hops", 1))
+    initiator = client_ip(request, trust, trusted_hops=hops)
     with db.session_scope() as session:
         result = retention.purge_now(
             session, decisions_days=decisions_days, llm_calls_days=llm_days

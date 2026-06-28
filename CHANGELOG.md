@@ -5,6 +5,24 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-06-28 — 0.9.43 — Correctifs sécurité / CI (XFF, SECURITY.md, CI GitHub)
+
+### Sécurité
+- **X-Forwarded-For — anti-spoofing** : `client_ip` prend l'IP de confiance posée par le
+  proxy (N-ième en partant de la **droite**, `trusted_proxy_hops` configurable, défaut 1)
+  au lieu de la valeur de gauche contrôlée par le client. Ferme un contournement du
+  rate-limit login FR-24 derrière un reverse proxy.
+
+### Ajouté
+- **CI GitHub** (`.github/workflows/ci.yml`) : ruff + pytest + build frontend sur push/PR
+  (la CI complète — e2e, scans deps — reste sur GitLab).
+- `docker/entrypoint.sh` accepte **`ADMIN_PASSWORD`** comme alias de `ITSM_ADMIN_PASSWORD`.
+
+### Modifié
+- **`SECURITY.md` publié sur le mirror GitHub** (politique de divulgation : contact,
+  périmètre, délais) — il n'est plus strippé.
+- **Dockerfile** : image `uv` épinglée (`0.11.25`) — fin de la contradiction « build reproductible » vs `latest`.
+
 ## 2026-06-28 — 0.9.42 — Indicateur runtime (Docker / hôte) + MAJ adaptée
 
 ### Ajouté

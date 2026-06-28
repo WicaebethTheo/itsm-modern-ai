@@ -24,8 +24,10 @@ class AuthStatus(BaseModel):
 
 def _client_key(request: Request) -> str:
     """Clé de rate-limit = IP du client (XFF respecté si `trust_proxy_headers=True`)."""
-    trust = bool(getattr(request.app.state.settings, "trust_proxy_headers", False))
-    return client_ip(request, trust)
+    settings = request.app.state.settings
+    trust = bool(getattr(settings, "trust_proxy_headers", False))
+    hops = int(getattr(settings, "trusted_proxy_hops", 1))
+    return client_ip(request, trust, trusted_hops=hops)
 
 
 @router.post("/login", response_model=AuthStatus)

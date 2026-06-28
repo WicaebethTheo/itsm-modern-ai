@@ -9,8 +9,9 @@ RUN npm run build
 # ── Étape 2 : moteur Python + UI statique ─────────────────────────────────────
 FROM python:3.13-slim
 
-# uv pour la gestion des deps (cohérent avec le dev).
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# uv pour la gestion des deps (cohérent avec le dev). Version PINNÉE (repro : le tag
+# `latest` contredisait le « build reproductible » plus bas).
+COPY --from=ghcr.io/astral-sh/uv:0.11.25 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \

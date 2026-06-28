@@ -7,7 +7,7 @@ services:
     container_name: itsm-modern-ai
     restart: unless-stopped
     environment:
-      ITSM_ADMIN_PASSWORD: ${ITSM_ADMIN_PASSWORD:-}        # requis au 1er boot (>= 8 car.)
+      ITSM_ADMIN_PASSWORD: ${ITSM_ADMIN_PASSWORD:-}        # requis au 1er boot (>= 8 car. ; alias ADMIN_PASSWORD)
       SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}     # false = login OK en HTTP ; true derrière un proxy TLS
       DATABASE_URL: ${ITSM_DATABASE_URL:-sqlite:////app/data/itsm.db}
       LICENSE_KEY: ${LICENSE_KEY:-}                         # vide = Community
