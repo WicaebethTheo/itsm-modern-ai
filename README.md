@@ -9,16 +9,17 @@
 *The LLM proposes, the code decides — GLPI ticket triage with deterministic guardrails.*
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.9.4-blueviolet)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.9.41-blueviolet)](pyproject.toml)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Tailwind v4](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![GHCR image](https://img.shields.io/badge/GHCR-image_publique-2496ED?logo=github&logoColor=white)](https://github.com/WicaebethTheo/itsm-modern-ai/pkgs/container/itsm-modern-ai)
 [![Tests](https://img.shields.io/badge/tests-316_pytest_%C2%B7_71_vitest-success)](https://docs.itsm-modern-ai.com)
 [![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_default-6B46C1)](https://docs.itsm-modern-ai.com)
 
-[Démarrage rapide](#démarrage-rapide) · [Documentation](https://docs.itsm-modern-ai.com) · [Site](https://itsm-modern-ai.com)
+[Déploiement](#déploiement) · [Documentation](https://docs.itsm-modern-ai.com) · [Site](https://itsm-modern-ai.com)
 
 </div>
 
@@ -32,42 +33,63 @@ GLPI gère bien les tickets structurés. **ITSM Modern AI** prend en charge le r
 
 ---
 
-## Démarrage rapide
+## Déploiement
 
-### Avec Docker (recommandé, on-prem)
+**Voie recommandée : l'image publique pré-construite GHCR — `pull-only`, ni clone ni build.**
+Image multi-arch (amd64 + arm64) `ghcr.io/wicaebeththeo/itsm-modern-ai:latest`, publiée par
+GitHub Actions (`.github/workflows/docker-publish.yml`) à chaque push sur `main` et à chaque
+release.
 
-```bash
-# En une ligne (clone GitHub + install) :
-curl -fsSL https://itsm-modern-ai.com/install | sh
+> 🔑 **Amorçage admin** : `ITSM_ADMIN_PASSWORD` (**≥ 8 caractères**) crée le compte
+> administrateur au **premier boot** — idempotent, n'écrase **jamais** un mot de passe
+> existant, retirable après le 1er démarrage. Sans cette variable, la console est
+> **verrouillée** (*fail-closed*). Console sur `http://HOST:8000`.
 
-# Ou manuellement :
-git clone https://github.com/WicaebethTheo/itsm-modern-ai.git
-cd itsm-modern-ai
-./install.sh                     # vérifie les prérequis, démarre, demande un mot de passe admin
-./install.sh --bundle itsm.tar.gz   # install hors-ligne depuis une image (air-gap)
-open http://localhost:8000       # console web (SPA React)
-```
-
-`install.sh` **vérifie les prérequis** (Docker, plugin compose, disque, port) et **propose
-de les installer** (installation de Docker via le script officiel, plugin compose via le
-binaire officiel — toutes distros), applique les migrations, démarre le service et crée le
-compte administrateur (mot de passe saisi à l'écran, stocké **uniquement en hash Argon2
-chiffré**), puis affiche une **checklist** de l'état du système. Changer le mot de passe :
-`./install.sh --reset-password`.
-
-<details><summary>Install manuelle (équivalent)</summary>
+### a) One-liner (le plus simple)
 
 ```bash
-cp .env.example .env                                    # MASTER_KEY auto-générée dans ./data
-docker compose up -d --build                            # build + démarre (migrations incluses)
-docker compose exec itsm python -m itsm_modern_ai.admin_setup   # mot de passe admin (masqué)
+curl -fsSL https://itsm-modern-ai.com/install | bash
 ```
-</details>
 
-> ⚠️ **Ne JAMAIS faire `docker compose down -v`** : `-v` supprime le volume `./data`
-> qui contient la base SQLite + la `master.key` Fernet. La configuration repart à zéro.
+Écrit le `compose` + `.env`, tire l'image GHCR et lance `docker compose up -d` — **aucun
+clone, aucun build**. Console : http://localhost:8000.
 
-**Mise à jour** — **une seule commande** : relancez l'installeur (`./install.sh`, ou le one-liner `curl … | sh`). S'il détecte une instance existante, il propose un menu **Mettre à jour / Réinstaller**. La mise à jour **sauvegarde `./data` d'abord** (pg_dump / copie SQLite), récupère la dernière version, reconstruit et applique les migrations — données préservées. *(Non-interactif : `./install.sh --update`.)*
+### b) Portainer / orchestrateur
+
+Coller le stack [`docker-compose.portainer.yml`](docker-compose.portainer.yml) du dépôt,
+définir la variable d'environnement **`ITSM_ADMIN_PASSWORD`** (≥ 8 car.), puis **déployer**.
+
+### c) `docker run` durci (avancé)
+
+```bash
+docker run -d --name itsm-modern-ai --restart unless-stopped \
+  -p 8000:8000 \
+  -e ITSM_ADMIN_PASSWORD='change-me-min-8' \
+  -v itsm_data:/app/data \
+  --security-opt no-new-privileges:true \
+  --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add SETUID --cap-add SETGID \
+  --read-only --tmpfs /tmp \
+  ghcr.io/wicaebeththeo/itsm-modern-ai:latest
+```
+
+### d) Depuis les sources / hors-ligne (air-gap)
+
+Pour un **build local** ou un déploiement **hors-ligne** (air-gap), `install.sh` reste
+disponible : `./install.sh` (vérifie les prérequis, démarre, demande un mot de passe admin)
+ou `./install.sh --bundle itsm.tar.gz` pour installer depuis une image exportée. *(Ce n'est
+plus la voie grand public — préférez l'image GHCR ci-dessus.)*
+
+---
+
+**Données** dans le volume nommé **`itsm_data`** (base SQLite + `master.key` Fernet).
+**Mise à jour** — sans rebuild :
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+> ⚠️ **Ne JAMAIS faire `docker compose down -v`** : `-v` supprime le volume `itsm_data`
+> et la configuration repart de zéro.
 
 Détails : **[docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)**.
 

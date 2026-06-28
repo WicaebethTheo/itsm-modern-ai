@@ -16,6 +16,10 @@ services:
       DATABASE_URL: ${ITSM_DATABASE_URL:-sqlite:////app/data/itsm.db}
       # Licence Supporter (vide = Community) ; aussi collable via l'UI (page Supporter).
       LICENSE_KEY: ${LICENSE_KEY:-}
+      # Amorcage admin au 1er boot (deploiement non-interactif / orchestrateur) :
+      # l'entrypoint cree le compte admin depuis cette valeur si aucun n'est encore
+      # configure (idempotent, jamais ecrase). Vide = pas d'amorcage automatique.
+      ITSM_ADMIN_PASSWORD: ${ITSM_ADMIN_PASSWORD:-}
     ports:
       # Port hote pilotable via install.sh --port ; port interne fixe = 8000.
       - "${ITSM_HOST_PORT:-8000}:8000"

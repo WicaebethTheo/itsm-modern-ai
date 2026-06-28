@@ -6,11 +6,12 @@
 
 Le code des fonctionnalités **Supporter** est **déjà livré** dans l'image unique — il est
 simplement **verrouillé**. Pour le déverrouiller, on **colle une clé de licence signée dans
-la page Supporter** de la console ; rien d'autre ne change (même image, même `./data` : config
-GLPI/LLM, périmètre, journal, `master.key`). Aucune migration, aucune perte. Réversible.
+la page Supporter** de la console ; rien d'autre ne change (même image, même volume `itsm_data` :
+config GLPI/LLM, périmètre, journal, `master.key`). Aucune migration, aucune perte. Réversible.
 
 Pourquoi c'est sans risque :
-- Toute la configuration vit dans `./data` (`itsm.db` chiffré + `master.key`) — jamais en image.
+- Toute la configuration vit dans le volume `itsm_data` (`/app/data` : `itsm.db` chiffré +
+  `master.key`) — jamais en image.
 - Les features Supporter sont du **code déjà présent** (`src/itsm_modern_ai/features/`), pas de
   nouvelles tables → **schéma identique**, mêmes migrations.
 - Un seul conteneur, une seule image (`itsm-modern-ai:latest`) : pas de swap d'image.
@@ -28,6 +29,9 @@ C'est la seule méthode requise : tout se fait depuis la page Supporter de l'app
 > licenciée, vous pouvez définir `LICENSE_KEY=itsm-lic.v1.…` dans `.env` avant le premier
 > démarrage. La page Supporter reste la méthode normale et recommandée.
 
+> **Mot de passe admin** : il est amorcé au premier démarrage via `ITSM_ADMIN_PASSWORD`
+> (idempotent, retirable ensuite) — rien à faire ici pour devenir Supporter.
+
 ## Revenir en Community (désactivation)
 
 Sur la **même page Supporter**, **retirez la clé** (champ vidé / bouton de retrait) et validez.
@@ -36,10 +40,10 @@ Les fonctionnalités Supporter se **reverrouillent** immédiatement ; la donnée
 
 ## Notes
 
-- **Ne jamais** faire tourner deux conteneurs sur le même `./data` (SQLite mono-writer).
+- **Ne jamais** faire tourner deux conteneurs sur le même volume `itsm_data` (SQLite mono-writer).
 - **Air-gap / souveraineté** : tout est hors-ligne. La licence est vérifiée par signature
   Ed25519 embarquée — **aucun appel sortant**, aucun serveur de licence à joindre. La clé
   **privée** de signature reste dans le dépôt privé de signature des licences ; elle n'est
   jamais ici.
-- **Sauvegarde** : comme pour toute mise à jour, sauvegardez `./data` avant (cf.
-  [`docs/install.md`](install.md#mise-à-jour) / `./install.sh`).
+- **Sauvegarde** : comme pour toute mise à jour, sauvegardez le volume `itsm_data` avant (cf.
+  [`docs/install.md`](install.md#sauvegarde)).

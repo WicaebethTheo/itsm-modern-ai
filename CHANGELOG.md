@@ -5,6 +5,24 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-06-28 — 0.9.41 — Déploiement orchestrateur : image GHCR pull-only + amorçage admin au boot
+
+### Ajouté
+- **Image publique GHCR** `ghcr.io/wicaebeththeo/itsm-modern-ai` (multi-arch amd64+arm64),
+  publiée par `.github/workflows/docker-publish.yml` (push `main` + releases).
+- **`docker-compose.portainer.yml`** : stack « pull-only » durci (named volume `itsm_data`)
+  à coller dans Portainer / Komodo / Dockge / `docker compose`.
+- **Installeur one-liner** `curl -fsSL https://itsm-modern-ai.com/install | bash` : installe
+  Docker, écrit le compose + `.env`, amorce l'admin, démarre — sans clone ni build.
+- **Amorçage admin au boot** : `docker/entrypoint.sh` crée le compte admin depuis
+  `ITSM_ADMIN_PASSWORD` (idempotent via `admin_setup --check`, jamais `--force`) → la console
+  n'est plus verrouillée sur un déploiement par image nue (Portainer / `docker run`).
+
+### Modifié
+- `docker-compose.yml` : passthrough `ITSM_ADMIN_PASSWORD`.
+- Docs (déploiement, Portainer, `docker run`, MAJ `docker compose pull && up -d`), README et
+  site : `install.sh` rétrogradé en voie « depuis les sources / hors-ligne (airgap, `--bundle`) ».
+
 ## 2026-06-24 — 0.9.4 — Hotfix installeur (daemon, bash, env) + correctifs UI
 
 - **Installeur** : attend désormais que le **daemon Docker** soit prêt (boucle + diagnostic

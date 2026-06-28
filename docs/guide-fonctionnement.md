@@ -90,13 +90,34 @@ flowchart TD
 - Une clé **Mistral** (défaut souverain UE), une autre clé cloud supportée, **ou** **Ollama** local.
 - ~1 Go de disque libre.
 
-### Procédure (voie recommandée : `install.sh`)
+### Procédure (voie recommandée : image GHCR « pull-only »)
+
+L'exploitant **ne clone ni ne build rien** : on tire l'**image publique pré-construite**
+`ghcr.io/wicaebeththeo/itsm-modern-ai:latest`. Trois voies (détails dans
+[`docs/install.md`](install.md)) :
 
 ```bash
-git clone https://github.com/WicaebethTheo/itsm-modern-ai.git
-cd itsm-modern-ai
-./install.sh          # préflight + .env + build + démarrage + mot de passe admin
+# (a) One-liner — écrit le compose + .env, tire l'image, démarre :
+curl -fsSL https://itsm-modern-ai.com/install | bash
+
+# (b) Portainer / orchestrateur : coller docker-compose.portainer.yml
+#     + définir ITSM_ADMIN_PASSWORD (≥ 8 car.) dans le stack.
+
+# (c) docker run durci : volume nommé itsm_data + ITSM_ADMIN_PASSWORD.
 ```
+
+Le **mot de passe admin** est **amorcé au premier démarrage** depuis `ITSM_ADMIN_PASSWORD`
+(idempotent : un mot de passe existant n'est jamais écrasé ; retirable après le 1er boot). Sans
+lui, la console est **fail-closed** (verrouillée).
+
+> La voie **`install.sh`** (clone + build local) reste valide pour l'**airgap / hors-ligne**.
+> Le schéma ci-dessous illustre ce parcours depuis les sources :
+>
+> ```bash
+> git clone https://github.com/WicaebethTheo/itsm-modern-ai.git
+> cd itsm-modern-ai
+> ./install.sh          # préflight + .env + build + démarrage + mot de passe admin
+> ```
 
 ```mermaid
 sequenceDiagram
@@ -142,7 +163,7 @@ flowchart LR
 ### Mise en production
 - Toujours derrière un **reverse proxy + TLS** (le conteneur n'est pas exposé en direct).
 - Sauvegarder le volume **`./data`** (config, journal, secrets chiffrés) **et** `MASTER_KEY` séparément. *Perdre `MASTER_KEY` ou `./data` = secrets irrécupérables.*
-- Mise à jour : relancer `./install.sh` (menu **Mettre à jour / Réinstaller**, sauvegarde `./data` incluse) ; non-interactif : `./install.sh --update`.
+- Mise à jour (image GHCR) : `docker compose pull && docker compose up -d` (migrations auto, volume `itsm_data` préservé — **jamais `docker compose down -v`**). Voie sources : relancer `./install.sh` (menu **Mettre à jour / Réinstaller**, sauvegarde `./data` incluse) ; non-interactif : `./install.sh --update`.
 
 ---
 

@@ -15,8 +15,9 @@ SQLite **et** Postgres) — aucun SQL spécifique SQLite.
 
 ## 1. Installer le driver
 
-**Docker** : l'**image embarque déjà le driver `psycopg`** (build `uv sync … --extra postgres`) —
-rien à installer, le profile `postgres` fonctionne directement.
+**Docker** : l'**image publique GHCR embarque déjà le driver `psycopg`** (intégré au build
+`uv sync … --extra postgres`) — rien à installer ni à reconstruire côté exploitant : l'image est
+**tirée**, pas buildée, et le profile `postgres` fonctionne directement.
 
 **Install locale (hors Docker)** : le driver est un **extra** optionnel :
 
@@ -52,13 +53,17 @@ Un service `postgres` **optionnel** est fourni via un *profile* (n'est PAS lanc�
 défaut, pour ne pas changer le comportement SQLite existant) :
 
 ```bash
-# Lancer l'app AVEC Postgres :
-docker compose --profile postgres up -d --build
+# Lancer l'app AVEC Postgres (image GHCR tirée, pas de build) :
+docker compose --profile postgres pull
+docker compose --profile postgres up -d
 ```
 
 Le service `itsm` lit alors `DATABASE_URL` pointant sur le conteneur `postgres`
-(réseau interne compose), volume dédié `./data/postgres` pour la persistance.
+(réseau interne compose), volume dédié pour la persistance.
 Sans le profile, l'app démarre en **SQLite** comme avant.
+
+> Voie **depuis les sources** (airgap / build local) : `docker compose --profile postgres up -d --build`
+> reconstruit l'image au lieu de la tirer (cf. [`docs/install.md`](install.md#depuis-les-sources--hors-ligne-airgap-build-local)).
 
 ## 5. Réglages de pool (optionnels)
 

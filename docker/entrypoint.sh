@@ -16,6 +16,27 @@ fi
 echo "[entrypoint] alembic upgrade head"
 alembic upgrade head
 
+# Amorçage admin (déploiement orchestrateur : Portainer / docker run / compose).
+# Sans install.sh, rien n'amorce le compte admin → la console démarre verrouillée
+# (security.py est fail-closed : pas de hash = accès admin refusé). Si un mot de
+# passe d'amorçage est fourni via ITSM_ADMIN_PASSWORD ET qu'aucun admin n'est encore
+# configuré, on l'amorce ici. Propriétés :
+#   - idempotent : on saute si `--check` confirme un admin déjà configuré ;
+#   - jamais --force : on n'écrase JAMAIS un mot de passe existant au boot ;
+#   - best-effort : on ne fait JAMAIS échouer le démarrage là-dessus (le `if`
+#     neutralise le `set -e`, et le mot de passe peut être (re)défini dans l'UI).
+# On tourne déjà en user non-root `app` ici (gosu plus haut), cohérent avec le reste.
+if [ -n "${ITSM_ADMIN_PASSWORD:-}" ]; then
+  if python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1; then
+    echo "[entrypoint] admin déjà configuré — amorçage ignoré (idempotent)"
+  elif python -m itsm_modern_ai.admin_setup; then
+    echo "[entrypoint] compte admin amorcé depuis ITSM_ADMIN_PASSWORD"
+  else
+    # Mot de passe trop court (<8), base illisible, etc. : on log et on continue.
+    echo "[entrypoint] amorçage admin échoué — démarrage quand même (définir le mot de passe via l'UI)" >&2
+  fi
+fi
+
 # Reverse proxy : si TRUST_PROXY_HEADERS=true, on active la lecture de XFF côté
 # uvicorn (cf. docs/install.md §5). `--forwarded-allow-ips=*` car le moteur n'est
 # joignable que via le proxy en pilote conteneurisé.
