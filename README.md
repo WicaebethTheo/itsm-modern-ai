@@ -35,57 +35,53 @@ GLPI gère bien les tickets structurés. **ITSM Modern AI** prend en charge le r
 
 ## Déploiement
 
-**Voie recommandée : l'image publique pré-construite GHCR — `pull-only`, ni clone ni build.**
-Image multi-arch `ghcr.io/wicaebeththeo/itsm-modern-ai:latest`, publiée par GitHub Actions
-([`docker-publish.yml`](.github/workflows/docker-publish.yml)) à chaque push sur `main` et à chaque release.
+Image publique GHCR multi-arch, **pull-only** (ni clone ni build) : `ghcr.io/wicaebeththeo/itsm-modern-ai:latest`.
 
-> 🔑 **Amorçage admin** — `ITSM_ADMIN_PASSWORD` (**≥ 8 caractères**) crée le compte
-> administrateur au **premier boot** : idempotent, n'écrase **jamais** un mot de passe
-> existant, retirable ensuite. Sans cette variable, la console démarre **verrouillée**
-> (*fail-closed*). Console : `http://HOST:8000`.
-
-### a) One-liner — le plus simple
+**En une commande :**
 
 ```bash
 curl -fsSL https://itsm-modern-ai.com/install | bash
 ```
 
-Installe Docker si besoin, écrit le `compose` + `.env`, tire l'image et lance `docker compose up -d`. **Aucun clone, aucun build.**
+**Ou via Docker Compose** (à coller dans Portainer ou `docker compose up -d`) :
 
-### b) Portainer / orchestrateur
-
-Coller le stack [`docker-compose.portainer.yml`](docker-compose.portainer.yml), définir la variable d'environnement **`ITSM_ADMIN_PASSWORD`** (≥ 8 car.), puis **déployer**. Compatible Portainer, Komodo, Dockge, `docker compose` nu.
-
-### c) `docker run` durci — avancé
-
-```bash
-docker run -d --name itsm-modern-ai --restart unless-stopped \
-  -p 8000:8000 \
-  -e ITSM_ADMIN_PASSWORD='change-me-min-8' \
-  -v itsm_data:/app/data \
-  --security-opt no-new-privileges:true \
-  --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add SETUID --cap-add SETGID \
-  --read-only --tmpfs /tmp \
-  ghcr.io/wicaebeththeo/itsm-modern-ai:latest
+```yaml
+services:
+  itsm:
+    image: ghcr.io/wicaebeththeo/itsm-modern-ai:latest
+    ports: ["8000:8000"]
+    environment:
+      ITSM_ADMIN_PASSWORD: change-me-min-8   # ≥ 8 car. — amorce l'admin au 1er boot
+      SESSION_HTTPS_ONLY: "false"            # true derrière un reverse proxy TLS
+    volumes: ["itsm_data:/app/data"]
+    restart: unless-stopped
+volumes:
+  itsm_data:
 ```
 
-### d) Depuis les sources / hors-ligne (air-gap)
+Console : **`http://HOST:8000`** · **Mise à jour :** `docker compose pull && docker compose up -d`.
 
-Pour un **build local** ou un déploiement **hors-ligne**, [`install.sh`](install.sh) reste disponible : `./install.sh` (préflight, démarrage, mot de passe admin) ou `./install.sh --bundle itsm.tar.gz` depuis une image exportée. *Ce n'est plus la voie grand public — préférez l'image GHCR.*
+> ⚠️ Jamais `docker compose down -v` — `-v` supprime le volume `itsm_data` (données + clé de chiffrement).
 
-### Données & mise à jour
+Stack **durci** (caps, read-only, healthcheck) → [`docker-compose.portainer.yml`](docker-compose.portainer.yml) · `docker run`, **build local / hors-ligne (air-gap)** via [`install.sh`](install.sh) → **[doc déploiement](https://docs.itsm-modern-ai.com/production-deployment/)**.
 
-Les données vivent dans le volume nommé **`itsm_data`** (base SQLite + `master.key` Fernet). Mise à jour **sans rebuild** :
+## Variables d'environnement
 
-```bash
-docker compose pull && docker compose up -d
-```
+Toutes optionnelles **sauf `ITSM_ADMIN_PASSWORD` au 1er boot**. Les clés LLM et tokens GLPI se saisissent **dans l'interface** (chiffrés Fernet au repos), jamais ici.
 
-> ⚠️ **Ne JAMAIS faire `docker compose down -v`** — `-v` supprime le volume `itsm_data` (données + clé de chiffrement).
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `ITSM_ADMIN_PASSWORD` | — | Mot de passe admin **amorcé au 1er boot** (≥ 8 car.). Idempotent, jamais écrasé, retirable ensuite. Sans lui : console **verrouillée** (*fail-closed*). |
+| `SESSION_HTTPS_ONLY` | `true` | Cookie de session `Secure`. **Mettre `false` en HTTP** (sinon login impossible) ; `true` derrière un proxy TLS. |
+| `ITSM_HOST_PORT` | `8000` | Port hôte publié (installeur / `docker-compose.portainer.yml`). |
+| `DATABASE_URL` | SQLite (volume) | Base. PostgreSQL : `postgresql+psycopg://user:pwd@host:5432/itsm`. |
+| `LICENSE_KEY` | *(vide)* | Clé Supporter (vide = Community ; collable aussi dans l'UI). |
+| `MASTER_KEY` | *(auto)* | Clé Fernet de chiffrement au repos ; générée dans le volume au 1er boot si vide. |
+| `TRUST_PROXY_HEADERS` | `false` | Lit `X-Forwarded-For` derrière un reverse proxy. |
+| `UPDATE_CHECK_URL` | *(GitHub)* | Vérif de version (best-effort, lit le dernier tag). **Vider = désactivé** (air-gap). |
+| `DEV_OPEN_ADMIN` | `false` | ⚠️ Ouvre l'admin **sans mot de passe** — dev/labo uniquement, jamais en prod. |
 
-Tout le reste se configure **dans l'interface** : connexion GLPI, fournisseur LLM, scan du périmètre (catégories / entités / techniciens), modes par entité. **Aucun secret dans `.env`** — les tokens GLPI et clés LLM sont saisis via l'UI et chiffrés Fernet au repos.
-
-➜ Procédures détaillées : **[docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)**
+Référence complète : **[docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)**.
 
 ---
 
