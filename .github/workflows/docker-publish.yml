@@ -15,6 +15,13 @@ name: Publish image (GHCR)
 on:
   push:
     branches: [main]
+    # Un commit qui ne touche QUE de la doc ne reconstruit pas l'image (rien dans
+    # l'image ne change). Les releases reconstruisent toujours (pas de filtre).
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
   release:
     types: [published]
   workflow_dispatch:

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="frontend/public/favicon.svg" width="80" alt="ITSM Modern AI" />
+<img src="frontend/public/favicon.svg" width="84" alt="ITSM Modern AI" />
 
 # ITSM Modern AI
 
@@ -10,56 +10,53 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.9.41-blueviolet)](pyproject.toml)
-[![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React 19](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
-[![Tailwind v4](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
 [![GHCR image](https://img.shields.io/badge/GHCR-image_publique-2496ED?logo=github&logoColor=white)](https://github.com/WicaebethTheo/itsm-modern-ai/pkgs/container/itsm-modern-ai)
-[![Tests](https://img.shields.io/badge/tests-316_pytest_%C2%B7_71_vitest-success)](https://docs.itsm-modern-ai.com)
-[![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_default-6B46C1)](https://docs.itsm-modern-ai.com)
+[![Docker multi-arch](https://img.shields.io/badge/docker-amd64_·_arm64-2496ED?logo=docker&logoColor=white)](docker-compose.portainer.yml)
+[![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![Tests](https://img.shields.io/badge/tests-316_pytest_·_71_vitest-success)](https://docs.itsm-modern-ai.com)
+[![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_par_défaut-6B46C1)](https://docs.itsm-modern-ai.com)
 
-[Déploiement](#déploiement) · [Documentation](https://docs.itsm-modern-ai.com) · [Site](https://itsm-modern-ai.com)
+[Déploiement](#déploiement) · [Comment ça marche](#comment-ça-marche) · [Documentation](https://docs.itsm-modern-ai.com) · [Site produit](https://itsm-modern-ai.com)
 
 </div>
 
 ---
 
-## En une phrase
+## En bref
 
-GLPI gère bien les tickets structurés. **ITSM Modern AI** prend en charge le reste — la « Queue longue » : tickets flous, mal formulés, sans champ posé. Le LLM propose, le **code valide et décide** (whitelist déterministe, masquage PII avant tout appel LLM, fallback unique « à trier »). On-premise, souverain (Mistral EU par défaut), open-core MIT.
+GLPI gère bien les tickets structurés. **ITSM Modern AI** prend en charge le reste — la *« queue longue »* : tickets flous, mal formulés, sans champ posé. Le **LLM propose**, le **code valide et décide** : liste blanche déterministe, seuil de confiance, masquage PII avant tout appel LLM, et un fallback unique *« à trier »* quand le doute subsiste.
 
-➜ **[Documentation complète](https://docs.itsm-modern-ai.com)** · **[Site produit](https://itsm-modern-ai.com)**
+- 🔒 **Souverain & on-premise** — Mistral EU par défaut, ou 100 % local (Ollama). Aucun phone-home, aucun appel sortant hors fournisseur LLM configuré.
+- 🛡️ **À garde-fous** — le LLM ne décide jamais seul : whitelist + seuil de confiance + validation par le code.
+- 🧩 **Open-core MIT** — une seule image, tout le code livré ; les fonctions **Supporter** se déverrouillent en place par une licence **Ed25519 vérifiée hors-ligne**.
+- 🐳 **Déploiement *pull-only*** — image GHCR multi-arch (amd64 + arm64), prête pour Portainer, `docker run` ou le one-liner. Ni clone, ni build.
 
 ---
 
 ## Déploiement
 
 **Voie recommandée : l'image publique pré-construite GHCR — `pull-only`, ni clone ni build.**
-Image multi-arch (amd64 + arm64) `ghcr.io/wicaebeththeo/itsm-modern-ai:latest`, publiée par
-GitHub Actions (`.github/workflows/docker-publish.yml`) à chaque push sur `main` et à chaque
-release.
+Image multi-arch `ghcr.io/wicaebeththeo/itsm-modern-ai:latest`, publiée par GitHub Actions
+([`docker-publish.yml`](.github/workflows/docker-publish.yml)) à chaque push sur `main` et à chaque release.
 
-> 🔑 **Amorçage admin** : `ITSM_ADMIN_PASSWORD` (**≥ 8 caractères**) crée le compte
-> administrateur au **premier boot** — idempotent, n'écrase **jamais** un mot de passe
-> existant, retirable après le 1er démarrage. Sans cette variable, la console est
-> **verrouillée** (*fail-closed*). Console sur `http://HOST:8000`.
+> 🔑 **Amorçage admin** — `ITSM_ADMIN_PASSWORD` (**≥ 8 caractères**) crée le compte
+> administrateur au **premier boot** : idempotent, n'écrase **jamais** un mot de passe
+> existant, retirable ensuite. Sans cette variable, la console démarre **verrouillée**
+> (*fail-closed*). Console : `http://HOST:8000`.
 
-### a) One-liner (le plus simple)
+### a) One-liner — le plus simple
 
 ```bash
 curl -fsSL https://itsm-modern-ai.com/install | bash
 ```
 
-Écrit le `compose` + `.env`, tire l'image GHCR et lance `docker compose up -d` — **aucun
-clone, aucun build**. Console : http://localhost:8000.
+Installe Docker si besoin, écrit le `compose` + `.env`, tire l'image et lance `docker compose up -d`. **Aucun clone, aucun build.**
 
 ### b) Portainer / orchestrateur
 
-Coller le stack [`docker-compose.portainer.yml`](docker-compose.portainer.yml) du dépôt,
-définir la variable d'environnement **`ITSM_ADMIN_PASSWORD`** (≥ 8 car.), puis **déployer**.
+Coller le stack [`docker-compose.portainer.yml`](docker-compose.portainer.yml), définir la variable d'environnement **`ITSM_ADMIN_PASSWORD`** (≥ 8 car.), puis **déployer**. Compatible Portainer, Komodo, Dockge, `docker compose` nu.
 
-### c) `docker run` durci (avancé)
+### c) `docker run` durci — avancé
 
 ```bash
 docker run -d --name itsm-modern-ai --restart unless-stopped \
@@ -74,40 +71,75 @@ docker run -d --name itsm-modern-ai --restart unless-stopped \
 
 ### d) Depuis les sources / hors-ligne (air-gap)
 
-Pour un **build local** ou un déploiement **hors-ligne** (air-gap), `install.sh` reste
-disponible : `./install.sh` (vérifie les prérequis, démarre, demande un mot de passe admin)
-ou `./install.sh --bundle itsm.tar.gz` pour installer depuis une image exportée. *(Ce n'est
-plus la voie grand public — préférez l'image GHCR ci-dessus.)*
+Pour un **build local** ou un déploiement **hors-ligne**, [`install.sh`](install.sh) reste disponible : `./install.sh` (préflight, démarrage, mot de passe admin) ou `./install.sh --bundle itsm.tar.gz` depuis une image exportée. *Ce n'est plus la voie grand public — préférez l'image GHCR.*
 
----
+### Données & mise à jour
 
-**Données** dans le volume nommé **`itsm_data`** (base SQLite + `master.key` Fernet).
-**Mise à jour** — sans rebuild :
+Les données vivent dans le volume nommé **`itsm_data`** (base SQLite + `master.key` Fernet). Mise à jour **sans rebuild** :
 
 ```bash
 docker compose pull && docker compose up -d
 ```
 
-> ⚠️ **Ne JAMAIS faire `docker compose down -v`** : `-v` supprime le volume `itsm_data`
-> et la configuration repart de zéro.
+> ⚠️ **Ne JAMAIS faire `docker compose down -v`** — `-v` supprime le volume `itsm_data` (données + clé de chiffrement).
 
-Détails : **[docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)**.
+Tout le reste se configure **dans l'interface** : connexion GLPI, fournisseur LLM, scan du périmètre (catégories / entités / techniciens), modes par entité. **Aucun secret dans `.env`** — les tokens GLPI et clés LLM sont saisis via l'UI et chiffrés Fernet au repos.
 
-Tout se configure ensuite **dans l'interface** : connexion GLPI, choix du fournisseur LLM, scan GLPI, sélection des catégories/entités/techniciens/groupes du périmètre, fiches en prose, modes par entité. **Aucun secret dans `.env`** — les tokens GLPI et clés LLM sont poussés via l'UI et chiffrés Fernet au repos.
+➜ Procédures détaillées : **[docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)**
 
-### Développement local
+---
 
-```bash
-make install     # venv (uv) + deps Python
-make migrate     # alembic upgrade head
-make ui          # build SPA (requiert Node 22)
-make run         # uvicorn + scheduler → http://localhost:8000
+## Comment ça marche
 
-# Frontend hot-reload (proxy /api → :8000) :
-make ui-dev      # http://localhost:5173
+```text
+ GLPI ──poll──▶ Masquage PII ──▶ LLM (proposition) ──▶ Validation déterministe ──▶ GLPI
+                                                       │ whitelist + seuil de confiance
+                                                       ▼
+                                       sous le seuil / hors liste ─▶ « à trier »
 ```
 
-Détail des suites de tests et conventions qualité : **[documentation en ligne](https://docs.itsm-modern-ai.com)**.
+Le pipeline est **immuable** : aucune action n'est appliquée à GLPI sans avoir passé la validation par le code. Les PII sont masquées **avant** l'appel au LLM, chaque décision est tracée (journal d'audit), et la dépense LLM est plafonnée (page *Coûts & quotas*). Le LLM est une force de proposition — **la décision reste déterministe**.
+
+➜ Architecture complète : **[docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)**
+
+---
+
+## Fonctionnalités
+
+- **Triage à garde-fous** — proposition LLM filtrée par liste blanche + seuil de confiance, fallback « à trier ».
+- **Connecteurs GLPI** — API *legacy* et **API V2**.
+- **Souveraineté LLM** — Mistral EU (défaut), OpenAI, Anthropic, ou **Ollama 100 % local**.
+- **Masquage PII** — e-mail + téléphone toujours masqués avant le LLM ; catégories étendues sous licence Supporter.
+- **Console DPO / RGPD** — catalogue des PII masquées, testeur de masquage, **export d'un rapport DPO** (Markdown).
+- **Coûts & quotas** — dépense LLM glissante sur 24 h vs plafond journalier.
+- **Multi-entités** — modes de triage par entité GLPI.
+- **Persistance** — SQLite par défaut, **PostgreSQL** prêt (profil compose dédié).
+- **Sécurité par défaut** — conteneur non-root, fail-closed sur l'admin, rate-limit login, secrets chiffrés au repos.
+
+---
+
+## Sécurité & RGPD
+
+- **On-premise**, aucun phone-home ; seul le fournisseur LLM configuré est appelé.
+- **Secrets chiffrés Fernet** au repos ; `master.key` dans le volume `itsm_data` (`0600`).
+- **Masquage PII avant le LLM** : e-mail + téléphone toujours inclus ; IBAN/cartes, secrets (mots de passe/tokens/clés API), IP/MAC et identifiants FR (NIR/SIRET) débloqués par une licence **Supporter**. ⚠️ Sans licence, IBAN et secrets partent **en clair** au LLM (avertissement affiché en console + fiche DPO).
+- **Console DPO** dédiée : tableau des catégories masquées, testeur de masquage, export d'un rapport DPO pour validation en réunion.
+- **Conteneur non-root**, *fail-closed* sur l'accès admin, rate-limit login (avec `X-Forwarded-For` derrière proxy).
+- **Pas de métrique nominative** par technicien (anti-mouchard) · export CSV DPO + rétention RGPD automatisée.
+
+➜ **[Sécurité & limites](https://docs.itsm-modern-ai.com/security-limits/)**
+
+---
+
+## Éditions (open-core)
+
+Édition **UNIQUE** : un seul dépôt, une seule image. Tout le code est livré ici (MIT) — triage à garde-fous, connecteurs GLPI *legacy + V2*, PostgreSQL, masquage PII e-mail + téléphone, modes par entité — **plus** les fonctions **Supporter**, dont le code est présent mais **verrouillé**.
+
+Les features Supporter se déverrouillent **en place** par une **clé de licence signée (Ed25519, vérifiée hors-ligne — zéro phone-home, compatible air-gap)** : masquage **IBAN/cartes + secrets + IP/MAC** et identifiants FR **NIR/SIRET**. *(Patterns regex personnalisés, multi-entités avancé et exports planifiés : sur la roadmap.)* Elles apparaissent dans la console (page **Supporter**) mais restent verrouillées tant qu'aucune licence valide n'est fournie. La clé de **signature** reste dans le dépôt privé dédié ; seule la clé publique de vérification est embarquée.
+
+**Devenir Supporter** sans rien perdre (même volume `itsm_data`, aucun swap d'image) : **coller la clé de licence dans la page Supporter** de la console — déverrouillage en place. Pour revenir à Community, **retirer la clé** sur cette même page. `LICENSE_KEY` dans `.env` reste un pré-amorçage optionnel pour les déploiements automatisés.
+
+➜ **[docs.itsm-modern-ai.com/supporter](https://docs.itsm-modern-ai.com/supporter/)**
 
 ---
 
@@ -115,25 +147,25 @@ Détail des suites de tests et conventions qualité : **[documentation en ligne]
 
 | Couche | Technologies |
 |---|---|
-| **Backend** | Python 3.13+, FastAPI, SQLModel (SQLite → Postgres-ready), Alembic, Pydantic v2, APScheduler, cryptography (Fernet), httpx |
+| **Backend** | Python 3.13+, FastAPI, SQLModel (SQLite → PostgreSQL-ready), Alembic, Pydantic v2, APScheduler, cryptography (Fernet), httpx |
 | **Frontend** | React 19, Vite 6, Tailwind v4, React Router 7, i18n FR/EN |
 | **Qualité** | ruff, Biome, pytest + respx, Vitest + Testing Library, Playwright |
-| **Infra** | Docker multi-stage, docker-compose, conteneur non-root, volume `./data` |
+| **Infra** | Docker multi-stage, image GHCR multi-arch, conteneur non-root, volume nommé `itsm_data` |
 
 ---
 
-## Sécurité & RGPD
+## Développement local
 
-- **On-premise**, aucun phone-home, aucun appel sortant hors fournisseur LLM configuré.
-- **Secrets chiffrés Fernet** au repos ; `master.key` montée comme volume Docker (`0600`).
-- **Masquage PII avant le LLM** : e-mail + téléphone toujours inclus ; IBAN/cartes, secrets (mots de passe/tokens/clés API), IP/MAC et identifiants FR (NIR/SIRET) débloqués par une licence **Supporter**. ⚠️ Sans licence, IBAN et secrets sont envoyés **en clair** au LLM (avertissement affiché dans la console + fiche DPO).
-- **Console DPO** dédiée (page *Confidentialité (DPO)*) : tableau des catégories PII masquées, outil de test du masquage, et **export d'un rapport DPO** (Markdown) — pour valider le flux de données en réunion.
-- **Page Coûts & quotas** : dépense LLM des dernières 24 h vs plafond journalier glissant.
-- **Pas de métrique nominative** par technicien (anti-mouchard).
-- **Conteneur non-root**, rate-limit login (avec `X-Forwarded-For` derrière proxy).
-- **Export CSV DPO** + rétention RGPD automatisée.
+```bash
+make install     # venv (uv) + deps Python
+make migrate     # alembic upgrade head
+make ui          # build de la SPA (requiert Node 22)
+make run         # uvicorn + scheduler → http://localhost:8000
 
-Détails : **[Sécurité & limites](https://docs.itsm-modern-ai.com/security-limits/)** · **[documentation en ligne](https://docs.itsm-modern-ai.com)**.
+make ui-dev      # frontend hot-reload (proxy /api → :8000) → http://localhost:5173
+```
+
+➜ Suites de tests et conventions qualité : **[documentation en ligne](https://docs.itsm-modern-ai.com)**
 
 ---
 
@@ -141,19 +173,9 @@ Détails : **[Sécurité & limites](https://docs.itsm-modern-ai.com/security-lim
 
 📖 **Toute la documentation est en ligne : [docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)**
 
-Installation on-prem, architecture (pipeline immuable), connecteurs GLPI (legacy + API V2), fournisseurs LLM & souveraineté, portage PostgreSQL, modes d'exécution, fiche DPO/RGPD, référence API, et guide **[Supporter](https://docs.itsm-modern-ai.com/supporter/)**.
-
-Site produit : **[itsm-modern-ai.com](https://itsm-modern-ai.com)**.
+Déploiement on-prem, architecture (pipeline immuable), connecteurs GLPI (legacy + V2), fournisseurs LLM & souveraineté, portage PostgreSQL, modes d'exécution, fiche DPO/RGPD, référence API, et guide **[Supporter](https://docs.itsm-modern-ai.com/supporter/)**.
 
 ---
-
-## Éditions (open-core)
-
-Édition **UNIQUE** : un seul dépôt, une seule image. Tout le code est livré ici (MIT) — triage à garde-fous, connecteurs GLPI **legacy + V2**, PostgreSQL, masquage PII **e-mail + téléphone**, modes par entité — **plus** les fonctionnalités **Supporter** (leur code est présent mais **verrouillé**).
-
-Les features **Supporter** se déverrouillent **en place** par une **clé de licence signée (Ed25519, vérifiée hors-ligne — zéro phone-home, compatible air-gap)** : masquage **IBAN/cartes + secrets (mots de passe/tokens/clés API) + IP/MAC** et identifiants FR **NIR/SIRET**. *(Patterns regex personnalisés, multi-entités avancé et exports planifiés / DPO+ : sur la roadmap.)* Elles apparaissent dans la console (page **Supporter**) mais restent **verrouillées** tant qu'aucune licence valide n'est fournie. La clé de **signature** reste dans le dépôt privé de signature des licences ; seule la clé publique de vérification est embarquée.
-
-**Devenir Supporter** sans rien perdre (même `./data`, aucun swap d'image) : **coller la clé de licence dans la page Supporter** de la console — elle déverrouille les features en place. Pour désactiver, **retirer la clé sur cette même page** (retour à Community). `LICENSE_KEY` dans `.env` reste un pré-amorçage optionnel pour les déploiements automatisés. Détails : **[docs.itsm-modern-ai.com/supporter](https://docs.itsm-modern-ai.com/supporter/)**.
 
 ## Licence
 
@@ -164,5 +186,7 @@ Les features **Supporter** se déverrouillent **en place** par une **clé de lic
 <div align="center">
 
 Conçu pour les DSI qui veulent **garder la main** : le LLM propose, le code décide.
+
+**[Site produit](https://itsm-modern-ai.com)** · **[Documentation](https://docs.itsm-modern-ai.com)**
 
 </div>
