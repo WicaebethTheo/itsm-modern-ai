@@ -1,73 +1,31 @@
-# ITSM Modern AI - deploiement « pull-only » pour orchestrateurs (Portainer, Komodo,
-# Dockge, docker compose nu). Identique au service durci de docker-compose.yml mais :
-#   - IMAGE PUBLIQUE GHCR au lieu d'un build local (rien a cloner / compiler) ;
-#   - NAMED VOLUME `itsm_data` au lieu du bind ./data (Portainer n'a pas de chemin hote).
-#
-# Deploiement Portainer : Stacks > Add stack > coller ce fichier > definir la variable
-# d'environnement ITSM_ADMIN_PASSWORD (>= 8 car.) dans le stack > Deploy. Le compte admin
-# est amorce AU PREMIER BOOT depuis cette variable (entrypoint, idempotent). On peut la
-# retirer ensuite : le hash est persiste chiffre dans le volume.
-#
-# Variables reconnues (toutes optionnelles sauf le mot de passe admin au 1er boot) :
-#   ITSM_ADMIN_PASSWORD  mot de passe admin d'amorcage (>= 8 car.)
-#   ITSM_HOST_PORT       port hote publie (defaut 8000)
-#   ITSM_DATABASE_URL    surcharge la base (defaut SQLite dans le volume)
-#   LICENSE_KEY          cle Supporter (vide = Community ; collable aussi dans l'UI)
-#
-# NE JAMAIS faire `docker compose down -v` : -v SUPPRIME le volume itsm_data (donnees + master.key).
+# ITSM Modern AI — stack pull-only (Portainer / orchestrateur).
+# Portainer : Stacks > Add stack > coller > définir ITSM_ADMIN_PASSWORD (>= 8 car.) > Deploy.
+# L'admin est amorcé au 1er boot depuis cette variable. NE JAMAIS faire `down -v` (supprime itsm_data).
 services:
   itsm:
     image: ghcr.io/wicaebeththeo/itsm-modern-ai:latest
     container_name: itsm-modern-ai
     restart: unless-stopped
     environment:
-      # Defaut SQLite (dans le volume). PostgreSQL (Beta) : pointer ITSM_DATABASE_URL sur
-      # une instance Postgres et ajouter le service ci-dessous (cf. docs).
+      ITSM_ADMIN_PASSWORD: ${ITSM_ADMIN_PASSWORD:-}        # requis au 1er boot (>= 8 car.)
       DATABASE_URL: ${ITSM_DATABASE_URL:-sqlite:////app/data/itsm.db}
-      # Licence Supporter (vide = Community) ; aussi collable via l'UI (page Supporter).
-      LICENSE_KEY: ${LICENSE_KEY:-}
-      # Amorcage admin au 1er boot (idempotent, jamais ecrase). Retirable apres coup.
-      ITSM_ADMIN_PASSWORD: ${ITSM_ADMIN_PASSWORD:-}
+      LICENSE_KEY: ${LICENSE_KEY:-}                         # vide = Community
     ports:
-      # Port hote pilotable ; port interne fixe = 8000.
       - "${ITSM_HOST_PORT:-8000}:8000"
     volumes:
-      # Named volume gere par Docker (config + DB SQLite + master.key).
       - itsm_data:/app/data
-    # Durcissement : pas d'escalade ; drop ALL caps sauf le minimum requis au boot
-    # (CHOWN/DAC_OVERRIDE pour fixer l'ownership du volume, SETUID/SETGID pour gosu).
-    security_opt:
-      - "no-new-privileges:true"
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
-      - SETUID
-      - SETGID
-    # FS racine en lecture seule ; l'app n'ecrit que dans /app/data (volume). /tmp en tmpfs.
+    # Durcissement : non-root, caps minimales (chown/gosu du volume au boot), FS read-only.
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"]
     read_only: true
-    tmpfs:
-      - /tmp
+    tmpfs: ["/tmp"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health?probe=true').status==200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
-    # Bornage CPU/memoire (anti-emballement sur hote mutualise).
-    deploy:
-      resources:
-        limits:
-          cpus: "1.0"
-          memory: 512M
-        reservations:
-          memory: 128M
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
 
 volumes:
   itsm_data:
