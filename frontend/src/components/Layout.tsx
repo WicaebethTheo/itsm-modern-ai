@@ -105,6 +105,23 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
             Community
           </span>
         ) : null}
+        {/* Runtime : Docker (conteneur) ou Hôte (installé direct). Sert aussi à
+            proposer la bonne commande de MAJ dans l'infobulle ci-dessous. */}
+        {v?.runtime ? (
+          <span
+            className="hidden rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground md:inline"
+            title={
+              v.runtime === "docker"
+                ? t("Exécution en conteneur Docker", "Running in a Docker container")
+                : t(
+                    "Exécution directe sur l'hôte (hors conteneur)",
+                    "Running directly on the host (no container)",
+                  )
+            }
+          >
+            {v.runtime === "docker" ? "Docker" : t("Hôte", "Host")}
+          </span>
+        ) : null}
         {v ? (
           v.update_available ? (
             <a
@@ -112,8 +129,16 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
               target="_blank"
               rel="noopener noreferrer"
               title={t(
-                `Mise à jour disponible (v${v.latest}). Comment mettre à jour →`,
-                `Update available (v${v.latest}). How to update →`,
+                `Mise à jour disponible (v${v.latest}) — ${
+                  v.runtime === "docker"
+                    ? "docker compose pull && docker compose up -d"
+                    : "./install.sh --update"
+                } — voir la doc →`,
+                `Update available (v${v.latest}) — ${
+                  v.runtime === "docker"
+                    ? "docker compose pull && docker compose up -d"
+                    : "./install.sh --update"
+                } — see docs →`,
               )}
               className="hidden items-center gap-1 rounded-full border border-accent-indigo/40 bg-accent-indigo/10 px-2 py-0.5 text-[11px] font-medium text-accent-indigo md:flex"
             >

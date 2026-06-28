@@ -5,6 +5,15 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-06-28 — 0.9.42 — Indicateur runtime (Docker / hôte) + MAJ adaptée
+
+### Ajouté
+- **Indicateur de runtime** dans le top bar (à côté de la version) : pastille **Docker**
+  (conteneur) ou **Hôte** (installé direct). Détection via `ITSM_RUNTIME` (gravé dans
+  l'image) avec repli `/.dockerenv` / cgroup ; exposé par `/api/version` (champ `runtime`).
+- **Notification de MAJ adaptée au runtime** : l'infobulle propose la bonne commande
+  (`docker compose pull && docker compose up -d` en conteneur, `./install.sh --update` sur l'hôte).
+
 ## 2026-06-28 — 0.9.41 — Déploiement orchestrateur : image GHCR pull-only + amorçage admin au boot
 
 ### Ajouté

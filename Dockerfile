@@ -15,6 +15,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     PYTHONUNBUFFERED=1 \
+    ITSM_RUNTIME=docker \
     PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app

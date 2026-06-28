@@ -38,7 +38,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.41";
+export const APP_VERSION = "0.9.42";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -387,6 +387,7 @@ export interface VersionInfo {
   update_available: boolean;
   check_enabled: boolean; // une URL de vérification (opt-in) est-elle configurée ?
   latest_notes: string | null; // notes de release de la dernière version
+  runtime: string; // "docker" (conteneur) ou "host" (installé direct sur la machine)
 }
 
 // ── Confidentialité / DPO ─────────────────────────────────────────────────────

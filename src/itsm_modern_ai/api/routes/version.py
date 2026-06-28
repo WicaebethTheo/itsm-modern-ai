@@ -10,6 +10,7 @@ version en texte brut.
 from __future__ import annotations
 
 import logging
+import os
 import time
 
 import httpx
@@ -32,6 +33,29 @@ class VersionView(BaseModel):
     update_available: bool = False
     check_enabled: bool = False  # une URL de vérification est-elle configurée ?
     latest_notes: str | None = None  # notes de release (description du flux), si dispo
+    runtime: str = "host"  # « docker » (conteneur) ou « host » (installé direct) → MAJ adaptée
+
+
+def detect_runtime() -> str:
+    """« docker » si le moteur tourne en conteneur, « host » sinon.
+
+    Le signal explicite `ITSM_RUNTIME` (posé dans l'image Docker via `ENV`) prime ; à
+    défaut on retombe sur les marqueurs génériques de conteneur (`/.dockerenv`, cgroup).
+    Sert à afficher l'indicateur du top bar ET à proposer la bonne commande de MAJ
+    (`docker compose pull …` en conteneur vs `./install.sh --update` sur l'hôte).
+    """
+    explicit = os.environ.get("ITSM_RUNTIME", "").strip().lower()
+    if explicit:
+        return explicit
+    if os.path.exists("/.dockerenv"):
+        return "docker"
+    try:
+        with open("/proc/1/cgroup", encoding="utf-8") as fh:
+            if any(marker in fh.read() for marker in ("docker", "containerd", "kubepods")):
+                return "docker"
+    except OSError:
+        pass
+    return "host"
 
 
 def _parse(v: str) -> tuple[int, ...]:
@@ -104,9 +128,10 @@ async def version(
     request: Request, cfg: RuntimeConfigService = Depends(get_config_service)
 ) -> VersionView:
     current = __version__
+    runtime = detect_runtime()
     url = (cfg.get("update_check_url") or "").strip()
     if not url:
-        return VersionView(current=current, check_enabled=False)
+        return VersionView(current=current, check_enabled=False, runtime=runtime)
 
     # Cache process (URL → dernière version), rafraîchi selon update_check_ttl_seconds.
     ttl = max(60, int(request.app.state.settings.update_check_ttl_seconds))
@@ -129,4 +154,5 @@ async def version(
         update_available=is_newer(latest, current),
         check_enabled=True,
         latest_notes=info.get("notes"),
+        runtime=runtime,
     )

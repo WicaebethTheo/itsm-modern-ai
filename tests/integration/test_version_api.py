@@ -55,3 +55,11 @@ def test_version_no_check_when_url_empty(client):
 )
 def test_is_newer(latest, current, expected):
     assert is_newer(latest, current) is expected
+
+
+def test_version_reports_runtime(client, monkeypatch):
+    # Signal explicite ITSM_RUNTIME (posé dans l'image Docker) → reflété tel quel.
+    monkeypatch.setenv("ITSM_RUNTIME", "docker")
+    assert client.get("/api/version").json()["runtime"] == "docker"
+    monkeypatch.setenv("ITSM_RUNTIME", "host")
+    assert client.get("/api/version").json()["runtime"] == "host"
