@@ -32,7 +32,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 # ── Clé publique de l'éditeur (embarquée) ──────────────────────────────────────
 # Raw Ed25519 public key (32 octets, hex). La clé PRIVÉE correspondante vit
 # UNIQUEMENT dans l'outil de signature du dépôt de licence privé — jamais ici.
-PUBLISHER_PUBLIC_KEY_HEX = "9fcb935c17520b3d9bfbb3b1d5bcd2c1cc7e8ffde6c5bbe89129423978f350b8"
+# Rotation 2026-07-01 : l'ancienne clé est retirée (un jeton signé par elle avait
+# été committé dans les tests — il ne valide plus rien à partir de 0.9.44).
+PUBLISHER_PUBLIC_KEY_HEX = "0d9cf5c9f75a884d139d82064a2f07cae91fbc7e0163433458b5b11037065465"
 
 _TOKEN_PREFIX = "itsm-lic"
 _TOKEN_VERSION = "v1"
@@ -63,14 +65,14 @@ FEATURE_CATALOG: tuple[FeatureSpec, ...] = (
         label_fr="Masquage PII avancé",
         label_en="Advanced PII masking",
         description_fr=(
-            "Masquage des IBAN/cartes et des secrets (mots de passe, tokens, clés API), "
-            "identifiants FR (NIR, SIRET), patterns regex personnalisés et règles par "
-            "entité. En Community, seuls e-mail et téléphone sont masqués."
+            "Masquage des IBAN/cartes et des secrets (mots de passe, tokens, clés API) "
+            "et identifiants FR (NIR, SIRET). En Community, seuls e-mail et téléphone "
+            "sont masqués. Patterns regex personnalisés et règles par entité : roadmap."
         ),
         description_en=(
-            "Masking of IBANs/cards and secrets (passwords, tokens, API keys), French "
-            "identifiers (NIR, SIRET), custom regex patterns and per-entity rules. In "
-            "Community, only email and phone are masked."
+            "Masking of IBANs/cards, secrets (passwords, tokens, API keys) and French "
+            "identifiers (NIR, SIRET). In Community, only email and phone are masked. "
+            "Custom regex patterns and per-entity rules: roadmap."
         ),
     ),
     FeatureSpec(

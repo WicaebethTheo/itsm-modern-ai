@@ -42,6 +42,8 @@ export function Dashboard() {
   const ops = useResource(useCallback(() => Api.operationalMetrics(), []));
   const decisions = useResource(useCallback(() => Api.decisions(), []));
 
+  // Locale de formatage des nombres alignée sur la langue de l'UI (comme Journal).
+  const locale = t("fr-FR", "en-US");
   const m = metrics.data;
   const opView = ops.data ?? null;
   const op = opView?.metrics ?? null;
@@ -59,13 +61,13 @@ export function Dashboard() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard
           label={t("Tickets analysés", "Analyzed tickets")}
-          value={m ? m.total.toLocaleString("fr-FR") : "—"}
+          value={m ? m.total.toLocaleString(locale) : "—"}
         >
           <Sparkline values={totals} />
         </KpiCard>
         <KpiCard
           label={t("Traités", "Handled")}
-          value={m ? m.accepted.toLocaleString("fr-FR") : "—"}
+          value={m ? m.accepted.toLocaleString(locale) : "—"}
           tag={m ? `${pct(m.accepted)}%` : undefined}
           tagClass="text-success"
         >
@@ -73,7 +75,7 @@ export function Dashboard() {
         </KpiCard>
         <KpiCard
           label={t("À trier", "To triage")}
-          value={m ? m.a_trier.toLocaleString("fr-FR") : "—"}
+          value={m ? m.a_trier.toLocaleString(locale) : "—"}
           tag={m ? `${pct(m.a_trier)}%` : undefined}
         >
           <Sparkline values={aTrier} />

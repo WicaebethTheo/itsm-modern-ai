@@ -57,6 +57,9 @@ def build_connector(
     return GlpiConnector(
         creds,
         max_tickets=settings.polling_max_tickets,
+        # Borne du Dashboard inversé (DASHBOARD_MAX_TICKETS) : sans elle, le legacy
+        # restait figé au défaut du connecteur alors que le V2 honorait le réglage.
+        stats_max=settings.dashboard_max_tickets,
         ssrf_guard=settings.ssrf_guard_enabled,
     )
 

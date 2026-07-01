@@ -13,8 +13,16 @@ from fastapi.testclient import TestClient
 
 from itsm_modern_ai.api.app import create_app
 from itsm_modern_ai.config.settings import Settings
+from itsm_modern_ai.domain import licensing
 
-from ..unit.test_licensing import EXPIRED, VALID
+from ..unit.test_licensing import EXPIRED, TEST_PUBLIC_KEY_HEX, VALID
+
+
+@pytest.fixture(autouse=True)
+def _use_test_publisher_key(monkeypatch):
+    # Les jetons de test sont signés par la paire de TEST (jamais la clé de prod —
+    # ce dépôt est mirroré public). On substitue donc la clé publique vérifiée.
+    monkeypatch.setattr(licensing, "PUBLISHER_PUBLIC_KEY_HEX", TEST_PUBLIC_KEY_HEX)
 
 
 def _settings(tmp_path, **kw) -> Settings:

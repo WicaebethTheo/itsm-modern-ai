@@ -6,13 +6,48 @@
  */
 
 import { demo } from "./demo";
+import { tr } from "./i18n";
+
+/** Extrait `payload.detail.message` (format d'erreur du backend) sans présumer de la forme. */
+function detailMessage(payload: unknown): string | null {
+  if (payload && typeof payload === "object" && "detail" in payload) {
+    const detail = (payload as { detail?: unknown }).detail;
+    if (detail && typeof detail === "object" && "message" in detail) {
+      const m = (detail as { message?: unknown }).message;
+      if (typeof m === "string" && m) return m;
+    }
+  }
+  return null;
+}
+
+/**
+ * Message lisible d'une erreur API : le backend renvoie `detail.message` quand il
+ * a quelque chose à dire ; sinon un libellé par status connu, sinon `API <status>`.
+ * Centralisé ici pour que chaque page n'ait pas à fouiller le payload elle-même.
+ */
+function errorMessage(status: number, payload: unknown): string {
+  const detail = detailMessage(payload);
+  if (detail) return detail;
+  switch (status) {
+    case 401:
+      return tr("Session expirée", "Session expired");
+    case 403:
+      return tr("Accès refusé", "Access denied");
+    case 404:
+      return tr("Ressource introuvable", "Resource not found");
+    case 500:
+      return tr("Erreur interne du serveur", "Internal server error");
+    default:
+      return `API ${status}`;
+  }
+}
 
 export class ApiError extends Error {
   constructor(
     public status: number,
     public payload: unknown,
   ) {
-    super(`API ${status}`);
+    super(errorMessage(status, payload));
   }
 }
 
@@ -24,10 +59,35 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new ApiError(res.status, data);
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // Réponse non-JSON (typiquement une page HTML 502 d'un reverse proxy) :
+      // on lève une ApiError exploitable plutôt qu'un SyntaxError brut.
+      throw new ApiError(res.status, { raw: text.slice(0, 200) });
+    }
+  }
+  if (!res.ok) {
+    // Session expirée : on renvoie l'admin au login plutôt qu'un toast « API 401 ».
+    // Exceptions : les endpoints d'auth (le formulaire de login doit afficher sa
+    // propre erreur) et le mode démo (aucun backend, la « session » est simulée).
+    if (res.status === 401 && !path.startsWith("/api/auth/") && !DEMO) {
+      navigation.toLogin();
+    }
+    throw new ApiError(res.status, data);
+  }
   return data as T;
 }
+
+/**
+ * Point d'indirection de navigation : jsdom interdit de stubber
+ * `window.location.assign` directement — les tests espionnent cet objet.
+ */
+export const navigation = {
+  toLogin: () => window.location.assign(LOGIN_PATH),
+};
 
 export const api = {
   get: <T>(p: string) => request<T>("GET", p),
@@ -38,7 +98,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.43";
+export const APP_VERSION = "0.9.44";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -70,14 +130,19 @@ export interface Health {
 }
 
 export interface EngineStatus {
+  // Partie publique (toujours renvoyée — l'installeur sonde cet endpoint sans auth).
+  ok: boolean;
+  version: string;
   polling_enabled: boolean;
-  polling_interval_seconds: number;
-  whitelist_loaded: boolean;
-  categories_count: number;
-  technicians_count: number;
-  llm_calls_total: number;
-  cost_eur_last_24h: number;
-  cost_cap_eur_per_day: number;
+  // Partie enrichie : renvoyée UNIQUEMENT avec une session admin (la page Status est
+  // derrière RequireAuth, mais les champs restent optionnels côté type).
+  polling_interval_seconds?: number;
+  whitelist_loaded?: boolean;
+  categories_count?: number;
+  technicians_count?: number;
+  llm_calls_total?: number;
+  cost_eur_last_24h?: number;
+  cost_cap_eur_per_day?: number;
 }
 
 export interface DayPoint {
@@ -390,6 +455,17 @@ export interface VersionInfo {
   runtime: string; // "docker" (conteneur) ou "host" (installé direct sur la machine)
 }
 
+/**
+ * Commande de mise à jour à lancer sur l'hôte, selon le runtime détecté par le
+ * backend. Partagée par la topbar (Layout) et la carte « Mise à jour » (Store)
+ * pour ne jamais proposer `install.sh` à un déploiement Docker (et vice-versa).
+ */
+export function updateCommand(runtime: string | undefined): string {
+  return runtime === "docker"
+    ? "docker compose pull && docker compose up -d"
+    : "./install.sh --update";
+}
+
 // ── Confidentialité / DPO ─────────────────────────────────────────────────────
 export interface PiiCategory {
   key: string;
@@ -433,6 +509,10 @@ export const DEMO =
   import.meta.env.VITE_DEMO === "true" ||
   (typeof window !== "undefined" &&
     window.location.pathname.replace(/\/+$/, "").startsWith("/demo"));
+
+/** Chemin absolu de la page de login — tient compte du basename démo (cf. App.tsx :
+ *  build démo dédié servi à la racine → /login ; démo in-product → /demo/login). */
+export const LOGIN_PATH = import.meta.env.VITE_DEMO !== "true" && DEMO ? "/demo/login" : "/login";
 
 const ok = <T>(v: T): Promise<T> => Promise.resolve(v);
 

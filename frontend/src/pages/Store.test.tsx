@@ -106,6 +106,34 @@ describe("Store (licence open-core)", () => {
     expect(await screen.findByText(/Licence invalide.*signature invalide/)).toBeInTheDocument();
   });
 
+  it("MAJ disponible (runtime docker) : la carte propose la commande docker", async () => {
+    vi.mocked(Api.version).mockResolvedValue({
+      ...demo.version,
+      latest: "9.9.9",
+      update_available: true,
+      runtime: "docker",
+    });
+    renderWithToast(<Store />);
+    expect(
+      await screen.findByText("docker compose pull && docker compose up -d"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("./install.sh --update")).not.toBeInTheDocument();
+  });
+
+  it("MAJ disponible (runtime hôte) : la carte propose install.sh --update", async () => {
+    vi.mocked(Api.version).mockResolvedValue({
+      ...demo.version,
+      latest: "9.9.9",
+      update_available: true,
+      runtime: "host",
+    });
+    renderWithToast(<Store />);
+    expect(await screen.findByText("./install.sh --update")).toBeInTheDocument();
+    expect(
+      screen.queryByText("docker compose pull && docker compose up -d"),
+    ).not.toBeInTheDocument();
+  });
+
   it("Code Supporter présent : réinitialise la licence → retour Community", async () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     vi.mocked(Api.getLicense).mockResolvedValueOnce(ENT_ACTIVE).mockResolvedValue(ENT_UNLICENSED);

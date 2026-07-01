@@ -1,16 +1,26 @@
 """Vérification de licence Ed25519 hors-ligne (open-core).
 
-Les jetons sont des FIXTURES pré-signées par la clé privée de l'éditeur (qui vit
-uniquement dans le dépôt de licence privé) — on teste donc la VÉRIFICATION, pas la
-signature, sans jamais exposer la clé privée dans ce dépôt.
+Les jetons de test sont signés À LA VOLÉE avec une paire Ed25519 de TEST dédiée,
+embarquée ci-dessous. Cette clé privée de test ne déverrouille RIEN : le produit
+embarque une autre clé publique (celle de l'éditeur), et un fixture autouse
+substitue la clé publique de test le temps du test.
+
+⚠️ Ne JAMAIS committer ici un jeton signé par la clé privée de PRODUCTION : ce
+dépôt est mirroré public — un tel jeton serait une licence Supporter gratuite et
+irrévocable pour quiconque le copie (incident corrigé en 0.9.44). Le test
+`test_test_key_is_not_the_publisher_key` verrouille cette propriété.
 """
 
 from __future__ import annotations
 
+import base64
+import json
 from datetime import date
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from itsm_modern_ai.domain import licensing
 from itsm_modern_ai.domain.licensing import (
     FEATURE_MULTI_ENTITY,
     FEATURE_PII_ADVANCED,
@@ -21,20 +31,71 @@ from itsm_modern_ai.domain.licensing import (
 
 TODAY = date(2026, 5, 31)
 
-# Licence supporter valide (ACME DSI), 3 features, expire 2099-12-31.
-VALID = (
-    "itsm-lic.v1.eyJjdXN0b21lciI6IkFDTUUgRFNJIiwiZWRpdGlvbiI6InN1cHBvcnRlciIsImV4cGlyZXNf"
-    "YXQiOiIyMDk5LTEyLTMxIiwiZmVhdHVyZXMiOlsicGlpX2FkdmFuY2VkIiwibXVsdGlfZW50aXR5Iiwic2No"
-    "ZWR1bGVkX2V4cG9ydHMiXSwiaXNzdWVkX2F0IjoiMjAyNi0wMS0wMSJ9.4NcY0txyZdNg6vHBWpqPhqu0m_"
-    "EnZIsTYXNkte6vdx4tTPycPHqpvC5BAEXZuLGUs6aZDJHO_sKZYo-WNORVAA"
+# ── Paire Ed25519 de TEST (dédiée aux tests, sans aucune valeur en dehors) ─────
+# La clé privée peut vivre en clair ici : elle ne signe que des jetons vérifiés
+# contre TEST_PUBLIC_KEY_HEX, jamais contre la clé publique embarquée du produit.
+TEST_SIGNING_KEY_HEX = "6207e5305adef0b557a9e568dbefd1b97094a8bdb44996e6785591b6250f7c85"
+TEST_PUBLIC_KEY_HEX = "c56015ecbbd074740f2adf93a6c0024336d329982853b7973d006fb8168d6bb6"
+
+# Clé publique de production réellement embarquée, capturée à l'import (avant tout
+# monkeypatch) pour pouvoir vérifier qu'elle diffère bien de la clé de test.
+EMBEDDED_PUBLISHER_KEY_HEX = licensing.PUBLISHER_PUBLIC_KEY_HEX
+
+
+def _b64u(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def sign_license(payload: dict) -> str:
+    """Signe un payload de licence avec la clé de TEST (même format que l'outil éditeur)."""
+    key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(TEST_SIGNING_KEY_HEX))
+    payload_b64 = _b64u(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
+    signature = key.sign(f"v1.{payload_b64}".encode())
+    return f"itsm-lic.v1.{payload_b64}.{_b64u(signature)}"
+
+
+def make_license(
+    *,
+    customer: str = "ACME DSI",
+    edition: str = "supporter",
+    features: tuple[str, ...] = (FEATURE_PII_ADVANCED, FEATURE_MULTI_ENTITY, FEATURE_SCHEDULED_EXPORTS),
+    issued_at: str = "2026-01-01",
+    expires_at: str = "2099-12-31",
+) -> str:
+    return sign_license(
+        {
+            "customer": customer,
+            "edition": edition,
+            "features": list(features),
+            "issued_at": issued_at,
+            "expires_at": expires_at,
+        }
+    )
+
+
+# Mêmes cas de figure que les anciennes fixtures pré-signées, régénérés à chaque run.
+VALID = make_license()
+EXPIRED = make_license(
+    customer="OLD Corp",
+    features=(FEATURE_MULTI_ENTITY,),
+    issued_at="2020-01-01",
+    expires_at="2021-01-01",
 )
-# Licence expirée (2021-01-01).
-EXPIRED = (
-    "itsm-lic.v1.eyJjdXN0b21lciI6Ik9MRCBDb3JwIiwiZWRpdGlvbiI6InN1cHBvcnRlciIsImV4cGlyZXNf"
-    "YXQiOiIyMDIxLTAxLTAxIiwiZmVhdHVyZXMiOlsibXVsdGlfZW50aXR5Il0sImlzc3VlZF9hdCI6IjIwMjAt"
-    "MDEtMDEifQ.VDzt6urqZWZkE6nd9uEzaJ6ocDWimBNnKgnQiKafpBeWzSvlSoLrhkzUcBYuo0rSkDyfuas4J"
-    "H3DbMWVacNwCQ"
-)
+
+
+@pytest.fixture(autouse=True)
+def _use_test_publisher_key(monkeypatch):
+    """Substitue la clé publique de TEST — `_public_key()` la lit à chaque appel."""
+    monkeypatch.setattr(licensing, "PUBLISHER_PUBLIC_KEY_HEX", TEST_PUBLIC_KEY_HEX)
+
+
+def test_test_key_is_not_the_publisher_key(monkeypatch):
+    # Garde anti-régression de la fuite : la clé de test ne doit jamais devenir la clé
+    # embarquée, et un jeton signé par la clé de test ne doit rien déverrouiller en prod.
+    assert TEST_PUBLIC_KEY_HEX != EMBEDDED_PUBLISHER_KEY_HEX
+    monkeypatch.setattr(licensing, "PUBLISHER_PUBLIC_KEY_HEX", EMBEDDED_PUBLISHER_KEY_HEX)
+    st = verify_license(VALID, today=TODAY)
+    assert not st.valid and st.error == "signature invalide"
 
 
 def test_valid_license_unlocks_features():
@@ -85,6 +146,17 @@ def test_bad_prefixes_rejected(bad):
 
 
 def test_unknown_features_are_filtered_out():
-    # La fixture ne porte que des features connues ; on vérifie l'intersection avec le catalogue.
-    st = verify_license(VALID, today=TODAY)
+    # Une feature inconnue portée par le jeton est filtrée par intersection avec le catalogue.
+    token = sign_license(
+        {
+            "customer": "ACME DSI",
+            "edition": "supporter",
+            "features": [FEATURE_PII_ADVANCED, "feature_inconnue"],
+            "issued_at": "2026-01-01",
+            "expires_at": "2099-12-31",
+        }
+    )
+    st = verify_license(token, today=TODAY)
+    assert st.valid
+    assert st.features == {FEATURE_PII_ADVANCED}
     assert st.features <= KNOWN_FEATURES

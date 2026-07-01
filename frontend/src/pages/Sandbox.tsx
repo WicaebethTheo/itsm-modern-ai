@@ -43,8 +43,8 @@ export function Sandbox() {
     try {
       setResult(await Api.sandbox(text));
     } catch (e: unknown) {
-      const payload = (e as { payload?: { detail?: { message?: string } } }).payload;
-      setError(payload?.detail?.message ?? (e as Error).message);
+      // ApiError porte déjà le message backend (detail.message) ou un libellé par status.
+      setError((e as Error).message);
     } finally {
       setBusy(false);
     }

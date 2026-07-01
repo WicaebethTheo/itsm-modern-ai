@@ -6,9 +6,18 @@ set -euo pipefail
 # monté ./data appartient à l'utilisateur non-root `app` (il peut être root sur un
 # déploiement existant), puis on RELANCE ce script en `app` via gosu. Au second
 # passage (id != 0), on saute ce bloc et on exécute le moteur sans privilèges.
+# Chown CIBLÉ, plus de `chown -R /app/data` global : le -R re-parcourait TOUTE la
+# base à chaque boot et, surtout, écrasait l'ownership de data/postgres/ (PGDATA du
+# profile compose `postgres`, possédé par l'uid du conteneur postgres — pas `app`).
+# On ne touche donc que /app/data lui-même + ses enfants HORS postgres/, et
+# uniquement si l'owner n'est pas déjà `app` (boots suivants = zéro chown).
 if [ "$(id -u)" = "0" ]; then
   mkdir -p /app/data
-  chown -R app:app /app/data
+  APP_UID="$(id -u app)"
+  [ "$(stat -c %u /app/data)" = "$APP_UID" ] || chown app:app /app/data
+  find /app/data -mindepth 1 -maxdepth 1 ! -name postgres | while IFS= read -r child; do
+    [ "$(stat -c %u "$child")" = "$APP_UID" ] || chown -R app:app "$child"
+  done
   echo "[entrypoint] passage en utilisateur non-root « app »"
   exec gosu app "$0" "$@"
 fi

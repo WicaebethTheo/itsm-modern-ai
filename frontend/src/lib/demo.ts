@@ -74,7 +74,7 @@ export const demo: {
 } = {
   authStatus: { authenticated: true, auth_configured: false },
   info: {
-    version: "0.9.43",
+    version: "0.9.44",
     title: "ITSM Modern AI — moteur de triage (headless)",
     endpoints: [
       { path: "/health", methods: ["GET"] },
@@ -114,6 +114,8 @@ export const demo: {
     llm: { configured: true, reachable: true },
   },
   status: {
+    ok: true,
+    version: "0.9.44", // même valeur que APP_VERSION (règle de release les conventions internes)
     polling_enabled: true,
     polling_interval_seconds: 60,
     whitelist_loaded: true,
@@ -294,7 +296,7 @@ export const demo: {
     last_run_by: "scheduler",
   },
   version: {
-    current: "0.9.43",
+    current: "0.9.44",
     latest: null,
     update_available: false,
     check_enabled: false,

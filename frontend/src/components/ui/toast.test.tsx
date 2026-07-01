@@ -1,6 +1,6 @@
-import { render, screen, waitForElementToBeRemoved } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitForElementToBeRemoved } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ToastProvider, useToast } from "./toast";
 
 function Trigger({ message, kind }: { message: string; kind: "success" | "error" }) {
@@ -36,6 +36,30 @@ describe("ToastProvider", () => {
     await waitForElementToBeRemoved(() => screen.queryByText("Réglages enregistrés."), {
       timeout: 4000,
     });
+  });
+
+  it("les erreurs restent affichées 6 s (au-delà des 3 s des succès)", () => {
+    // Timers factices : on avance l'horloge sans attendre réellement 6 s.
+    vi.useFakeTimers();
+    try {
+      render(
+        <ToastProvider>
+          <Trigger message="Échec réseau" kind="error" />
+        </ToastProvider>,
+      );
+      fireEvent.click(screen.getByText("fire"));
+      act(() => {
+        vi.advanceTimersByTime(3500);
+      });
+      // Toujours visible après 3 s (un succès aurait déjà disparu).
+      expect(screen.getByText("Échec réseau")).toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(screen.queryByText("Échec réseau")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("ferme immédiatement au clic sur le bouton de fermeture", async () => {

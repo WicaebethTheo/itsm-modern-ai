@@ -230,6 +230,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     except Exception:  # pragma: no cover - filet défensif
         logger.warning("dérivation du secret de session échouée — secret éphémère (sessions volatiles)")
         session_secret = _secrets.token_urlsafe(32)
+    # En-têtes de sécurité sur TOUTES les réponses (nosniff, anti-framing, referrer,
+    # CSP sur le HTML de la SPA). HSTS seulement derrière TLS (session_https_only) :
+    # le poser sur le pilote HTTP rendrait l'instance injoignable après un essai HTTPS.
+    from .security_headers import SecurityHeadersMiddleware
+
+    app.add_middleware(SecurityHeadersMiddleware, hsts=settings.session_https_only)
+
     app.add_middleware(
         SessionMiddleware,
         secret_key=session_secret,

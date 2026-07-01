@@ -40,8 +40,8 @@ export function Debug() {
     try {
       await fn();
     } catch (e: unknown) {
-      const p = (e as { payload?: { detail?: { message?: string } } }).payload;
-      setErr(p?.detail?.message ?? (e as Error).message);
+      // ApiError porte déjà le message backend (detail.message) ou un libellé par status.
+      setErr((e as Error).message);
     } finally {
       setBusy("");
     }

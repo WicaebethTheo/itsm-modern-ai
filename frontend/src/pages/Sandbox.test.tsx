@@ -1,4 +1,4 @@
-import { Api } from "@/lib/api";
+import { Api, ApiError } from "@/lib/api";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -66,9 +66,10 @@ describe("Sandbox", () => {
   });
 
   it("affiche le message d'erreur du backend (detail.message)", async () => {
-    vi.mocked(Api.sandbox).mockRejectedValue({
-      payload: { detail: { message: "Texte hors périmètre." } },
-    });
+    // Depuis la centralisation dans ApiError, `message` porte déjà detail.message.
+    vi.mocked(Api.sandbox).mockRejectedValue(
+      new ApiError(422, { detail: { message: "Texte hors périmètre." } }),
+    );
     render(<Sandbox />);
     await userEvent.type(screen.getByRole("textbox"), "blabla");
     await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));

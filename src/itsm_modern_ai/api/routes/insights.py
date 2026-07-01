@@ -11,6 +11,7 @@ from sqlmodel import Session
 from ...domain.errors import ItsmError
 from ...persistence import journal
 from ...services import cost_cap, dashboard
+from ...services.runtime_config import RuntimeConfigService
 from ..deps import get_session
 from ..runtime import build_connector
 from ..security import require_auth
@@ -41,11 +42,15 @@ class Metrics(BaseModel):
 def metrics(request: Request, session: Session = Depends(get_session)) -> Metrics:
     """Métriques du Journal (volume, couverture utile, coût, confiance, série 14 j) — niveau équipe."""
     stats = journal.decision_stats(session)
+    settings = request.app.state.settings
+    # Plafond RUNTIME (réglable via l'UI) : le moteur lit cette valeur (api/runtime.py) —
+    # afficher la seule valeur d'env induirait l'admin en erreur après un réglage à chaud.
+    cfg = RuntimeConfigService(session, request.app.state.secrets_box, settings)
     return Metrics(
         **stats,
         llm_calls=journal.count_llm_calls(session),
         cost_eur_last_24h=round(cost_cap.spent_last_24h(session), 4),
-        cost_cap_eur_per_day=request.app.state.settings.cost_cap_eur_per_day,
+        cost_cap_eur_per_day=cfg.get_float("cost_cap_eur_per_day", settings.cost_cap_eur_per_day),
         avg_confidence=journal.avg_confidence(session),
         series=[DayPoint(**d) for d in journal.daily_series(session, days=14)],
     )

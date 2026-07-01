@@ -186,7 +186,13 @@ export function Journal() {
                 )}
               </td>
               <td className="px-4 py-2">
-                <AnnotationCell d={d} ph={t("juste / faux / signal…", "right / wrong / signal…")} />
+                {/* key sur id+annotation : l'état local (useState initialisé une seule
+                    fois) est réinitialisé si l'annotation serveur change après reload. */}
+                <AnnotationCell
+                  key={`${d.id}:${d.annotation}`}
+                  d={d}
+                  ph={t("juste / faux / signal…", "right / wrong / signal…")}
+                />
               </td>
             </tr>
           ))}

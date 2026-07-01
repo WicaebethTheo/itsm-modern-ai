@@ -7,12 +7,10 @@ import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
-import { Api } from "@/lib/api";
+import { Api, updateCommand } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Check } from "lucide-react";
 import { useCallback, useState } from "react";
-
-const UPDATE_CMD = "./install.sh --update";
 
 export function Store() {
   const t = useT();
@@ -20,6 +18,8 @@ export function Store() {
   const license = useResource(useCallback(() => Api.getLicense(), []));
   const version = useResource(useCallback(() => Api.version(), []));
   const ver = version.data;
+  // Commande de MAJ adaptée au runtime (Docker vs hôte) — même logique que la topbar.
+  const updateCmd = updateCommand(ver?.runtime);
   const [key, setKey] = useState("");
   const [activating, setActivating] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -27,7 +27,7 @@ export function Store() {
 
   async function copyUpdateCmd() {
     try {
-      await navigator.clipboard.writeText(UPDATE_CMD);
+      await navigator.clipboard.writeText(updateCmd);
       toast.success(t("Commande copiée.", "Command copied."));
     } catch {
       toast.error(t("Copie impossible — copiez manuellement.", "Copy failed — copy manually."));
@@ -151,7 +151,7 @@ export function Store() {
             ) : null}
             <div className="flex items-center gap-2">
               <pre className="flex-1 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-[12px]">
-                {UPDATE_CMD}
+                {updateCmd}
               </pre>
               <Button variant="outline" onClick={copyUpdateCmd}>
                 {t("Copier", "Copy")}

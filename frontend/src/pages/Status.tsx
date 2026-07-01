@@ -35,18 +35,25 @@ export function Status() {
   const s = status.data;
   const h = health.data;
 
-  const overCap = s && s.cost_cap_eur_per_day > 0 && s.cost_eur_last_24h >= s.cost_cap_eur_per_day;
+  // Champs enrichis renvoyés seulement avec une session admin (la page est derrière
+  // RequireAuth, mais on reste défensif : le type les déclare optionnels).
+  const overCap =
+    s?.cost_cap_eur_per_day != null &&
+    s.cost_eur_last_24h != null &&
+    s.cost_cap_eur_per_day > 0 &&
+    s.cost_eur_last_24h >= s.cost_cap_eur_per_day;
 
   const services: { name: string; state: string; meta: string; tone: DotTone }[] = [
     {
       name: t("Worker (moteur)", "Worker (engine)"),
       state: s?.polling_enabled ? t("En marche", "Running") : t("En pause", "Paused"),
-      meta: s
-        ? t(
-            `cycle toutes les ${s.polling_interval_seconds}s`,
-            `cycle every ${s.polling_interval_seconds}s`,
-          )
-        : "—",
+      meta:
+        s?.polling_interval_seconds != null
+          ? t(
+              `cycle toutes les ${s.polling_interval_seconds}s`,
+              `cycle every ${s.polling_interval_seconds}s`,
+            )
+          : "—",
       tone: s?.polling_enabled ? "green" : "amber",
     },
     {
@@ -73,13 +80,19 @@ export function Status() {
     },
     {
       name: t("Liste blanche", "Whitelist"),
-      state: s ? `${s.categories_count} / ${s.technicians_count}` : "—",
+      state:
+        s?.categories_count != null && s.technicians_count != null
+          ? `${s.categories_count} / ${s.technicians_count}`
+          : "—",
       meta: t("catégories / techniciens", "categories / technicians"),
       tone: s?.whitelist_loaded ? "indigo" : "muted",
     },
     {
       name: t("Plafond de coût", "Cost ceiling"),
-      state: s ? `${s.cost_eur_last_24h} / ${s.cost_cap_eur_per_day} €` : "—",
+      state:
+        s?.cost_eur_last_24h != null && s.cost_cap_eur_per_day != null
+          ? `${s.cost_eur_last_24h} / ${s.cost_cap_eur_per_day} €`
+          : "—",
       meta: t("période 24 h", "24h window"),
       tone: overCap ? "amber" : "green",
     },
@@ -95,7 +108,7 @@ export function Status() {
       <Card className="p-4">
         <div className="mb-1 text-[13px] font-medium">{t("Compteurs", "Counters")}</div>
         <div className="text-[11px] text-muted-foreground">
-          {s
+          {s?.llm_calls_total != null
             ? t(
                 `${s.llm_calls_total.toLocaleString("fr-FR")} appels LLM au total · ${s.cost_eur_last_24h} € sur les dernières 24 h`,
                 `${s.llm_calls_total.toLocaleString("en-US")} total LLM calls · ${s.cost_eur_last_24h} € over the last 24h`,

@@ -17,6 +17,7 @@ import logging
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 
+import anyio
 from sqlmodel import Session
 
 from ..config.settings import Settings
@@ -43,6 +44,13 @@ SessionFactory = Callable[[], AbstractContextManager[Session]]
 # Garde-fou de longueur du brouillon publié au demandeur (modes auto). Borne défensive
 # contre un draft LLM anormalement long (prompt injection / boucle) posté publiquement.
 PUBLIC_DRAFT_MAX_CHARS = 4000
+
+# Backoff court entre deux retries LLM (FR-9) : re-frapper immédiatement un fournisseur
+# en 429/erreur transitoire ne laisse aucune chance au retry d'aboutir. Le dernier palier
+# est réutilisé si `llm_retries` dépasse la table. `anyio.sleep` → n'immobilise pas l'event
+# loop (le poller continue). Alias module (`_sleep`) monkeypatchable en test.
+LLM_RETRY_BACKOFF_S: tuple[float, ...] = (0.5, 1.5)
+_sleep = anyio.sleep
 
 
 def rules_fully_handled(ticket: Ticket) -> bool:
@@ -154,9 +162,11 @@ class TriageService:
         return self._advanced_masker.mask(text) if self._advanced_masker is not None else text
 
     async def _call_llm(self, system: str, user: str) -> LlmResult:
-        """Appel LLM avec retry borné (FR-9) sur erreur transport."""
+        """Appel LLM avec retry borné (FR-9) + backoff court sur erreur transport."""
         last: Exception | None = None
-        for _ in range(self._retries + 1):
+        for attempt in range(self._retries + 1):
+            if attempt:  # jamais avant le 1er essai — uniquement entre deux tentatives
+                await _sleep(LLM_RETRY_BACKOFF_S[min(attempt - 1, len(LLM_RETRY_BACKOFF_S) - 1)])
             try:
                 return await self._llm.complete(system, user)
             except LlmTransportError as exc:

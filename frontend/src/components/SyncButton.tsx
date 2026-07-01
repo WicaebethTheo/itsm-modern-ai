@@ -18,8 +18,8 @@ export function SyncButton({ onSynced }: { onSynced: () => void }) {
       setMsg(r.ok ? t("Référentiels synchronisés.", "Referentials synced.") : r.detail);
       if (r.ok) onSynced();
     } catch (e: unknown) {
-      const p = (e as { payload?: { detail?: { message?: string } } }).payload;
-      setMsg(p?.detail?.message ?? (e as Error).message);
+      // ApiError porte déjà le message backend (detail.message) ou un libellé par status.
+      setMsg((e as Error).message);
     } finally {
       setBusy(false);
     }

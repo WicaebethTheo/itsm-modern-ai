@@ -148,6 +148,24 @@ async def test_transport_error_retried_then_a_trier(temp_db):
         assert journal.list_decisions(s)[0].reason == "llm_error"
 
 
+async def test_retry_waits_with_short_backoff(temp_db, monkeypatch):
+    """FR-9 durci : un 429 n'est pas re-frappé dans la milliseconde — backoff 0.5 s puis
+    1.5 s (dernier palier réutilisé au-delà), et jamais d'attente avant le 1er essai."""
+    from itsm_modern_ai.services import triage as triage_mod
+
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(triage_mod, "_sleep", fake_sleep)
+    llm = FakeLlm(error=LlmTransportError("429 Too Many Requests"))
+    svc = _service(llm, llm_retries=3)
+    await svc.handle(Ticket(id=15, content="x"), REFS)
+    assert llm.calls == 4  # 1 essai + 3 retries
+    assert sleeps == [0.5, 1.5, 1.5]
+
+
 async def test_two_stage_skips_llm_when_rules_handled(temp_db):
     llm = FakeLlm(_accepted_decision())
     svc = _service(llm)

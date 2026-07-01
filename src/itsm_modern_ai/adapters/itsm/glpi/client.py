@@ -11,18 +11,13 @@ from types import TracebackType
 import httpx
 
 from ....domain.errors import ItsmAuthError, ItsmError, ItsmUnavailableError
-from ....domain.url_safety import UrlSafetyError, assert_resolved_ip_is_public
+from ....domain.url_safety import UrlSafetyError
+from ...ssrf import make_guarded_event_hooks
 
 
 def _ssrf_event_hooks(guard: bool) -> dict[str, list] | None:
-    """Event hook httpx anti-SSRF (résolution DNS au runtime). GLPI n'est jamais local."""
-    if not guard:
-        return None
-
-    async def _hook(request: httpx.Request) -> None:
-        assert_resolved_ip_is_public(request.url.host or "", allow_local=False)
-
-    return {"request": [_hook]}
+    """Event hook httpx anti-SSRF (garde partagé, DNS hors event loop). GLPI n'est jamais local."""
+    return make_guarded_event_hooks(guard=guard, allow_local=False)
 
 
 class GlpiClient:

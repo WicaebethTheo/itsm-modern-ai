@@ -67,6 +67,23 @@ def verify_login(cfg: RuntimeConfigService, password: str) -> bool:
     return _hasher.verify(password, h)
 
 
+def session_is_authenticated(request: Request) -> bool:
+    """Vrai si la requête porte une session admin valide — SANS lever de 401.
+
+    Sert aux endpoints publics à réponse « enrichie si authentifié » (ex. /api/status) :
+    mêmes règles que `require_auth` (session active, ou admin ouvert via `dev_open_admin`
+    quand aucun mot de passe n'est configuré), mais en simple prédicat.
+    """
+    if request.session.get("authenticated"):
+        return True
+    from .deps import config_service_from_request
+
+    with config_service_from_request(request) as cfg:
+        configured = auth_is_configured(cfg)
+        dev_open = bool(getattr(cfg.settings, "dev_open_admin", False))
+    return not configured and dev_open
+
+
 def require_auth(request: Request) -> None:
     """Dépendance : protège les endpoints d'admin (config, sandbox, journal, export).
 

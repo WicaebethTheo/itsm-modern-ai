@@ -3,7 +3,7 @@ import { LangToggle } from "@/components/LangToggle";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useResource } from "@/hooks/useResource";
-import { Api } from "@/lib/api";
+import { Api, updateCommand } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { type IconName, NAV, navByPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
@@ -129,16 +129,8 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
               target="_blank"
               rel="noopener noreferrer"
               title={t(
-                `Mise à jour disponible (v${v.latest}) — ${
-                  v.runtime === "docker"
-                    ? "docker compose pull && docker compose up -d"
-                    : "./install.sh --update"
-                } — voir la doc →`,
-                `Update available (v${v.latest}) — ${
-                  v.runtime === "docker"
-                    ? "docker compose pull && docker compose up -d"
-                    : "./install.sh --update"
-                } — see docs →`,
+                `Mise à jour disponible (v${v.latest}) — ${updateCommand(v.runtime)} — voir la doc →`,
+                `Update available (v${v.latest}) — ${updateCommand(v.runtime)} — see docs →`,
               )}
               className="hidden items-center gap-1 rounded-full border border-accent-indigo/40 bg-accent-indigo/10 px-2 py-0.5 text-[11px] font-medium text-accent-indigo md:flex"
             >

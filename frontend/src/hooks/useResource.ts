@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { tr } from "@/lib/i18n";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface ResourceState<T> {
   data: T | null;
@@ -15,17 +16,23 @@ export function useResource<T>(fetcher: () => Promise<T>): ResourceState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Jeton de requête : deux reload() rapprochés peuvent se résoudre dans le
+  // désordre — seule la réponse du chargement le plus récent écrit l'état.
+  const seq = useRef(0);
 
   const load = useCallback(() => {
-    let alive = true;
+    const token = ++seq.current;
+    const fresh = () => token === seq.current;
     setLoading(true);
     setError(null);
     fetcher()
-      .then((d) => alive && setData(d))
-      .catch((e) => alive && setError(e?.message ?? "Erreur"))
-      .finally(() => alive && setLoading(false));
+      .then((d) => fresh() && setData(d))
+      .catch((e) => fresh() && setError(e?.message ?? tr("Erreur", "Error")))
+      .finally(() => fresh() && setLoading(false));
     return () => {
-      alive = false;
+      // Invalide CE chargement (unmount / fetcher changé) sans toucher à un
+      // reload plus récent déjà en vol.
+      if (fresh()) seq.current++;
     };
   }, [fetcher]);
 

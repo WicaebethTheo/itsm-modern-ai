@@ -3,7 +3,7 @@
  *
  * `useToast()` retourne `{ success, error, info }` — appelle-les depuis n'importe
  * quelle page protégée. Provider injecté une fois dans App.tsx ; chaque toast vit
- * 3 s puis disparaît. Cliquer dessus le ferme tout de suite.
+ * 3 s (6 s pour les erreurs) puis disparaît. Cliquer dessus le ferme tout de suite.
  */
 
 import { useT } from "@/lib/i18n";
@@ -71,8 +71,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const push = useCallback((kind: ToastKind, message: string) => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, kind, message }]);
-    // Auto-dismiss après 3 s.
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+    // Auto-dismiss : 3 s pour succès/info, 6 s pour les erreurs (le temps de lire
+    // un message d'échec avant qu'il ne disparaisse).
+    const ttl = kind === "error" ? 6000 : 3000;
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), ttl);
   }, []);
 
   const api = useMemo<ToastApi>(

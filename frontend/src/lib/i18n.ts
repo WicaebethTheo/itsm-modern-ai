@@ -36,3 +36,12 @@ export function useT() {
   const { lang } = useLang();
   return useCallback((fr: string, en: string) => (lang === "fr" ? fr : en), [lang]);
 }
+
+/**
+ * Variante non-React de t(fr, en) — pour le code hors composants (ex. messages
+ * d'ApiError, fallback de hooks). Lit la langue au moment de l'appel : pas de
+ * réactivité, mais suffisant pour des messages construits à la volée.
+ */
+export function tr(fr: string, en: string): string {
+  return snapshot() === "fr" ? fr : en;
+}

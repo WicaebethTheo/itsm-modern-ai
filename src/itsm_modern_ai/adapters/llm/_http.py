@@ -14,31 +14,11 @@ from typing import Any
 import httpx
 
 from ...domain.errors import LlmTransportError
-from ...domain.url_safety import UrlSafetyError, assert_resolved_ip_is_public
+from ...domain.url_safety import UrlSafetyError
 
-
-def ssrf_request_hook(*, allow_local: bool = False) -> Callable[[httpx.Request], Awaitable[None]]:
-    """Construit un event hook httpx « request » qui bloque tout appel sortant vers une
-    IP interne (résolution DNS au runtime → anti DNS rebinding, audit 2026-05).
-
-    À installer sur le client (`event_hooks={"request": [hook]}`) UNIQUEMENT en production
-    (cf. `settings.ssrf_guard_enabled`). En test, on ne l'installe pas → respx intercepte.
-    """
-
-    async def _hook(request: httpx.Request) -> None:
-        assert_resolved_ip_is_public(request.url.host or "", allow_local=allow_local)
-
-    return _hook
-
-
-def make_guarded_event_hooks(
-    *, guard: bool, allow_local: bool = False
-) -> dict[str, list] | None:
-    """Renvoie le mapping `event_hooks` httpx avec le garde anti-SSRF si `guard`, sinon None."""
-    if not guard:
-        return None
-    return {"request": [ssrf_request_hook(allow_local=allow_local)]}
-
+# Garde anti-SSRF factorisé dans adapters/ssrf.py (partagé avec les clients GLPI) —
+# ré-exporté ici pour ne pas casser les imports existants (routes/version.py, adapters LLM).
+from ..ssrf import make_guarded_event_hooks, ssrf_request_hook
 
 __all__ = [
     "arequest",

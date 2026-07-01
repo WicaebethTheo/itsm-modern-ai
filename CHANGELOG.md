@@ -5,6 +5,51 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-07-01 — 0.9.44 — Durcissement global (audit multi-agents)
+
+### Sécurité
+- **Fixtures de licence re-signées avec une paire Ed25519 de TEST dédiée** : plus aucun
+  jeton signé par la clé de production dans le dépôt (un jeton Supporter valide et
+  perpétuel était committé dans les tests — fuite corrigée) ; les jetons de test sont
+  générés à la volée et un test-canari garantit qu'ils ne valident jamais contre la clé
+  publique embarquée du produit.
+- **En-têtes de sécurité HTTP** sur toutes les réponses (`X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`), CSP restrictive sur le HTML
+  de la SPA, HSTS quand `SESSION_HTTPS_ONLY=true`.
+- **`/api/status` à deux niveaux** : sans authentification, seul l'état de marche est
+  exposé (ok, version, polling) ; compteurs LLM, coût 24 h et volumétrie exigent une
+  session valide.
+- **Garde SSRF non bloquant** : la résolution DNS anti-rebinding est déportée dans un
+  thread (`anyio.to_thread`) — l'event loop ne gèle plus pendant les appels sortants ;
+  hooks httpx factorisés (`adapters/ssrf.py`).
+
+### Ajouté
+- **Publication GHCR gatée** : ruff + pytest puis **smoke-test réel de l'image** (boot,
+  `/health`, `/api/status`, amorçage admin vérifié dans les logs) avant tout push
+  multi-arch ; job build Docker sur PR dans la CI.
+- **`HEALTHCHECK` dans l'image** (voie `docker run` couverte, les composes gardent le leur).
+- **Backoff sur le retry LLM** (0,5 s puis 1,5 s) — un 429 n'est plus re-frappé immédiatement.
+- Tests du garde open-core `require_feature` (403 `feature_locked` sans licence).
+- **Installeur curl durci** : détection d'une installation « depuis les sources »
+  (bind mount `./data`) avant écrasement, backup `docker-compose.yml.bak` à la mise à
+  jour, messages explicites sur mot de passe trop court / à caractères spéciaux,
+  aide en cas d'échec de pull GHCR, override `ITSM_DIR`.
+
+### Modifié
+- **Image Docker allégée de ~36 %** (170 → 109 MB) : fin du `chown -R` dupliquant le venv,
+  cache uv monté au build, couche de dépendances stable (le code ne l'invalide plus).
+- L'entrypoint ne re-chown plus tout `/app/data` à chaque boot et **préserve `postgres/`**
+  (PGDATA du compose « sources »).
+- Frontend : réponses non-JSON traduites en erreur propre, **redirection login sur session
+  expirée (401)**, messages d'erreur centralisés et bilingues, commande de mise à jour de
+  la page Supporter adaptée au runtime (Docker vs hôte), anti-course dans `useResource`,
+  toasts d'erreur affichés 6 s.
+- `/api/status` et `/api/metrics` reflètent les **overrides runtime** (polling, plafond
+  de coût) au lieu des seules variables d'env ; `DASHBOARD_MAX_TICKETS` honoré en GLPI legacy.
+- Docs : `-e SESSION_HTTPS_ONLY=false` ajouté aux exemples `docker run` (login HTTP
+  impossible sinon) ; canal d'obtention de licence (`support@itsm-modern-ai.com`) indiqué.
+- SECURITY.md et catalogue in-app alignés : « regex custom / règles par entité » = roadmap.
+
 ## 2026-06-28 — 0.9.43 — Correctifs sécurité / CI (XFF, SECURITY.md, CI GitHub)
 
 ### Sécurité

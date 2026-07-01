@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 /** Sparkline en mini-barres (carte KPI) — style maquette `.spark`. */
@@ -42,6 +43,7 @@ export function StackedBars({
   data: { date?: string; accepted: number; a_trier: number }[];
   height?: number;
 }) {
+  const t = useT();
   const max = Math.max(1, ...data.map((d) => d.accepted + d.a_trier));
   return (
     <div className="flex items-end gap-2" style={{ height }}>
@@ -50,7 +52,8 @@ export function StackedBars({
           // biome-ignore lint/suspicious/noArrayIndexKey: 14 jours, ordre stable
           key={i}
           className="flex flex-1 flex-col justify-end gap-px"
-          title={`${d.date ?? ""} · ${d.accepted} traités / ${d.a_trier} à trier`}
+          // Infobulle bilingue (l'UI est FR/EN, pas seulement FR).
+          title={`${d.date ?? ""} · ${d.accepted} ${t("traités", "handled")} / ${d.a_trier} ${t("à trier", "to triage")}`}
         >
           <div className="bar dim" style={{ height: (d.a_trier / max) * height }} />
           <div className="bar" style={{ height: (d.accepted / max) * height }} />

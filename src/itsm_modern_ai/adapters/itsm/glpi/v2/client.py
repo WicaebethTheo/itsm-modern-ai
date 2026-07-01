@@ -15,21 +15,16 @@ import httpx
 
 from .....config.credentials import GlpiV2Credentials
 from .....domain.errors import ItsmAuthError, ItsmError, ItsmUnavailableError
-from .....domain.url_safety import UrlSafetyError, assert_resolved_ip_is_public
+from .....domain.url_safety import UrlSafetyError
+from ....ssrf import make_guarded_event_hooks
 
 # Marge de renouvellement : on rafraîchit le jeton un peu avant son expiration réelle.
 _TOKEN_REFRESH_MARGIN_S = 60
 
 
 def _ssrf_event_hooks(guard: bool) -> dict[str, list] | None:
-    """Event hook httpx anti-SSRF (résolution DNS au runtime). GLPI n'est jamais local."""
-    if not guard:
-        return None
-
-    async def _hook(request: httpx.Request) -> None:
-        assert_resolved_ip_is_public(request.url.host or "", allow_local=False)
-
-    return {"request": [_hook]}
+    """Event hook httpx anti-SSRF (garde partagé, DNS hors event loop). GLPI n'est jamais local."""
+    return make_guarded_event_hooks(guard=guard, allow_local=False)
 
 
 def token_endpoint(base_url: str) -> str:
