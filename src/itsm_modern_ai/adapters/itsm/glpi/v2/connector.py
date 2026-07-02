@@ -3,7 +3,7 @@
 Même surface que le connecteur legacy (`GlpiConnector`), mais sur l'API V2 :
 ressources namespacées (`/Assistance/Ticket`, `/Dropdowns/ITILCategory`,
 `/Administration/User|Group|Entity`), recherche RSQL, mise à jour `PATCH`, acteurs via
-`TeamMember`, suivis via `Timeline/Followup`. Cf. docs/glpi-api-v2.md.
+`TeamMember`, suivis via `Timeline/Followup`.
 """
 
 from __future__ import annotations

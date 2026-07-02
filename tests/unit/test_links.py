@@ -22,12 +22,12 @@ def test_strips_api_php_suffix_and_trailing_slash():
 def test_strips_versioned_api_php():
     """Nouvelle API GLPI versionnée (`api.php/v1`) : le lien doit viser l'UI web, pas l'API."""
     assert (
-        ticket_web_link("https://glpi.lab.wicaebeth.com/api.php/v1", 123)
-        == "https://glpi.lab.wicaebeth.com/front/ticket.form.php?id=123"
+        ticket_web_link("https://glpi.exemple.local/api.php/v1", 123)
+        == "https://glpi.exemple.local/front/ticket.form.php?id=123"
     )
     assert (
-        ticket_web_link("https://glpi.lab.wicaebeth.com/api.php/v1/", 123)
-        == "https://glpi.lab.wicaebeth.com/front/ticket.form.php?id=123"
+        ticket_web_link("https://glpi.exemple.local/api.php/v1/", 123)
+        == "https://glpi.exemple.local/front/ticket.form.php?id=123"
     )
 
 

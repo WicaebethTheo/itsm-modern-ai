@@ -56,9 +56,20 @@ describe("Login", () => {
     expect(await screen.findByText("DASHBOARD-OK")).toBeInTheDocument();
   });
 
-  it("redirige d'emblée si l'auth n'est pas configurée (pilote ouvert)", async () => {
-    vi.mocked(Api.authStatus).mockResolvedValue({ authenticated: false, auth_configured: false });
+  it("redirige d'emblée si le backend autorise déjà (pilote ouvert via dev_open_admin)", async () => {
+    // Le backend reflète les règles d'accès dans `authenticated` (dev_open inclus).
+    vi.mocked(Api.authStatus).mockResolvedValue({ authenticated: true, auth_configured: false });
     renderLogin();
     await waitFor(() => expect(screen.getByText("DASHBOARD-OK")).toBeInTheDocument());
+  });
+
+  it("reste sur le login avec un bandeau si l'auth n'est pas configurée (fail-closed)", async () => {
+    // Repartir vers "/" relançait la boucle 401 → /login → / : on doit rester ici.
+    vi.mocked(Api.authStatus).mockResolvedValue({ authenticated: false, auth_configured: false });
+    renderLogin();
+    expect(
+      await screen.findByText(/Aucun mot de passe administrateur configuré/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("DASHBOARD-OK")).not.toBeInTheDocument();
   });
 });

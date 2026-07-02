@@ -108,7 +108,7 @@ export function Status() {
       <Card className="p-4">
         <div className="mb-1 text-[13px] font-medium">{t("Compteurs", "Counters")}</div>
         <div className="text-[11px] text-muted-foreground">
-          {s?.llm_calls_total != null
+          {s?.llm_calls_total != null && s.cost_eur_last_24h != null
             ? t(
                 `${s.llm_calls_total.toLocaleString("fr-FR")} appels LLM au total · ${s.cost_eur_last_24h} € sur les dernières 24 h`,
                 `${s.llm_calls_total.toLocaleString("en-US")} total LLM calls · ${s.cost_eur_last_24h} € over the last 24h`,

@@ -30,9 +30,10 @@ export function useResource<T>(fetcher: () => Promise<T>): ResourceState<T> {
       .catch((e) => fresh() && setError(e?.message ?? tr("Erreur", "Error")))
       .finally(() => fresh() && setLoading(false));
     return () => {
-      // Invalide CE chargement (unmount / fetcher changé) sans toucher à un
-      // reload plus récent déjà en vol.
-      if (fresh()) seq.current++;
+      // Invalide TOUT chargement en vol (unmount / fetcher changé) : un reload()
+      // manuel lancé après l'effet a un token plus récent que celui capturé ici,
+      // incrémenter inconditionnellement évite un setState après démontage.
+      seq.current++;
     };
   }, [fetcher]);
 

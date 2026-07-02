@@ -35,8 +35,8 @@ describe("ApiError — messages centralisés", () => {
     expect(new ApiError(401, null).message).toBe("Session expired");
   });
 
-  it("ignore un payload malformé (detail non-objet, message non-chaîne)", () => {
-    expect(new ApiError(404, { detail: "texte brut" }).message).toBe("Ressource introuvable");
+  it("accepte un detail string (style FastAPI par défaut), ignore un message non-chaîne", () => {
+    expect(new ApiError(404, { detail: "texte brut" }).message).toBe("texte brut");
     expect(new ApiError(404, { detail: { message: 42 } }).message).toBe("Ressource introuvable");
   });
 });

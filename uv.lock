@@ -384,10 +384,11 @@ wheels = [
 
 [[package]]
 name = "itsm-modern-ai"
-version = "0.9.44"
+version = "0.9.45"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "anyio" },
     { name = "apscheduler" },
     { name = "cryptography" },
     { name = "fastapi" },
@@ -417,6 +418,7 @@ postgres = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
+    { name = "anyio", specifier = ">=4.4" },
     { name = "apscheduler", specifier = ">=3.10,<4" },
     { name = "cryptography", specifier = ">=42.0" },
     { name = "fastapi", specifier = ">=0.115" },

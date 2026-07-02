@@ -32,8 +32,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 # ── Clé publique de l'éditeur (embarquée) ──────────────────────────────────────
 # Raw Ed25519 public key (32 octets, hex). La clé PRIVÉE correspondante vit
 # UNIQUEMENT dans l'outil de signature du dépôt de licence privé — jamais ici.
-# Rotation 2026-07-01 : l'ancienne clé est retirée (un jeton signé par elle avait
-# été committé dans les tests — il ne valide plus rien à partir de 0.9.44).
+# Paire en service depuis la 0.9.44 ; les jetons antérieurs doivent être ré-émis
+# (contact : support@itsm-modern-ai.com).
 PUBLISHER_PUBLIC_KEY_HEX = "0d9cf5c9f75a884d139d82064a2f07cae91fbc7e0163433458b5b11037065465"
 
 _TOKEN_PREFIX = "itsm-lic"

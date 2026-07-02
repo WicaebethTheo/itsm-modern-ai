@@ -2,7 +2,7 @@
 
 Spécificité V2 vs legacy : les dropdowns sont des **objets imbriqués `{id, name}`** (et non
 des `*_id` plats), et les acteurs vivent dans un tableau **`team`** (`{id, type, role}`) au
-lieu de `_users_id_assign`/`_groups_id_assign`. Cf. docs/glpi-api-v2.md.
+lieu de `_users_id_assign`/`_groups_id_assign`.
 """
 
 from __future__ import annotations

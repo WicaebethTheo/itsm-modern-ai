@@ -2,7 +2,8 @@
 
 Reflète FIDÈLEMENT le découpage open-core : sans licence on masque e-mail + téléphone ; IBAN/
 cartes, secrets, IP/MAC, NIR/SIRET et regex custom sont gatés Supporter (FEATURE_PII_ADVANCED).
-Page destinée à la DPO/RSSI (cf. docs/dpo.md). Protégé par l'auth locale (FR-24).
+Page destinée à la DPO/RSSI (guide public : https://docs.itsm-modern-ai.com/). Protégé par
+l'auth locale (FR-24).
 """
 
 from __future__ import annotations

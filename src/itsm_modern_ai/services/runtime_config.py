@@ -230,7 +230,7 @@ class RuntimeConfigService:
         return self.get("glpi_base_url") or ""
 
     def glpi_v2_credentials(self) -> GlpiV2Credentials:
-        """Identifiants de l'API haut-niveau GLPI 11 (OAuth2) — Beta. Cf. docs/glpi-api-v2.md."""
+        """Identifiants de l'API haut-niveau GLPI 11 (OAuth2) — Beta."""
         return GlpiV2Credentials(
             base_url=self.get("glpi_v2_base_url") or self.get("glpi_base_url") or "",
             client_id=self.get("glpi_oauth_client_id") or "",

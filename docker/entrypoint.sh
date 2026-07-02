@@ -48,7 +48,7 @@ if [ -n "$_ADMIN_PW" ]; then
 fi
 
 # Reverse proxy : si TRUST_PROXY_HEADERS=true, on active la lecture de XFF côté
-# uvicorn (cf. docs/install.md §5). `--forwarded-allow-ips=*` car le moteur n'est
+# uvicorn (cf. https://docs.itsm-modern-ai.com/production-deployment/). `--forwarded-allow-ips=*` car le moteur n'est
 # joignable que via le proxy en pilote conteneurisé.
 if [ "${TRUST_PROXY_HEADERS:-false}" = "true" ]; then
   PROXY_ARGS="--proxy-headers --forwarded-allow-ips=*"

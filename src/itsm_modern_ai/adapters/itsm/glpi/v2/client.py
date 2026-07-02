@@ -3,7 +3,7 @@
 Diffère du client legacy (`apirest.php`) : plus de `Session-Token`, mais un jeton OAuth2
 obtenu par grant **password** sur `{…}/api.php/token`, mis en cache et renouvelé à
 l'expiration. Anti-SSRF runtime (résolution DNS) repris à l'identique. Traduit les échecs
-HTTP/réseau en erreurs typées du domaine. Cf. docs/glpi-api-v2.md.
+HTTP/réseau en erreurs typées du domaine.
 """
 
 from __future__ import annotations

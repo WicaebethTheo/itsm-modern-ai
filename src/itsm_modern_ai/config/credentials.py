@@ -29,7 +29,7 @@ class GlpiV2Credentials:
     """Connexion à l'API haut-niveau GLPI 11 (« V2 », OAuth2) — Beta.
 
     `base_url` pointe sur la racine versionnée (ex. `…/api.php/v2.3`). L'auth se fait par
-    grant OAuth2 **password** (client OAuth GLPI + compte technique) ; cf. docs/glpi-api-v2.md.
+    grant OAuth2 **password** (client OAuth GLPI + compte technique).
     """
 
     base_url: str

@@ -15,12 +15,16 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [notConfigured, setNotConfigured] = useState(false);
 
-  // Si l'auth n'est pas configurée (pilote) ou déjà connecté, aller au dashboard.
+  // Déjà autorisé (session active, ou admin ouvert via dev_open_admin) → dashboard.
+  // Auth non configurée en fail-closed : on RESTE ici avec un bandeau explicite
+  // (repartir vers "/" relançait la boucle de redirection 401 → /login → /).
   useEffect(() => {
     Api.authStatus()
       .then((s) => {
-        if (!s.auth_configured || s.authenticated) navigate("/", { replace: true });
+        if (s.authenticated) navigate("/", { replace: true });
+        else setNotConfigured(!s.auth_configured);
       })
       .catch(() => undefined);
   }, [navigate]);
@@ -51,6 +55,14 @@ export function Login() {
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="flex flex-col gap-4">
+            {notConfigured && (
+              <Banner kind="warning">
+                {t(
+                  "Aucun mot de passe administrateur configuré. Définissez ITSM_ADMIN_PASSWORD puis redémarrez le moteur.",
+                  "No administrator password configured. Set ITSM_ADMIN_PASSWORD and restart the engine.",
+                )}
+              </Banner>
+            )}
             {error && <Banner kind="error">{error}</Banner>}
             <Field label={t("Mot de passe administrateur", "Administrator password")}>
               <Input

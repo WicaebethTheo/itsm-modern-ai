@@ -9,11 +9,11 @@
 *The LLM proposes, the code decides — GLPI ticket triage with deterministic guardrails.*
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.9.44-blueviolet)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.9.45-blueviolet)](pyproject.toml)
 [![GHCR image](https://img.shields.io/badge/GHCR-image_publique-2496ED?logo=github&logoColor=white)](https://github.com/WicaebethTheo/itsm-modern-ai/pkgs/container/itsm-modern-ai)
 [![Docker multi-arch](https://img.shields.io/badge/docker-amd64_·_arm64-2496ED?logo=docker&logoColor=white)](docker-compose.portainer.yml)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-345_pytest_·_86_vitest-success)](https://docs.itsm-modern-ai.com)
+[![Tests](https://img.shields.io/badge/tests-347_pytest_·_87_vitest-success)](https://docs.itsm-modern-ai.com)
 [![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_par_défaut-6B46C1)](https://docs.itsm-modern-ai.com)
 
 [Déploiement](#déploiement) · [Comment ça marche](#comment-ça-marche) · [Documentation](https://docs.itsm-modern-ai.com) · [Site produit](https://itsm-modern-ai.com)
@@ -72,7 +72,7 @@ Toutes optionnelles **sauf `ITSM_ADMIN_PASSWORD` au 1er boot**. Les clés LLM et
 | Variable | Défaut | Rôle |
 |---|---|---|
 | `ITSM_ADMIN_PASSWORD` | — | Mot de passe admin **amorcé au 1er boot** (≥ 8 car. ; alias accepté : `ADMIN_PASSWORD`). Idempotent, jamais écrasé, retirable ensuite. Sans lui : console **verrouillée** (*fail-closed*). |
-| `SESSION_HTTPS_ONLY` | `true` | Cookie de session `Secure`. **Mettre `false` en HTTP** (sinon login impossible) ; `true` derrière un proxy TLS. |
+| `SESSION_HTTPS_ONLY` | `true` | Cookie de session `Secure`. Défaut code `true` ; les artefacts livrés (`.env` de l'installeur, compose Portainer) posent `false` pour le pilote HTTP (sinon login impossible). Repasser à `true` derrière un TLS. |
 | `ITSM_HOST_PORT` | `8000` | Port hôte publié (installeur / `docker-compose.portainer.yml`). |
 | `DATABASE_URL` | SQLite (volume) | Base. PostgreSQL : `postgresql+psycopg://user:pwd@host:5432/itsm`. |
 | `LICENSE_KEY` | *(vide)* | Clé Supporter (vide = Community ; collable aussi dans l'UI). |

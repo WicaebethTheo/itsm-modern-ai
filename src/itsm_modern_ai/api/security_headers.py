@@ -30,9 +30,16 @@ SPA_CSP = (
 _HSTS_VALUE = "max-age=31536000; includeSubDomains"
 
 # Pages de docs interactives (montées seulement si EXPOSE_API_DOCS=true) : HTML avec
-# scripts CDN + inline → la CSP SPA les casserait. Elles restent couvertes par les
-# autres en-têtes (nosniff, frame, referrer).
-_CSP_EXEMPT_PATHS = frozenset({"/docs", "/redoc"})
+# scripts CDN + inline → la CSP SPA les casserait. Exemption par PRÉFIXE et non par
+# égalité stricte : `/docs/oauth2-redirect` (page FastAPI avec script inline) doit être
+# couvert aussi. Elles restent couvertes par les autres en-têtes (nosniff, frame, referrer).
+_CSP_EXEMPT_PREFIXES = ("/docs", "/redoc")
+
+
+def _csp_exempt(path: str) -> bool:
+    """Vrai si `path` est une page de docs interactives (ou une sous-page, ex. oauth2-redirect)."""
+    # `== p` ou `p + "/"` : ne pas exempter par accident un futur `/docsomething`.
+    return any(path == p or path.startswith(p + "/") for p in _CSP_EXEMPT_PREFIXES)
 
 
 class SecurityHeadersMiddleware:
@@ -61,7 +68,7 @@ class SecurityHeadersMiddleware:
                 # CSP réservée au HTML (SPA) : inutile sur le JSON/CSV, et surtout on ne
                 # veut pas casser /docs (Swagger CDN) ni /metrics (text/plain).
                 content_type = headers.get("content-type", "")
-                if content_type.startswith("text/html") and path not in _CSP_EXEMPT_PATHS:
+                if content_type.startswith("text/html") and not _csp_exempt(path):
                     headers.setdefault("Content-Security-Policy", self._csp)
             await send(message)
 

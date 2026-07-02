@@ -67,7 +67,11 @@ def logout(request: Request, cfg: RuntimeConfigService = Depends(get_config_serv
 def auth_status(
     request: Request, cfg: RuntimeConfigService = Depends(get_config_service)
 ) -> AuthStatus:
+    # `authenticated` reflète les MÊMES règles d'accès que `require_auth` (session
+    # active, ou admin ouvert via dev_open_admin) : le frontend peut s'y fier seul.
+    # Sinon, en fail-closed sans mot de passe, « non configuré = ouvert » côté UI et
+    # « non configuré = refusé » côté API se contredisent → boucle de redirection.
     return AuthStatus(
-        authenticated=bool(request.session.get("authenticated")),
+        authenticated=security.session_is_authenticated(request),
         auth_configured=security.auth_is_configured(cfg),
     )

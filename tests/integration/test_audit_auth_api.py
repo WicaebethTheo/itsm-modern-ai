@@ -164,6 +164,20 @@ def test_auth_status_reports_configured(secured_client):
     assert body["auth_configured"] is True and body["authenticated"] is False
 
 
+def test_auth_status_reflects_dev_open_access(tmp_path):
+    # `authenticated` reflète les règles d'accès de require_auth (dev_open inclus) :
+    # le frontend s'y fie seul — sinon boucle de redirection en fail-closed.
+    with TestClient(create_app(_settings(tmp_path))) as c:  # dev_open, non configuré
+        body = c.get("/api/auth/status").json()
+        assert body["auth_configured"] is False and body["authenticated"] is True
+
+
+def test_auth_status_fail_closed_not_authenticated(tmp_path):
+    with TestClient(create_app(_settings(tmp_path, dev_open_admin=False))) as c:
+        body = c.get("/api/auth/status").json()
+        assert body["auth_configured"] is False and body["authenticated"] is False
+
+
 # ── Rate-limiting du login (FR-24 durci) ─────────────────────────────────────
 def test_login_rate_limited_after_repeated_failures(tmp_path):
     # Seuil bas pour déclencher vite ; fenêtre/blocage longs pour rester bloqué.

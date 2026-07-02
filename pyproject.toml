@@ -1,6 +1,6 @@
 [project]
 name = "itsm-modern-ai"
-version = "0.9.44"
+version = "0.9.45"
 description = "Assistant IA de triage de tickets GLPI — moteur à garde-fous (pilote V1)."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -19,10 +19,13 @@ dependencies = [
     "pwdlib[argon2]>=0.2",
     "itsdangerous>=2.2",
     "prometheus-client>=0.20",
+    # anyio : importé DIRECTEMENT (adapters/ssrf.py, services/triage.py) — on ne dépend
+    # pas de sa seule présence transitive via starlette/httpx.
+    "anyio>=4.4",
 ]
 
 [project.optional-dependencies]
-# PostgreSQL (Beta, cf. docs/postgresql.md) — driver psycopg 3. Optionnel : l'install
+# PostgreSQL (Beta — cf. https://docs.itsm-modern-ai.com/) — driver psycopg 3. Optionnel : l'install
 # SQLite par défaut n'embarque PAS ce driver. `uv sync --extra postgres` pour l'activer.
 postgres = [
     "psycopg[binary]>=3.1",

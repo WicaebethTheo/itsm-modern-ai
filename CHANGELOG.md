@@ -5,6 +5,27 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-07-02 — 0.9.45 — Correctifs de revue post-0.9.44
+
+### Corrigé
+- **Boucle de redirection au login en fail-closed** : quand aucun mot de passe admin
+  n'était configuré (ou MASTER_KEY incohérente), la console bouclait /login → / → 401.
+  `/api/auth/status` reflète désormais les règles d'accès réelles (`authenticated`
+  couvre `dev_open_admin`), la page de connexion affiche un bandeau explicite
+  (« définissez ITSM_ADMIN_PASSWORD ») et une ceinture anti-boucle protège la
+  redirection automatique.
+- CSP : `/docs/oauth2-redirect` (Swagger) exempté comme `/docs` et `/redoc`.
+- `docs/install.md` : `-e SESSION_HTTPS_ONLY=false` ajouté au `docker run` durci
+  (login impossible en HTTP sinon) ; formulation du défaut harmonisée partout
+  (« défaut code `true`, artefacts livrés `false` »).
+- Console : garde manquante sur le coût 24 h de la page Statut ; anti-course
+  `useResource` renforcé au démontage ; `detail` string (style FastAPI) accepté
+  dans les messages d'erreur.
+- `anyio` déclaré explicitement dans les dépendances (importé directement).
+- Hygiène du dépôt public : hostnames d'exemple neutres dans les tests, commentaires
+  pointant des documents internes reformulés, en-tête de `bootstrap.sh` réécrit
+  (voie « depuis les sources »).
+
 ## 2026-07-01 — 0.9.44 — Durcissement global (audit multi-agents)
 
 ### Sécurité

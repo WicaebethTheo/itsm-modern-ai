@@ -16,6 +16,9 @@ function detailMessage(payload: unknown): string | null {
       const m = (detail as { message?: unknown }).message;
       if (typeof m === "string" && m) return m;
     }
+    // Défensif : le style FastAPI par défaut est `{"detail": "…"}` (string). Notre
+    // backend n'en émet pas aujourd'hui, mais un futur endpoint pourrait.
+    if (typeof detail === "string" && detail) return detail;
   }
   return null;
 }
@@ -86,7 +89,16 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
  * `window.location.assign` directement — les tests espionnent cet objet.
  */
 export const navigation = {
-  toLogin: () => window.location.assign(LOGIN_PATH),
+  toLogin: () => {
+    // Ceinture anti-boucle : si le login lui-même déclenche des 401 en rafale
+    // (backend fail-closed sans mot de passe admin), on ne recharge pas en boucle.
+    // sessionStorage survit au rechargement complet déclenché par assign().
+    const KEY = "itsm.login-redirect-at";
+    const last = Number(sessionStorage.getItem(KEY) ?? "0");
+    if (Date.now() - last < 5_000) return;
+    sessionStorage.setItem(KEY, String(Date.now()));
+    window.location.assign(LOGIN_PATH);
+  },
 };
 
 export const api = {
@@ -98,7 +110,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.44";
+export const APP_VERSION = "0.9.45";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";

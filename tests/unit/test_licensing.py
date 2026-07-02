@@ -6,9 +6,8 @@ embarque une autre clé publique (celle de l'éditeur), et un fixture autouse
 substitue la clé publique de test le temps du test.
 
 ⚠️ Ne JAMAIS committer ici un jeton signé par la clé privée de PRODUCTION : ce
-dépôt est mirroré public — un tel jeton serait une licence Supporter gratuite et
-irrévocable pour quiconque le copie (incident corrigé en 0.9.44). Le test
-`test_test_key_is_not_the_publisher_key` verrouille cette propriété.
+dépôt est mirroré public. Le test `test_test_key_is_not_the_publisher_key`
+verrouille cette propriété.
 """
 
 from __future__ import annotations
@@ -90,8 +89,8 @@ def _use_test_publisher_key(monkeypatch):
 
 
 def test_test_key_is_not_the_publisher_key(monkeypatch):
-    # Garde anti-régression de la fuite : la clé de test ne doit jamais devenir la clé
-    # embarquée, et un jeton signé par la clé de test ne doit rien déverrouiller en prod.
+    # Garde anti-régression : la clé de test ne doit jamais devenir la clé embarquée,
+    # et un jeton signé par la clé de test ne doit rien déverrouiller en prod.
     assert TEST_PUBLIC_KEY_HEX != EMBEDDED_PUBLISHER_KEY_HEX
     monkeypatch.setattr(licensing, "PUBLISHER_PUBLIC_KEY_HEX", EMBEDDED_PUBLISHER_KEY_HEX)
     st = verify_license(VALID, today=TODAY)

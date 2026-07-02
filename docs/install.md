@@ -44,6 +44,7 @@ docker volume create itsm_data
 docker run -d --name itsm-modern-ai \
   -p 8000:8000 \
   -e ITSM_ADMIN_PASSWORD='change-me-min-8-chars' \
+  -e SESSION_HTTPS_ONLY=false \
   -v itsm_data:/app/data \
   --cap-drop ALL \
   --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add SETUID --cap-add SETGID \
@@ -51,6 +52,9 @@ docker run -d --name itsm-modern-ai \
   --read-only --tmpfs /tmp \
   ghcr.io/wicaebeththeo/itsm-modern-ai:latest
 ```
+
+> `SESSION_HTTPS_ONLY=false` est nécessaire pour se connecter en HTTP nu (défaut code `true`
+> → cookie `Secure` ignoré, login impossible). Repasser à `true` derrière un TLS.
 
 La **base SQLite** et la **master key** vivent dans le **volume nommé `itsm_data`**
 (`/app/data` dans le conteneur) ; la `master.key` Fernet est **générée automatiquement au premier
@@ -122,7 +126,7 @@ Tous **optionnels** dans le `.env` (valeurs par défaut sûres). Détails dans
 | Variable | Défaut | Rôle |
 |---|---|---|
 | `DEV_OPEN_ADMIN` | `false` | **Fail-closed** : sans mot de passe admin, l'admin est refusée (401). Mettre `true` rouvre l'admin **sans** mot de passe — **dev/labo uniquement, jamais en prod**. |
-| `SESSION_HTTPS_ONLY` | `true` | Flag `Secure` du cookie de session. Mettre `false` **seulement** pour du dev/test en HTTP local (sinon le cookie est ignoré). |
+| `SESSION_HTTPS_ONLY` | `true` | Flag `Secure` du cookie de session. Défaut code `true` ; les artefacts livrés (`.env` de l'installeur, compose Portainer) posent `false` pour le pilote HTTP (sinon login impossible). Repasser à `true` derrière un TLS. |
 | `SSRF_GUARD_ENABLED` | `true` | Garde anti-SSRF au runtime : résout chaque hôte sortant (LLM, GLPI) et **bloque les IP internes** avant l'appel. Ne désactiver qu'en réseau de confiance. |
 | `LOG_LEVEL` | `INFO` | Seuil de log racine (`DEBUG`…`CRITICAL`). |
 | `LOG_FORMAT` | `text` | `text` (dev) ou `json` (1 ligne = 1 objet JSON pour Loki/ELK ; **sans PII**). |

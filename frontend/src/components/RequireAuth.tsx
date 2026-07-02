@@ -5,16 +5,17 @@ import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 
 /**
- * Garde d'authentification (FR-24). Si un mot de passe admin est configuré côté
- * serveur et qu'aucune session n'est active, on redirige vers /login. Sinon
- * (pilote sans mot de passe, ou déjà connecté) on rend l'application.
+ * Garde d'authentification (FR-24). On se fie à `authenticated` SEUL : le backend
+ * y reflète les mêmes règles d'accès que ses endpoints (session active, ou admin
+ * ouvert via dev_open_admin). Déduire « non configuré = ouvert » côté UI alors que
+ * l'API est fail-closed créait une boucle de redirection Layout → 401 → /login → /.
  */
 export function RequireAuth() {
   const [state, setState] = useState<"loading" | "ok" | "redirect">("loading");
 
   useEffect(() => {
     Api.authStatus()
-      .then((s) => setState(!s.auth_configured || s.authenticated ? "ok" : "redirect"))
+      .then((s) => setState(s.authenticated ? "ok" : "redirect"))
       .catch(() => setState("redirect"));
   }, []);
 

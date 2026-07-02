@@ -35,7 +35,7 @@ def build_connector(
     """Construit le connecteur GLPI selon `glpi_api_version` (legacy | v2), sinon None.
 
     - `legacy` (défaut, éprouvé) → `GlpiConnector` (apirest.php).
-    - `v2` (Beta) → `GlpiV2Connector` (API haut-niveau OAuth2, cf. docs/glpi-api-v2.md).
+    - `v2` (Beta) → `GlpiV2Connector` (API haut-niveau OAuth2).
     Les deux implémentent `ItsmPort` : le reste du moteur est agnostique.
     """
     with db.session_scope() as session:

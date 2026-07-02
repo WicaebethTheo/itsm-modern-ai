@@ -17,7 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # Persistance (SQLite en pilote ; PostgreSQL en option — Beta, cf. docs/postgresql.md).
+    # Persistance (SQLite en pilote ; PostgreSQL en option — Beta, cf. https://docs.itsm-modern-ai.com/).
     # Postgres : DATABASE_URL=postgresql+psycopg://user:pwd@host:5432/itsm (driver psycopg 3,
     # extra `postgres`). Le code est Postgres-ready (UtcDateTime tz-aware, migrations batch).
     database_url: str = "sqlite:///./data/itsm.db"
@@ -134,7 +134,7 @@ class Settings(BaseSettings):
     glpi_followup_legacy_9x: bool = False
 
     # Choix de l'API GLPI (Beta) : "legacy" = apirest.php (défaut, éprouvé) ;
-    # "v2" = API haut-niveau OAuth2 de GLPI 11 (cf. docs/glpi-api-v2.md). En mode v2,
+    # "v2" = API haut-niveau OAuth2 de GLPI 11. En mode v2,
     # GLPI_BASE_URL pointe sur …/api.php/v2.3 et l'auth se fait par client OAuth + compte
     # technique (secrets poussés via l'UI). Le client_secret et le mot de passe sont des
     # secrets chiffrés ; client_id et username sont non-secrets (visibles dans l'UI).

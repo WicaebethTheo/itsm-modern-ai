@@ -1,4 +1,4 @@
-"""Garde open-core `require_feature` (api/feature_guard.py) — design les conventions internes.
+"""Garde open-core `require_feature` (api/feature_guard.py) — design open-core du dépôt.
 
 Le code Supporter est LIVRÉ (installed) mais verrouillé : une route gardée répond
 403 `feature_locked` sans licence valide, 200 dès qu'une clé valide est collée

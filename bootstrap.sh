@@ -1,19 +1,23 @@
 #!/bin/sh
-# ITSM Modern AI — Community one-line bootstrap.
+# ITSM Modern AI — bootstrap « depuis les sources ».
 #
-#   curl -fsSL https://itsm-modern-ai.com/install | sh
-#   curl -fsSL https://itsm-modern-ai.com/install | sh -s -- --bundle itsm.tar.gz
+# Clone le dépôt puis lance ./install.sh (vérifie Docker/compose, propose d'installer
+# ce qui manque, démarre le service et affiche une checklist). Voie pour qui veut
+# construire localement (air-gap, `--bundle`, contributions).
 #
-# Fetches the Community repo and runs ./install.sh (which checks Docker/compose,
-# offers to install missing parts, starts the service and prints a checklist).
+# NB : le one-liner grand public `curl -fsSL https://itsm-modern-ai.com/install | bash`
+# ne passe PAS par ce script — il sert l'installeur image (GHCR, sans clone ni build).
 #
-# Env overrides:
-#   ITSM_REPO_URL  git URL of the Community repo (default: public GitHub)
-#   ITSM_REF       branch/tag to install (default: main)
-#   ITSM_DIR       target directory (default: itsm-modern-ai)
+#   sh bootstrap.sh
+#   sh bootstrap.sh --bundle itsm.tar.gz
 #
-# NOTE: the repo must be reachable anonymously (public) — or set ITSM_REPO_URL with an
-# embedded token for a private repo, e.g. https://oauth2:<TOKEN>@host/root/itsm-...git
+# Variables d'environnement :
+#   ITSM_REPO_URL  URL git du dépôt (défaut : GitHub public)
+#   ITSM_REF       branche/tag à installer (défaut : main)
+#   ITSM_DIR       répertoire cible (défaut : itsm-modern-ai)
+#
+# NOTE : le dépôt doit être accessible anonymement (public) — sinon, mettre un token
+# dans ITSM_REPO_URL, ex. https://oauth2:<TOKEN>@gitlab.example.com/<group>/itsm-...git
 set -eu
 
 REPO_URL="${ITSM_REPO_URL:-https://github.com/WicaebethTheo/itsm-modern-ai.git}"
