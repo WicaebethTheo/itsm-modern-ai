@@ -20,6 +20,12 @@ from ..config.settings import Settings
 from ..persistence.tables import RuntimeConfig
 from ..ports.secrets import SecretsPort
 
+# Sentinelle de DÉSACTIVATION explicite d'un réglage surchargeable. Une valeur vide ("")
+# est traitée comme « non surchargé » → repli sur l'env. Or, pour `license_key`, un DELETE
+# doit RE-VERROUILLER même si LICENSE_KEY est présent dans l'env (sinon on retombe Supporter).
+# Ce marqueur stocké signifie « retiré volontairement : NE PAS retomber sur l'env ».
+CLEARED_SENTINEL = "__cleared__"
+
 # Clés reconnues comme secrets (toujours chiffrées).
 SECRET_KEYS = frozenset(
     {
@@ -43,6 +49,9 @@ PLAIN_KEYS = frozenset(
         "openai_base_url", "openai_model",
         "ollama_base_url", "ollama_model",
         "anthropic_base_url", "anthropic_model",
+        # Tarifs €/Mtok : surchargeables à chaud, sinon le cost cap est faux après une
+        # bascule de fournisseur via l'UI (chaque provider a ses propres tarifs).
+        "llm_price_input_per_mtok", "llm_price_output_per_mtok",
         # Moteur
         "confidence_threshold", "cost_cap_eur_per_day", "llm_retries",
         "execution_mode_default", "auto_min_confidence_default",
@@ -97,10 +106,18 @@ class RuntimeConfigService:
         return row is not None and bool(row.value)
 
     def get(self, key: str) -> str | None:
-        """Réglage non-secret : surcharge base, sinon valeur d'environnement."""
+        """Réglage non-secret : surcharge base, sinon valeur d'environnement.
+
+        Cas particulier `license_key` : la sentinelle `CLEARED_SENTINEL` signifie « licence
+        retirée volontairement » → on renvoie None SANS retomber sur l'env (sinon un DELETE
+        /api/license re-verrouillerait pas quand LICENSE_KEY est défini dans l'env).
+        """
         row = self._row(key)
-        if row is not None and row.value != "":
-            return row.value
+        if row is not None:
+            if key == "license_key" and row.value == CLEARED_SENTINEL:
+                return None
+            if row.value != "":
+                return row.value
         return self._env_default(key)
 
     def get_bool(self, key: str, default: bool = False) -> bool:
@@ -135,6 +152,8 @@ class RuntimeConfigService:
             "llm_provider": s.llm_provider,
             "llm_base_url": s.llm_base_url,
             "llm_model": s.llm_model,
+            "llm_price_input_per_mtok": str(s.llm_price_input_per_mtok),
+            "llm_price_output_per_mtok": str(s.llm_price_output_per_mtok),
             "openai_base_url": s.openai_base_url,
             "openai_model": s.openai_model,
             "ollama_base_url": s.ollama_base_url,

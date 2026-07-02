@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -91,7 +91,9 @@ def _to_entry(
 
 @router.get("/decisions", response_model=list[DecisionEntry])
 def list_decisions(
-    limit: int = DEFAULT_DECISIONS_LIMIT,
+    # Borne le paramètre : sans `ge=1`, `limit=-1` produirait `LIMIT -1` = table ENTIÈRE
+    # (fuite de volumétrie / coût mémoire). `le=10_000` plafonne la page la plus large.
+    limit: int = Query(default=DEFAULT_DECISIONS_LIMIT, ge=1, le=10_000),
     session: Session = Depends(get_session),
     cfg: RuntimeConfigService = Depends(get_config_service),
 ) -> list[DecisionEntry]:

@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, event
 from sqlmodel import Session, SQLModel, create_engine
 
 from . import tables  # noqa: F401  (enregistre les tables dans SQLModel.metadata)
@@ -19,6 +19,23 @@ def _ensure_sqlite_dir(database_url: str) -> None:
     if database_url.startswith(prefix):
         db_path = Path(database_url[len(prefix):])
         db_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _apply_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+    """PRAGMA appliqués à CHAQUE connexion SQLite (uniquement).
+
+    - `journal_mode=WAL` : les lectures ne bloquent plus les écritures (et inversement),
+      ce qui réduit fortement les « database is locked » quand le poller écrit pendant qu'une
+      requête UI lit.
+    - `busy_timeout=5000` : sur conflit d'écrou, SQLite ré-essaie jusqu'à 5 s avant d'échouer
+      au lieu de lever « database is locked » immédiatement.
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+    finally:
+        cursor.close()
 
 
 def init_engine(
@@ -39,6 +56,9 @@ def init_engine(
     _ensure_sqlite_dir(database_url)
     if database_url.startswith("sqlite"):
         _engine = create_engine(database_url, connect_args={"check_same_thread": False})
+        # PRAGMA WAL + busy_timeout posés à chaque nouvelle connexion SQLite (pas Postgres) :
+        # réduit les « database is locked » sous concurrence poller/UI.
+        event.listen(_engine, "connect", _apply_sqlite_pragmas)
     else:
         _engine = create_engine(
             database_url,

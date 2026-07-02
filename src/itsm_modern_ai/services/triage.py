@@ -21,7 +21,7 @@ import anyio
 from sqlmodel import Session
 
 from ..config.settings import Settings
-from ..domain import engine, masking, prompting
+from ..domain import engine, masking, prompting, whitelist
 from ..domain.errors import LlmResponseError, LlmTransportError
 from ..domain.models import (
     Priority,
@@ -88,11 +88,13 @@ def render_followup(outcome: TriageOutcome, refs: Referentials, *, applied: bool
         prio = f"{Priority(d.priority).name} (#{d.priority})"
     except ValueError:
         prio = str(d.priority)
-    # Routage : technicien si éligible, sinon groupe (fallback).
-    if d.technician_id is not None and d.technician_id in refs.technicians:
-        assignee = f"Technicien {refs.technicians[d.technician_id]} (#{d.technician_id})"
-    elif d.group_id is not None:
-        assignee = f"Groupe {refs.groups.get(d.group_id, str(d.group_id))} (#{d.group_id})"
+    # Routage : MÊME assignation filtrée que celle appliquée à GLPI (whitelist.effective_
+    # assignment) → le Suivi ne peut pas afficher un acteur différent de la mutation réelle.
+    tech_id, group_id = whitelist.effective_assignment(d, refs)
+    if tech_id is not None:
+        assignee = f"Technicien {refs.technicians[tech_id]} (#{tech_id})"
+    elif group_id is not None:
+        assignee = f"Groupe {refs.groups.get(group_id, str(group_id))} (#{group_id})"
     else:
         assignee = "—"
     return (
@@ -162,14 +164,20 @@ class TriageService:
         return self._advanced_masker.mask(text) if self._advanced_masker is not None else text
 
     async def _call_llm(self, system: str, user: str) -> LlmResult:
-        """Appel LLM avec retry borné (FR-9) + backoff court sur erreur transport."""
+        """Appel LLM avec retry borné (FR-9) + backoff court.
+
+        On retente aussi bien les erreurs de transport (réseau/429) que les réponses
+        invalides (`LlmResponseError` : JSON malformé, schéma KO, `content: null` d'un
+        filtre de contenu) — la docstring de `LlmResponseError` promet « après retry »,
+        et une sortie non conforme est souvent transitoire (bavardage, troncature).
+        """
         last: Exception | None = None
         for attempt in range(self._retries + 1):
             if attempt:  # jamais avant le 1er essai — uniquement entre deux tentatives
                 await _sleep(LLM_RETRY_BACKOFF_S[min(attempt - 1, len(LLM_RETRY_BACKOFF_S) - 1)])
             try:
                 return await self._llm.complete(system, user)
-            except LlmTransportError as exc:
+            except (LlmTransportError, LlmResponseError) as exc:
                 last = exc
         raise last  # type: ignore[misc]
 
@@ -281,30 +289,49 @@ class TriageService:
             action = resolve_action(outcome, mode, auto_threshold)
             d = outcome.decision
             assert d is not None
+            # FR-7 : n'appliquer QUE des acteurs éligibles (le LLM peut proposer un
+            # technicien hors périmètre à côté d'un groupe valide). Même valeur pour la
+            # mutation et le Suivi → pas de divergence GLPI/Journal.
+            tech_id, group_id = whitelist.effective_assignment(d, refs)
             if action.apply:  # modes semi/full-auto : mutation réelle du Ticket
+                # Si apply échoue : rien n'a été muté → on laisse l'exception remonter
+                # (ticket non marqué « traité », repris au cycle suivant, sans état partiel).
                 await self._itsm.apply_decision(
                     ticket.id,
                     category=d.category,
                     priority=d.priority,
-                    technician_id=d.technician_id,
-                    group_id=d.group_id,
+                    technician_id=tech_id,
+                    group_id=group_id,
                 )
                 applied = True
             if action.write_followup:  # toujours pour une Décision acceptée
-                # Appliqué (semi/full-auto) → réponse PUBLIQUE au demandeur (brouillon seul).
-                # Suggestion → Suivi interne PRIVÉ annoté (brouillon jamais envoyé).
-                content = render_followup(outcome, refs, applied=applied)
-                if applied:
-                    # DURCISSEMENT audit 2026-05 : avant toute publication PUBLIQUE, on
-                    # RE-MASQUE le brouillon LLM (le LLM peut recracher une PII présente
-                    # dans le ticket et non détectée à l'entrée, ou injectée) et on borne
-                    # sa longueur. Le mode suggestion (privé) n'est pas concerné.
-                    content = self._advanced(masking.mask(content, **self._mask_flags).text)
-                    if len(content) > PUBLIC_DRAFT_MAX_CHARS:
-                        content = content[:PUBLIC_DRAFT_MAX_CHARS].rstrip() + "…"
-                await self._itsm.write_followup(ticket.id, content, private=not applied)
-                wrote = True
+                # Le Suivi est un acte SECONDAIRE. Si la mutation a déjà eu lieu (applied),
+                # une exception ici NE doit PAS empêcher le marquage « traité » : sinon le
+                # cycle suivant re-muterait le Ticket → doublon (2e réponse publique). On
+                # journalise donc l'état atteint dans tous les cas (voir plus bas) et on
+                # avale l'échec du Suivi en le loggant.
+                try:
+                    # Appliqué (semi/full-auto) → réponse PUBLIQUE au demandeur (brouillon seul).
+                    # Suggestion → Suivi interne PRIVÉ annoté (brouillon jamais envoyé).
+                    content = render_followup(outcome, refs, applied=applied)
+                    if applied:
+                        # DURCISSEMENT audit 2026-05 : avant toute publication PUBLIQUE, on
+                        # RE-MASQUE le brouillon LLM (le LLM peut recracher une PII présente
+                        # dans le ticket et non détectée à l'entrée, ou injectée) et on borne
+                        # sa longueur. Le mode suggestion (privé) n'est pas concerné.
+                        content = self._advanced(masking.mask(content, **self._mask_flags).text)
+                        if len(content) > PUBLIC_DRAFT_MAX_CHARS:
+                            content = content[:PUBLIC_DRAFT_MAX_CHARS].rstrip() + "…"
+                    await self._itsm.write_followup(ticket.id, content, private=not applied)
+                    wrote = True
+                except Exception as exc:
+                    logger.warning(
+                        "triage: écriture du Suivi échouée (ticket=%s, applied=%s): %s",
+                        ticket.id, applied, exc,
+                    )
 
+        # Journal TOUJOURS écrit (FR-19/20) — y compris si le Suivi a échoué après une
+        # mutation : la trace d'audit doit refléter l'acte réellement appliqué à GLPI.
         with self._session_factory() as session:
             journal.record_decision(
                 session, ticket.id, outcome, glpi_link=glpi_link, mode=mode.value,

@@ -50,6 +50,9 @@ def build_connector(
                 max_tickets=settings.polling_max_tickets,
                 stats_max=settings.dashboard_max_tickets,
                 ssrf_guard=settings.ssrf_guard_enabled,
+                # On-premise : GLPI est presque toujours sur IP/host privé → on tolère le
+                # local pour les SEULS clients GLPI (cf. settings.glpi_allow_private_host).
+                allow_local=settings.glpi_allow_private_host,
             )
         creds = cfg.glpi_credentials()
     if not creds.is_configured:
@@ -61,6 +64,8 @@ def build_connector(
         # restait figé au défaut du connecteur alors que le V2 honorait le réglage.
         stats_max=settings.dashboard_max_tickets,
         ssrf_guard=settings.ssrf_guard_enabled,
+        # On-premise : GLPI est presque toujours sur IP/host privé → tolérance ciblée GLPI.
+        allow_local=settings.glpi_allow_private_host,
     )
 
 
@@ -170,6 +175,17 @@ def build_triage_service(
         # Seuil de confiance + plafond de coût : valeurs runtime (réglables via l'UI).
         confidence_threshold = cfg.get_float("confidence_threshold", settings.confidence_threshold)
         cost_cap_eur_per_day = cfg.get_float("cost_cap_eur_per_day", settings.cost_cap_eur_per_day)
+        # Tarifs €/Mtok résolus runtime (UI > .env). Le moteur (triage._journal_llm_call) les
+        # lit via settings.llm_price_* ; on lui passe donc une COPIE de settings porteuse des
+        # valeurs surchargées, sans modifier triage.py (calcul du cost cap juste après bascule).
+        price_in = cfg.get_float("llm_price_input_per_mtok", settings.llm_price_input_per_mtok)
+        price_out = cfg.get_float("llm_price_output_per_mtok", settings.llm_price_output_per_mtok)
+    settings = settings.model_copy(
+        update={
+            "llm_price_input_per_mtok": price_in,
+            "llm_price_output_per_mtok": price_out,
+        }
+    )
     return TriageService(
         itsm=itsm,
         llm=llm,

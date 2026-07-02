@@ -22,9 +22,13 @@ from ....ssrf import make_guarded_event_hooks
 _TOKEN_REFRESH_MARGIN_S = 60
 
 
-def _ssrf_event_hooks(guard: bool) -> dict[str, list] | None:
-    """Event hook httpx anti-SSRF (garde partagé, DNS hors event loop). GLPI n'est jamais local."""
-    return make_guarded_event_hooks(guard=guard, allow_local=False)
+def _ssrf_event_hooks(guard: bool, allow_local: bool = False) -> dict[str, list] | None:
+    """Event hook httpx anti-SSRF (garde partagé, DNS hors event loop).
+
+    `allow_local=True` (produit on-premise, GLPI sur IP/host privé) tolère une cible interne
+    pour CE client GLPI uniquement — cf. settings.glpi_allow_private_host.
+    """
+    return make_guarded_event_hooks(guard=guard, allow_local=allow_local)
 
 
 def token_endpoint(base_url: str) -> str:
@@ -46,6 +50,7 @@ class GlpiV2Client:
         creds: GlpiV2Credentials,
         *,
         ssrf_guard: bool = False,
+        allow_local: bool = False,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         if not creds.is_configured:
@@ -57,10 +62,11 @@ class GlpiV2Client:
         self._token: str | None = None
         self._token_deadline: float = 0.0  # time.monotonic() au-delà duquel on renouvelle
         self._owns_client = client is None
+        # `allow_local` tolère une cible GLPI interne (on-premise, cf. glpi_allow_private_host).
         self._client = client or httpx.AsyncClient(
             verify=creds.verify_tls,
             timeout=creds.timeout_seconds,
-            event_hooks=_ssrf_event_hooks(ssrf_guard) or {},
+            event_hooks=_ssrf_event_hooks(ssrf_guard, allow_local) or {},
         )
 
     # ── OAuth2 ──────────────────────────────────────────────────────────────────

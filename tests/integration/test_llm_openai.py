@@ -72,6 +72,42 @@ async def test_missing_field_raises_response_error():
 
 
 @respx.mock
+async def test_html_200_body_raises_response_error():
+    # Portail captif / proxy renvoyant du HTML en 200 : doit devenir une LlmResponseError
+    # typée (retry + « à trier »), jamais une exception brute qui re-facture en boucle.
+    respx.post(URL).mock(return_value=httpx.Response(200, text="<html>Bad Gateway</html>"))
+    with pytest.raises(LlmResponseError):
+        await _adapter().complete("sys", "user")
+
+
+@respx.mock
+async def test_null_content_raises_response_error():
+    # Filtre de contenu (Azure/OpenRouter) : `content: null` → LlmResponseError, pas TypeError.
+    respx.post(URL).mock(
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": None}}], "usage": None})
+    )
+    with pytest.raises(LlmResponseError):
+        await _adapter().complete("sys", "user")
+
+
+@respx.mock
+async def test_null_usage_does_not_crash():
+    # `usage: null` ne doit pas lever d'AttributeError : tokens comptés à 0.
+    respx.post(URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": '{"category":1,"priority":3,"technician_id":11,'
+                                         '"draft":"ok","confidence":0.9}'}}],
+                "usage": None,
+            },
+        )
+    )
+    result = await _adapter().complete("sys", "user")
+    assert result.prompt_tokens == 0 and result.completion_tokens == 0
+
+
+@respx.mock
 async def test_extra_field_rejected():
     respx.post(URL).mock(
         return_value=_chat_response(

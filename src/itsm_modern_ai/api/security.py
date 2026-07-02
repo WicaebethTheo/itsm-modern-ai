@@ -73,15 +73,19 @@ def session_is_authenticated(request: Request) -> bool:
     Sert aux endpoints publics à réponse « enrichie si authentifié » (ex. /api/status) :
     mêmes règles que `require_auth` (session active, ou admin ouvert via `dev_open_admin`
     quand aucun mot de passe n'est configuré), mais en simple prédicat.
+
+    Durcissement : on NE se fie PAS au seul cookie. Si l'admin n'est pas configuré, un cookie
+    résiduel ne vaut « authentifié » que sous `dev_open_admin` (fail-closed sinon), exactement
+    comme `require_auth` — sinon un cookie orphelin ouvrirait une instance sans mot de passe.
     """
-    if request.session.get("authenticated"):
-        return True
     from .deps import config_service_from_request
 
     with config_service_from_request(request) as cfg:
         configured = auth_is_configured(cfg)
         dev_open = bool(getattr(cfg.settings, "dev_open_admin", False))
-    return not configured and dev_open
+    if not configured:
+        return dev_open
+    return bool(request.session.get("authenticated"))
 
 
 def require_auth(request: Request) -> None:

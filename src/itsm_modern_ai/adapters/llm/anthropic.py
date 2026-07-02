@@ -128,12 +128,24 @@ class AnthropicLlm:
             event_hooks=self._event_hooks,
         )
 
-        body = resp.json()
+        # Un 200 au corps inattendu (portail captif → HTML, filtre → bloc sans texte) doit
+        # devenir une LlmResponseError typée : sinon l'exception brute échappe au pipeline
+        # (ni retry ni « à trier »), le ticket n'est jamais marqué traité et l'appel est
+        # re-facturé à chaque cycle sans passer par le cost cap.
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise LlmResponseError(f"Corps de réponse Anthropic non-JSON: {exc}") from exc
         try:
             text = body["content"][0]["text"]
-            usage = body.get("usage", {})
+            usage = body.get("usage") or {}  # `"usage": null` → dict vide (pas d'AttributeError)
         except (KeyError, IndexError, TypeError) as exc:
             raise LlmResponseError(f"Réponse Anthropic inattendue: {exc}") from exc
+
+        # `text: null` (bloc de contenu non textuel) → l'extraction lèverait un AttributeError
+        # non typé. On le rejette explicitement.
+        if not isinstance(text, str):
+            raise LlmResponseError(f"Texte de réponse Anthropic absent ou non-textuel: {type(text).__name__}")
 
         # Extraction tolérante (premier objet JSON équilibré) → robuste à un fence Markdown
         # ou un préambule. Le system_prompt + l'instruction utilisateur visent du JSON pur.

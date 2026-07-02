@@ -29,3 +29,22 @@ def check(decision: Decision, refs: Referentials) -> TriageReason | None:
     if not technician_ok and not group_ok:
         return TriageReason.NO_ELIGIBLE_ASSIGNEE
     return None
+
+
+def effective_assignment(decision: Decision, refs: Referentials) -> tuple[int | None, int | None]:
+    """Assignation RÉELLEMENT applicable, filtrée contre le périmètre (FR-7).
+
+    Défense en profondeur au moment de l'écriture : même quand `check()` a accepté la
+    Décision (au moins un acteur éligible), le LLM peut avoir proposé un `technician_id`
+    HORS whitelist accompagné d'un groupe éligible. Or le mapper GLPI **préfère** le
+    technicien → sans ce filtre, un utilisateur jamais validé par l'admin serait assigné
+    dans GLPI pendant que le Journal afficherait le groupe (trou d'audit + contournement
+    de la frontière de confiance, exploitable par prompt-injection).
+
+    On ne retourne donc un ID que s'il est éligible : technicien si dans le périmètre,
+    sinon groupe si dans le périmètre, sinon rien. Utilisé par la mutation GLPI ET le
+    rendu du Suivi → les deux reflètent le MÊME acteur.
+    """
+    tech = decision.technician_id if decision.technician_id in refs.technicians else None
+    group = decision.group_id if decision.group_id in refs.groups else None
+    return tech, group

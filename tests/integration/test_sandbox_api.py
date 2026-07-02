@@ -119,3 +119,58 @@ def test_sandbox_uses_db_scope_even_without_cache(client):
     assert body["accepted"] is True
     assert body["reason"] == "accepted"
     assert body["category"] == 1 and body["technician_id"] == 11
+
+
+# ── M3 : la sandbox respecte le cost cap ET journalise l'appel LLM ────────────
+@respx.mock
+def test_sandbox_journals_llm_call_visible_in_cost(client):
+    client.post(
+        "/api/config",
+        json={
+            "llm_api_key": "sk-test",
+            "llm_price_input_per_mtok": 2.0,
+            "llm_price_output_per_mtok": 6.0,
+        },
+    )
+    decision_json = (
+        '{"category":1,"priority":3,"technician_id":11,"draft":"Bonjour","confidence":0.88}'
+    )
+    respx.post(f"{LLM_BASE}/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": decision_json}}],
+                "usage": {"prompt_tokens": 1000, "completion_tokens": 500},
+            },
+        )
+    )
+    # Base vierge : aucun appel comptabilisé.
+    assert client.get("/api/cost").json()["llm_calls_total"] == 0
+    r = client.post("/api/sandbox", json={"content": "mon mail est alice@acme.com"})
+    assert r.status_code == 200
+    cost = client.get("/api/cost").json()
+    # L'appel sandbox est désormais journalisé (ticket_id=0) et compté dans le cost cap.
+    assert cost["llm_calls_total"] == 1
+    # Coût = 1000/1e6*2 + 500/1e6*6 = 0.005 €.
+    assert cost["spent_eur_last_24h"] > 0
+
+
+def test_sandbox_refused_over_cost_cap(client):
+    # Plafond quasi nul + une dépense seedée → is_over_cap True AVANT tout appel LLM.
+    client.post("/api/config", json={"llm_api_key": "sk-test", "cost_cap_eur_per_day": 0.001})
+    from itsm_modern_ai.persistence import db, journal
+
+    with db.session_scope() as s:
+        journal.record_llm_call(
+            s,
+            ticket_id=0,
+            model="m",
+            prompt_sent="x",
+            response_received="y",
+            prompt_tokens=0,
+            completion_tokens=0,
+            cost_eur=1.0,
+        )
+    r = client.post("/api/sandbox", json={"content": "pc lent"})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "cost_cap_reached"

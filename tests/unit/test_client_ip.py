@@ -48,10 +48,18 @@ def test_two_trusted_proxies_takes_second_from_right():
     assert client_ip(req, trusted_proxies=True, trusted_hops=2) == "10.0.0.2"
 
 
-def test_hops_longer_than_chain_clamps_to_leftmost():
-    # Moins d'entrées que de proxys attendus → on retombe sur la valeur connue la plus à gauche.
+def test_hops_longer_than_chain_falls_back_to_client_host():
+    # Moins d'entrées que de proxys attendus : la valeur la plus à gauche est fournie par le
+    # client (spoofable), NON celle posée par notre proxy. On refuse de la retenir et on
+    # retombe sur l'IP TCP réelle (request.client.host), non falsifiable.
     req = _request(headers=[(b"x-forwarded-for", b"203.0.113.9, 10.0.0.2")])
-    assert client_ip(req, trusted_proxies=True, trusted_hops=5) == "203.0.113.9"
+    assert client_ip(req, trusted_proxies=True, trusted_hops=5) == "1.2.3.4"
+
+
+def test_hops_longer_than_chain_no_client_returns_unknown():
+    # Même cas mais sans IP TCP : on renvoie "unknown" plutôt qu'une valeur spoofable.
+    req = _request(client_host=None, headers=[(b"x-forwarded-for", b"203.0.113.9, 10.0.0.2")])
+    assert client_ip(req, trusted_proxies=True, trusted_hops=5) == "unknown"
 
 
 def test_with_trust_but_no_header_falls_back_to_client_host():

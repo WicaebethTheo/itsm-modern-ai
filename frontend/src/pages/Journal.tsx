@@ -1,5 +1,5 @@
 import { EmptyState } from "@/components/EmptyState";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PanelHead } from "@/components/ui/panel";
@@ -17,6 +17,7 @@ function AnnotationCell({ d, ph }: { d: DecisionEntry; ph: string }) {
   const toast = useToast();
   const [value, setValue] = useState(d.annotation);
   const [saved, setSaved] = useState<"idle" | "ok">("idle");
+  const [busy, setBusy] = useState(false);
   return (
     <div className="flex items-center gap-2">
       <Input
@@ -31,13 +32,17 @@ function AnnotationCell({ d, ph }: { d: DecisionEntry; ph: string }) {
       <Button
         size="sm"
         variant="outline"
+        disabled={busy}
         onClick={async () => {
+          setBusy(true);
           try {
             await Api.annotate(d.id, value);
             setSaved("ok");
             toast.success(t("Annotation enregistrée.", "Annotation saved."));
           } catch (e) {
             toast.error((e as Error).message);
+          } finally {
+            setBusy(false);
           }
         }}
       >
@@ -64,15 +69,18 @@ export function Journal() {
           // En démo, les exports CSV pointent vers un backend absent (405) → masqués.
           DEMO ? undefined : (
             <>
-              <a href="/api/export/decisions.csv">
-                <Button variant="outline" size="sm">
-                  {t("Export décisions", "Export decisions")}
-                </Button>
+              {/* Ancre stylée en bouton (pas de <button> dans <a> : HTML invalide). */}
+              <a
+                href="/api/export/decisions.csv"
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                {t("Export décisions", "Export decisions")}
               </a>
-              <a href="/api/export/llm-calls.csv">
-                <Button variant="outline" size="sm">
-                  {t("Export appels LLM", "Export LLM calls")}
-                </Button>
+              <a
+                href="/api/export/llm-calls.csv"
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                {t("Export appels LLM", "Export LLM calls")}
               </a>
             </>
           )

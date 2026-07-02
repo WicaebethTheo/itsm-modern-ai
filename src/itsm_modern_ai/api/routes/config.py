@@ -49,6 +49,9 @@ class ConfigView(BaseModel):
     ollama_model: str | None = None
     anthropic_base_url: str | None = None
     anthropic_model: str | None = None
+    # Tarifs LLM (€/Mtok) — surchargeables à chaud pour un cost cap juste après bascule.
+    llm_price_input_per_mtok: str | None = None
+    llm_price_output_per_mtok: str | None = None
     # Moteur
     confidence_threshold: str | None = None
     cost_cap_eur_per_day: str | None = None
@@ -104,6 +107,9 @@ class ConfigUpdate(BaseModel):
     ollama_model: str | None = None
     anthropic_base_url: str | None = None
     anthropic_model: str | None = None
+    # Tarifs LLM (€/Mtok) — bornés ge=0 ; alimentent le calcul de coût / cost cap.
+    llm_price_input_per_mtok: float | None = Field(default=None, ge=0.0)
+    llm_price_output_per_mtok: float | None = Field(default=None, ge=0.0)
     confidence_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     cost_cap_eur_per_day: float | None = Field(default=None, ge=0.0)
     llm_retries: int | None = Field(default=None, ge=0, le=5)
@@ -132,18 +138,34 @@ class ConfigUpdate(BaseModel):
     anthropic_api_key: str | None = None
 
     # ── Validation anti-SSRF des URLs de base (durcissement audit 2026-05) ────────
-    # Les URLs publiques (GLPI, Mistral, OpenAI, Anthropic) exigent https:// et un hôte
-    # routable (rejet loopback/IP privée/metadata cloud). Ollama est local → http +
-    # localhost/IP privée autorisés explicitement.
-    @field_validator(
-        "glpi_base_url", "glpi_v2_base_url", "llm_base_url", "openai_base_url", "anthropic_base_url"
-    )
+    # Les URLs LLM (Mistral, OpenAI, Anthropic) exigent https:// et un hôte routable
+    # (rejet loopback/IP privée/metadata cloud) : la clé part dans l'en-tête Authorization,
+    # une cible interne = SSRF + fuite de clé. Ollama est local → http + localhost/IP privée
+    # autorisés explicitement.
+    @field_validator("llm_base_url", "openai_base_url", "anthropic_base_url")
     @classmethod
     def _validate_public_url(cls, v: str | None) -> str | None:
         if v is None:
             return v
         try:
             return validate_base_url(v, allow_local=False)
+        except UrlSafetyError as exc:
+            raise ValueError(str(exc)) from exc
+
+    # GLPI est ON-PREMISE : sa base_url pointe presque toujours un hôte PRIVÉ (RFC1918,
+    # `.local`, loopback…). Interdire le local ici casserait l'install par défaut. On lit
+    # donc GLPI_ALLOW_PRIVATE (défaut True) : privé accepté pour GLPI, tout en gardant la
+    # garde stricte pour les URLs LLM ci-dessus.
+    @field_validator("glpi_base_url", "glpi_v2_base_url")
+    @classmethod
+    def _validate_glpi_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        from ...config.settings import get_settings
+
+        allow_local = get_settings().glpi_allow_private_host
+        try:
+            return validate_base_url(v, allow_local=allow_local)
         except UrlSafetyError as exc:
             raise ValueError(str(exc)) from exc
 

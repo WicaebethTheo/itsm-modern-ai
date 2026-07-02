@@ -40,16 +40,25 @@ class GlpiV2Connector:
         max_tickets: int = 200,
         stats_max: int = 500,
         ssrf_guard: bool = False,
+        allow_local: bool = False,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._creds = creds
         self._max_tickets = max_tickets
         self._stats_max = stats_max
         self._ssrf_guard = ssrf_guard
+        # On-premise : GLPI 11 peut vivre sur une IP/host privé → tolérance ciblée GLPI
+        # pour le garde anti-SSRF (settings.glpi_allow_private_host).
+        self._allow_local = allow_local
         self._http_client = http_client
 
     def _client(self) -> GlpiV2Client:
-        return GlpiV2Client(self._creds, ssrf_guard=self._ssrf_guard, client=self._http_client)
+        return GlpiV2Client(
+            self._creds,
+            ssrf_guard=self._ssrf_guard,
+            allow_local=self._allow_local,
+            client=self._http_client,
+        )
 
     async def get_new_tickets(self) -> list[Ticket]:
         async with self._client() as gc:

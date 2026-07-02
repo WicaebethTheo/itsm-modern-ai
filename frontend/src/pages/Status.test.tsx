@@ -6,7 +6,10 @@ import { Status } from "./Status";
 
 vi.mock("@/lib/api", async (orig) => {
   const actual = await orig<typeof import("@/lib/api")>();
-  return { ...actual, Api: { ...actual.Api, status: vi.fn(), health: vi.fn() } };
+  return {
+    ...actual,
+    Api: { ...actual.Api, status: vi.fn(), health: vi.fn(), getConfig: vi.fn() },
+  };
 });
 
 describe("Status", () => {
@@ -14,6 +17,7 @@ describe("Status", () => {
     vi.clearAllMocks();
     vi.mocked(Api.status).mockResolvedValue(demo.status);
     vi.mocked(Api.health).mockResolvedValue(demo.health);
+    vi.mocked(Api.getConfig).mockResolvedValue(demo.config);
   });
 
   it("affiche l'état des services (worker, GLPI, liste blanche)", async () => {

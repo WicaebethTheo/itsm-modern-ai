@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from ..domain.licensing import COMMUNITY_STATUS, LicenseStatus, verify_license
-from .runtime_config import RuntimeConfigService
+from .runtime_config import CLEARED_SENTINEL, RuntimeConfigService
 
 LICENSE_KEY = "license_key"
 
@@ -38,7 +38,10 @@ class LicenseService:
         return result
 
     def clear(self) -> None:
-        self._cfg.set(LICENSE_KEY, "")
+        # Sentinelle explicite (et non "") : une valeur vide serait relue comme « non
+        # surchargé » → repli sur l'env LICENSE_KEY, laissant l'édition en Supporter. Le
+        # marqueur force le retour en Community même quand LICENSE_KEY est défini dans l'env.
+        self._cfg.set(LICENSE_KEY, CLEARED_SENTINEL)
 
     def has_feature(self, key: str) -> bool:
         return self.status().has_feature(key)

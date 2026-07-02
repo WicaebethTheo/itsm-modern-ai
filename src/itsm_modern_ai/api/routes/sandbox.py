@@ -9,8 +9,10 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...persistence import db
-from ...services import referentials
+from ...domain import masking
+from ...persistence import db, journal
+from ...services import cost_cap, referentials
+from ...services.runtime_config import RuntimeConfigService
 from ..runtime import build_triage_service
 
 router = APIRouter(prefix="/api", tags=["sandbox"])
@@ -42,7 +44,8 @@ def _name_map(session, kind: str) -> dict[int, str]:
 @router.post("/sandbox", response_model=SandboxResponse)
 async def sandbox(body: SandboxRequest, request: Request) -> SandboxResponse:
     settings = request.app.state.settings
-    triage = build_triage_service(settings, request.app.state.secrets_box)
+    secrets = request.app.state.secrets_box
+    triage = build_triage_service(settings, secrets)
     if triage is None:
         raise HTTPException(
             status_code=409,
@@ -50,13 +53,44 @@ async def sandbox(body: SandboxRequest, request: Request) -> SandboxResponse:
         )
 
     raw = f"{body.title}\n{body.content}".strip()
-    # Périmètre EFFECTIF lu depuis la DB (catégories sélectionnées, techniciens/groupes
-    # éligibles), comme le moteur réel (cf. app.py:_effective_refs). On NE lit PAS le cache
-    # mémoire `whitelist_cache.referentials`, qui n'est peuplé que par le poller : si le
-    # polling est off, ce cache serait vide et la sandbox renverrait « à trier » à tort.
+    # Cost cap (FR-10) AVANT l'appel facturant, comme le moteur réel : la sandbox
+    # contournait le plafond ET n'apparaissait pas dans le journal LLM (dépense fantôme).
     with db.session_scope() as session:
+        cfg = RuntimeConfigService(session, secrets, settings)
+        cap = cfg.get_float("cost_cap_eur_per_day", settings.cost_cap_eur_per_day)
+        price_in = cfg.get_float("llm_price_input_per_mtok", settings.llm_price_input_per_mtok)
+        price_out = cfg.get_float("llm_price_output_per_mtok", settings.llm_price_output_per_mtok)
+        if cost_cap.is_over_cap(session, cap):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "cost_cap_reached",
+                    "message": "Plafond de coût LLM quotidien atteint : sandbox indisponible.",
+                },
+            )
+        # Périmètre EFFECTIF lu depuis la DB (catégories sélectionnées, techniciens/groupes
+        # éligibles), comme le moteur réel (cf. app.py:_effective_refs). On NE lit PAS le cache
+        # mémoire `whitelist_cache.referentials`, qui n'est peuplé que par le poller : si le
+        # polling est off, ce cache serait vide et la sandbox renverrait « à trier » à tort.
         refs = referentials.effective_referentials(session)
-    outcome, _ = await triage.evaluate_text(0, raw, refs)
+    outcome, result = await triage.evaluate_text(0, raw, refs)
+    # Journalise l'appel LLM (FR-19) même en sandbox → visible dans /api/cost et compté
+    # dans le cost cap. ticket_id=0 marque une décision hors-ticket (sandbox). Le prompt
+    # journalisé est masqué (jamais de PII au repos).
+    if result is not None:
+        with db.session_scope() as session:
+            journal.record_llm_call(
+                session,
+                ticket_id=0,
+                model=result.model,
+                prompt_sent=masking.mask(raw).text,
+                response_received=result.raw_response,
+                prompt_tokens=result.prompt_tokens,
+                completion_tokens=result.completion_tokens,
+                cost_eur=cost_cap.cost_eur(
+                    result.prompt_tokens, result.completion_tokens, price_in, price_out
+                ),
+            )
     d = outcome.decision
     # Résolution des noms via le cache de référentiels (même source que le Journal),
     # pour que l'UI affiche « Adrien Durand » plutôt que « T#9 ».

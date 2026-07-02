@@ -72,3 +72,24 @@ def test_metrics_token_required_when_set(tmp_path):
         # Bon jeton via X-Metrics-Token → 200.
         r2 = c.get("/metrics", headers={"X-Metrics-Token": "scrape-secret"})
         assert r2.status_code == 200
+
+
+def test_non_ascii_presented_token_returns_false_not_typeerror():
+    """Jeton présenté non-ASCII → refus propre (False), pas de TypeError.
+
+    `secrets.compare_digest(str, str)` lève TypeError sur un caractère non-ASCII (→ 500 au
+    lieu de 401). La comparaison en bytes évite le crash tout en refusant le jeton.
+    `_scrape_token_ok` est testé directement : httpx refuse d'émettre un header non-ASCII.
+    """
+    from starlette.requests import Request
+
+    from itsm_modern_ai.api.metrics import _scrape_token_ok
+
+    # Header latin-1 → décodé « clé » (é non-ASCII).
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/metrics",
+        "headers": [(b"authorization", b"Bearer cl\xe9")],
+    }
+    assert _scrape_token_ok(Request(scope), "scrape-secret") is False

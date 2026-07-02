@@ -88,13 +88,24 @@ class OpenAiCompatibleLlm:
             event_hooks=self._event_hooks,
         )
 
-        body = resp.json()
+        # Un 200 dont le corps n'est PAS le JSON attendu (portail captif, filtre de contenu
+        # renvoyant du HTML) doit devenir une LlmResponseError typée — sinon l'exception brute
+        # échappe au pipeline (ni retry ni « à trier »), le ticket n'est jamais marqué traité
+        # et l'appel LLM est **re-facturé à chaque cycle** sans que le cost cap ne le voie.
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise LlmResponseError(f"Corps de réponse LLM non-JSON: {exc}") from exc
         try:
             content = body["choices"][0]["message"]["content"]
-            usage = body.get("usage", {})
+            usage = body.get("usage") or {}  # `"usage": null` → dict vide (pas d'AttributeError)
         except (KeyError, IndexError, TypeError) as exc:
             raise LlmResponseError(f"Réponse LLM inattendue: {exc}") from exc
 
+        # `content: null` (filtre de contenu Azure/OpenRouter) → json.loads(None) lèverait un
+        # TypeError non typé. On le rejette explicitement en LlmResponseError.
+        if not isinstance(content, str):
+            raise LlmResponseError(f"Contenu de réponse LLM absent ou non-textuel: {type(content).__name__}")
         try:
             data = json.loads(content)
         except json.JSONDecodeError as exc:
