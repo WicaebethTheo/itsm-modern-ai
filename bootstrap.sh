@@ -17,7 +17,8 @@
 #   ITSM_DIR       répertoire cible (défaut : itsm-modern-ai)
 #
 # NOTE : le dépôt doit être accessible anonymement (public) — sinon, mettre un token
-# dans ITSM_REPO_URL, ex. https://oauth2:<TOKEN>@gitlab.example.com/<group>/itsm-...git
+# fournissez un ITSM_REPO_URL authentifie via un git credential helper, plutot
+# que d'inscrire un jeton en clair dans l'URL.
 set -eu
 
 REPO_URL="${ITSM_REPO_URL:-https://github.com/WicaebethTheo/itsm-modern-ai.git}"
