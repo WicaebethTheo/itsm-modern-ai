@@ -1,0 +1,40 @@
+# Annonce automatique des releases sur Discord (via webhook).
+# Se declenche quand une release GitHub est publiee. Inerte si le secret
+# DISCORD_WEBHOOK_URL n'est pas defini (Settings -> Secrets -> Actions).
+name: Annonce Discord des releases
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Poster la release sur Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          NAME: ${{ github.event.release.name }}
+          TAG: ${{ github.event.release.tag_name }}
+          BODY: ${{ github.event.release.body }}
+          URL: ${{ github.event.release.html_url }}
+        run: |
+          set -eu
+          if [ -z "${WEBHOOK:-}" ]; then
+            echo "DISCORD_WEBHOOK_URL non defini -> annonce ignoree."
+            exit 0
+          fi
+          title="${NAME:-$TAG}"
+          # Limite embed Discord = 4096 ; on tronque les notes a 3900 par securite.
+          desc="$(printf '%s' "${BODY:-}" | head -c 3900)"
+          payload="$(jq -n \
+            --arg t "$title" \
+            --arg d "$desc" \
+            --arg u "$URL" \
+            '{username:"ITSM Modern AI",
+              embeds:[{title:$t, url:$u, description:$d, color:8141037}]}')"
+          curl -fsSL -X POST -H "Content-Type: application/json" -d "$payload" "$WEBHOOK"
+          echo "Annonce Discord postee pour $title."

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" role="img" aria-label="ITSM Modern AI">
+  <defs>
+    <linearGradient id="iaGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366f1" />
+      <stop offset="1" stop-color="#8b8df7" />
+    </linearGradient>
+  </defs>
+  <!-- Fond sombre arrondi (palette « operator preview » #0b0b14) — ressort sur tout onglet. -->
+  <rect width="40" height="40" rx="9" fill="#0b0b14" />
+  <!-- Nœud de décision : une entrée (haut) qui se ramifie ; le code DÉCIDE une branche (✓). -->
+  <!-- Arête vers la branche écartée (gauche, atténuée). -->
+  <path d="M20 13 L12.5 26.5" stroke="#3b3d7a" stroke-width="2.2" stroke-linecap="round" fill="none" />
+  <!-- Arête vers la branche décidée (droite, accent). -->
+  <path d="M20 13 L27.5 26.5" stroke="url(#iaGrad)" stroke-width="2.6" stroke-linecap="round" fill="none" />
+  <!-- Nœud d'entrée (le LLM propose). -->
+  <circle cx="20" cy="11" r="3.4" fill="url(#iaGrad)" />
+  <!-- Branche écartée. -->
+  <circle cx="12" cy="28" r="3" fill="#3b3d7a" />
+  <!-- Branche décidée + coche (le code décide/valide). -->
+  <circle cx="27.5" cy="28" r="5" fill="url(#iaGrad)" />
+  <path d="M25.1 28.2 L26.9 30 L30.1 26.1" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+</svg>

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.local
+.vite/
+
+# Artefacts de tests E2E (Playwright)
+test-results/
+playwright-report/
+.playwright/

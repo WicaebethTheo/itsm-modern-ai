@@ -1,0 +1,195 @@
+{
+  "_comment": "Story 1.1 — jeu de tickets FR réels/réalistes de la Queue longue (flous, mal formulés, signaux faibles, hors-périmètre). Vérité terrain = triage humain attendu. expected_outcome='a_trier' = cas où le moteur DOIT refuser de décider. Contenu PII synthétique pour exercer le masquage (FR-14). À enrichir avec de vrais tickets anonymisés du homelab/pilote.",
+  "referentials": {
+    "categories": {
+      "1": "Compte / Authentification",
+      "2": "Application RH / Paie / ERP",
+      "3": "Poste de travail / Matériel",
+      "4": "Messagerie / Collaboratif",
+      "5": "Réseau / Sécurité",
+      "6": "Imprimante / Périphérique",
+      "7": "Téléphonie"
+    },
+    "technicians": {
+      "11": "Sylvain",
+      "12": "Nadia",
+      "13": "Marc",
+      "14": "Léa"
+    },
+    "priorities": {
+      "1": "Très basse",
+      "2": "Basse",
+      "3": "Moyenne",
+      "4": "Haute",
+      "5": "Très haute",
+      "6": "Majeure"
+    }
+  },
+  "tickets": [
+    {
+      "id": 1001,
+      "title": "plus accès congés",
+      "content": "bonjour j'ai plus accès au truc des congés, ça me fait un cadenas rouge quand je clique",
+      "expected_outcome": "decided",
+      "expected_category": 2,
+      "expected_priority": 3,
+      "expected_technician_id": 12,
+      "tags": ["flou", "ambigu_routage"],
+      "notes": "UJ-1. 'cadenas rouge' peut faire penser certificat (Sylvain) mais le besoin réel = appli congés/RH (Nadia)."
+    },
+    {
+      "id": 1002,
+      "title": "pc lent",
+      "content": "j'ai cliqué sur un lien dans un mail et depuis mon pc est super lent",
+      "expected_outcome": "decided",
+      "expected_category": 5,
+      "expected_priority": 4,
+      "expected_technician_id": 11,
+      "tags": ["signal_faible"],
+      "notes": "UJ-3. Formulé comme une lenteur PC, c'est en réalité un possible incident de sécurité → priorité haute, Sylvain."
+    },
+    {
+      "id": 1003,
+      "title": "imprimante",
+      "content": "slt jarrive pu a imprimer, le toner clignote et ya un voyant orange sur la HP du couloir",
+      "expected_outcome": "decided",
+      "expected_category": 6,
+      "expected_priority": 2,
+      "expected_technician_id": 13,
+      "tags": ["argot", "faute"],
+      "notes": "Argot/SMS + fautes. Cas clair une fois décodé : imprimante → Marc."
+    },
+    {
+      "id": 1004,
+      "title": "bulletin de paie introuvable",
+      "content": "Bonjour, je ne retrouve pas mon bulletin de paie de mars sur le portail RH. Pouvez-vous regarder ? Mon adresse est jean.martin@exemple.fr",
+      "expected_outcome": "decided",
+      "expected_category": 2,
+      "expected_priority": 3,
+      "expected_technician_id": 12,
+      "tags": ["pii_email"],
+      "notes": "Doit masquer l'email avant l'appel LLM."
+    },
+    {
+      "id": 1005,
+      "title": "connexion impossible",
+      "content": "Impossible de me connecter ce matin, ça dit mot de passe incorrect alors que c'est le bon. mdp: Toto2024Ete, mon tel 06 12 34 56 78 si besoin",
+      "expected_outcome": "decided",
+      "expected_category": 1,
+      "expected_priority": 3,
+      "expected_technician_id": 11,
+      "tags": ["pii_secret", "pii_phone"],
+      "notes": "Doit masquer le mot de passe ET le téléphone. Compte/AD → Sylvain."
+    },
+    {
+      "id": 1006,
+      "title": "outlook bloqué",
+      "content": "Mon outlook n'envoie plus rien depuis hier, les mails restent coincés dans la boîte d'envoi",
+      "expected_outcome": "decided",
+      "expected_category": 4,
+      "expected_priority": 3,
+      "expected_technician_id": 14,
+      "tags": ["clair"],
+      "notes": "Messagerie → Léa."
+    },
+    {
+      "id": 1007,
+      "title": "horaires cantine",
+      "content": "Bonjour, pourriez-vous me dire les horaires de la cantine cette semaine svp ?",
+      "expected_outcome": "a_trier",
+      "expected_category": null,
+      "expected_priority": null,
+      "expected_technician_id": null,
+      "tags": ["hors_perimetre"],
+      "notes": "Hors IT. Le moteur doit refuser de décider (confiance basse attendue)."
+    },
+    {
+      "id": 1008,
+      "title": "",
+      "content": "Bonjour",
+      "expected_outcome": "a_trier",
+      "expected_category": null,
+      "expected_priority": null,
+      "expected_technician_id": null,
+      "tags": ["flou", "vide"],
+      "notes": "Aucune information exploitable → à trier."
+    },
+    {
+      "id": 1009,
+      "title": "wifi rame 2e etage",
+      "content": "le wifi du 2e étage rame depuis ce matin, on est plusieurs à se plaindre dans l'open space",
+      "expected_outcome": "decided",
+      "expected_category": 5,
+      "expected_priority": 4,
+      "expected_technician_id": 11,
+      "tags": ["multi_utilisateurs"],
+      "notes": "Réseau, impact collectif → priorité haute, Sylvain."
+    },
+    {
+      "id": 1010,
+      "title": "portable hs",
+      "content": "mon ordi portable ne s'allume plus du tout, écran noir, et j'ai un rdv client cet aprem c'est chaud",
+      "expected_outcome": "decided",
+      "expected_category": 3,
+      "expected_priority": 4,
+      "expected_technician_id": 13,
+      "tags": ["urgence_contextuelle"],
+      "notes": "Matériel HS + contexte urgent → Marc, priorité haute."
+    },
+    {
+      "id": 1011,
+      "title": "telephone muet",
+      "content": "mon téléphone fixe ne sonne plus, je loupe tous les appels entrants",
+      "expected_outcome": "decided",
+      "expected_category": 7,
+      "expected_priority": 2,
+      "expected_technician_id": 13,
+      "tags": ["clair"],
+      "notes": "Téléphonie → Marc."
+    },
+    {
+      "id": 1012,
+      "title": "changement rib",
+      "content": "Je souhaite changer mon RIB pour le virement du salaire. Mon nouvel IBAN est FR76 3000 4000 0512 3456 7890 143, merci.",
+      "expected_outcome": "decided",
+      "expected_category": 2,
+      "expected_priority": 2,
+      "expected_technician_id": 12,
+      "tags": ["pii_iban"],
+      "notes": "Doit masquer l'IBAN. Demande RH → Nadia."
+    },
+    {
+      "id": 1013,
+      "title": "ça marche pas",
+      "content": "bonjour ça marche pas",
+      "expected_outcome": "a_trier",
+      "expected_category": null,
+      "expected_priority": null,
+      "expected_technician_id": null,
+      "tags": ["flou"],
+      "notes": "Trop vague → à trier."
+    },
+    {
+      "id": 1014,
+      "title": "mail bizarre mdp",
+      "content": "j'ai reçu un mail bizarre qui me demande de confirmer mon mot de passe, je sais pas si c'est normal ou si je clique",
+      "expected_outcome": "decided",
+      "expected_category": 5,
+      "expected_priority": 4,
+      "expected_technician_id": 11,
+      "tags": ["signal_faible", "phishing"],
+      "notes": "Phishing potentiel → sécurité, Sylvain, priorité haute. Ne pas confondre avec messagerie."
+    },
+    {
+      "id": 1015,
+      "title": "erp plante validation commande",
+      "content": "l'ERP plante systématiquement quand je valide une commande, j'ai un message d'erreur à l'écran",
+      "expected_outcome": "decided",
+      "expected_category": 2,
+      "expected_priority": 3,
+      "expected_technician_id": 12,
+      "tags": ["appli_metier"],
+      "notes": "Bug applicatif ERP → Nadia."
+    }
+  ]
+}

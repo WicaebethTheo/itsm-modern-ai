@@ -1,0 +1,158 @@
+# Publication de l'image conteneur sur GHCR (ghcr.io), multi-arch amd64 + arm64.
+# C'est l'image PUBLIQUE consommee par le deploiement orchestrateur (Portainer,
+# docker run, one-liner curl|bash) et par docker-compose.portainer.yml.
+#
+# Declencheurs :
+#   - push sur `main`            -> tags `latest` + `sha-<court>` (suit l'etat de main) ;
+#   - release publiee (tag vX.Y.Z) -> tags semver `X.Y.Z`, `X.Y`, et `latest`.
+# (On declenche sur l'evenement `release` plutot que `push: tags` : les releases de ce
+# depot sont creees via l'API GitHub, qui n'emet pas toujours un push de tag.)
+#
+# GHCR exige un nom d'image en MINUSCULES ; le repo contient des majuscules
+# (WicaebethTheo) -> on force le lowercase via ${GITHUB_REPOSITORY,,}.
+name: Publish image (GHCR)
+
+on:
+  push:
+    branches: [main]
+    # Un commit qui ne touche QUE de la doc ne reconstruit pas l'image (rien dans
+    # l'image ne change). Les releases reconstruisent toujours (pas de filtre).
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "docker-compose*.yml"
+      - "LICENSE"
+      - ".gitignore"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# Deux pushes rapproches sur main : seul le dernier compte (le `latest` du premier
+# serait immediatement remplace) -> on annule le run en cours. Les releases, elles,
+# ne s'annulent JAMAIS : chaque tag semver doit etre publie meme si un autre run
+# tourne (leurs refs forment de toute facon des groupes distincts).
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  # Porte qualite AVANT publication : memes verifications que ci.yml (ruff + pytest).
+  # Sans elle, un push casse sur main devenait directement le `latest` public tire
+  # par tous les deploiements (Portainer, docker run, one-liner curl|bash).
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # setup-uv plutot que `pip install uv` : version geree par l'action + cache uv
+      # automatique (cle sur uv.lock). Coherent avec ci.yml.
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install deps (uv.lock fige)
+        run: uv sync --frozen --all-extras
+      - name: ruff
+        run: uv run ruff check src tests
+      - name: pytest
+        run: uv run pytest -q
+
+  build-and-push:
+    # Rien ne part sur GHCR si les tests echouent.
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Nom d'image en minuscules (GHCR l'exige)
+        id: img
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: QEMU (cross-build arm64)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags / labels (semver + latest + sha)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.img.outputs.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short,enable={{is_default_branch}}
+
+      # Smoke test AVANT publication : on construit l'image amd64 et on la charge
+      # dans le daemon local (`load: true`), puis on la BOOTE reellement. Le cache
+      # gha est alimente ici -> le build multi-arch final ne refait que l'arm64.
+      - name: Build amd64 (image de smoke, chargee localement)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: itsm-smoke:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Ce que le build seul ne prouve pas : migrations Alembic OK, uvicorn repond,
+      # amorcage admin au boot effectif (contrat du deploiement pull-only — sans lui,
+      # la console demarre verrouillee). Si ca casse, rien n'est publie.
+      - name: Smoke test (boot + /health + /api/status + amorcage admin)
+        run: |
+          set -euo pipefail
+          docker run -d --name itsm-smoke \
+            -e ITSM_ADMIN_PASSWORD=smoke-ci-password \
+            -p 8000:8000 itsm-smoke:ci
+          # Attente max ~90 s (45 x 2 s) : migrations + demarrage uvicorn.
+          ok=""
+          for _ in $(seq 1 45); do
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1 \
+              && curl -fsS http://localhost:8000/api/status >/dev/null 2>&1; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          echo "── logs du conteneur ──"
+          docker logs itsm-smoke || true
+          if [ -z "$ok" ]; then
+            echo "::error::smoke test KO : /health ou /api/status injoignable apres ~90 s"
+            docker rm -f itsm-smoke
+            exit 1
+          fi
+          # L'amorcage admin doit avoir eu lieu (ou etre idempotent-skippe).
+          if ! docker logs itsm-smoke 2>&1 | grep -Eq "compte admin amorcé|admin déjà configuré"; then
+            echo "::error::smoke test KO : aucun amorcage admin dans les logs"
+            docker rm -f itsm-smoke
+            exit 1
+          fi
+          docker rm -f itsm-smoke
+
+      # Publication : uniquement si test + smoke sont passes. Le cache gha rempli
+      # par le smoke rend la part amd64 quasi instantanee.
+      - name: Build & push multi-arch
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

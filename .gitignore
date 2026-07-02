@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Env & secrets — JAMAIS committer (invariant souveraineté / secrets chiffrés)
+.env
+*.key
+master.key
+
+# Données locales
+*.db
+*.sqlite3
+data/
+
+# Sorties du spike
+spike-report*.json
+spike-report*.md
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Mockups / images de travail
+Untitled.png
+*.mockup.png
+
+# Notes internes (planning BMad, passation entre agents, archives) — non publié
+notes/
+
+# Sauvegardes locales créées par update.sh (base + master.key)
+backups/

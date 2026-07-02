@@ -1,0 +1,25 @@
+# Fiches techniciens — FIXTURE du spike Epic 1 (homelab CLI) UNIQUEMENT.
+# Au runtime (pilote), les fiches sont gérées dans l'interface web (base de données),
+# pas dans un fichier. Ce YAML ne sert qu'au script scripts/spike_routing.py.
+technicians:
+  - technician_id: 11
+    name: Sylvain
+    profile: >
+      12 ans de maison, expert Active Directory, gestion des comptes et des accès,
+      réinitialisation de mots de passe, certificats, et tout ce qui touche au réseau
+      et à la sécurité (VPN, pare-feu, phishing, postes compromis).
+  - technician_id: 12
+    name: Nadia
+    profile: >
+      Référente des applications métier : SIRH, paie, congés, ERP. Connaît les
+      processus RH et financiers ; bulletins, déclarations, accès aux applis RH.
+  - technician_id: 13
+    name: Marc
+    profile: >
+      Support de proximité : postes de travail, PC lents ou en panne, écrans, claviers,
+      imprimantes, scanners, toner, téléphonie fixe et VoIP.
+  - technician_id: 14
+    name: Léa
+    profile: >
+      Messagerie et outils collaboratifs : Outlook, Microsoft 365, Teams, partages de
+      fichiers, mobilité. Boîtes mail, listes de diffusion, synchronisation.

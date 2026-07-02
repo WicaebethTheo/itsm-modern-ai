@@ -1,0 +1,32 @@
+# ITSM Modern AI — stack pull-only (Portainer / orchestrateur).
+# Portainer : Stacks > Add stack > coller > définir ITSM_ADMIN_PASSWORD (>= 8 car.) > Deploy.
+# L'admin est amorcé au 1er boot depuis cette variable. NE JAMAIS faire `down -v` (supprime itsm_data).
+services:
+  itsm:
+    image: ghcr.io/wicaebeththeo/itsm-modern-ai:latest
+    container_name: itsm-modern-ai
+    restart: unless-stopped
+    environment:
+      ITSM_ADMIN_PASSWORD: ${ITSM_ADMIN_PASSWORD:-}        # requis au 1er boot (>= 8 car. ; alias ADMIN_PASSWORD)
+      SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}     # false = login OK en HTTP ; true derrière un proxy TLS
+      DATABASE_URL: ${ITSM_DATABASE_URL:-sqlite:////app/data/itsm.db}
+      LICENSE_KEY: ${LICENSE_KEY:-}                         # vide = Community
+    ports:
+      - "${ITSM_HOST_PORT:-8000}:8000"
+    volumes:
+      - itsm_data:/app/data
+    # Durcissement : non-root, caps minimales (chown/gosu du volume au boot), FS read-only.
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health?probe=true').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  itsm_data:

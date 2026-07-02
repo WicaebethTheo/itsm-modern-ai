@@ -1,0 +1,17 @@
+.git
+.venv
+venv
+data
+*.db
+*.sqlite3
+master.key
+.env
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+spike-report*
+tests
+docs
+frontend/node_modules
+frontend/dist

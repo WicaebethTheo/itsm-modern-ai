@@ -1,0 +1,237 @@
+@import "tailwindcss";
+
+/* Variante sombre activée par la classe `.dark` sur <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tokens HSL -> utilitaires Tailwind v4. */
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent-indigo: hsl(var(--accent-indigo));
+  --color-accent-purple: hsl(var(--accent-purple));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-sidebar: hsl(var(--sidebar));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+
+  /* Police : Geist (auto-hébergé via @fontsource-variable) avec fallback système.
+     Tant que le paquet n'est pas installé, le fallback s'applique sans casse. */
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo,
+    Consolas, monospace;
+}
+
+/* Thème CLAIR (mode « white ») — variante claire dérivée de la palette indigo. */
+:root {
+  --background: 210 20% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --primary: 239 84% 60%;
+  --primary-foreground: 0 0% 100%;
+  --muted: 210 16% 95%;
+  --muted-foreground: 215 16% 42%;
+  --accent: 210 16% 93%;
+  --accent-foreground: 222 47% 11%;
+  --accent-indigo: 239 84% 55%;
+  --accent-purple: 280 84% 60%;
+  --destructive: 0 72% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 152 55% 33%;
+  --warning: 38 92% 42%;
+  --border: 214 20% 88%;
+  --input: 214 20% 84%;
+  --ring: 239 84% 60%;
+  --sidebar: 210 22% 97%;
+}
+
+/* Thème SOMBRE (mode « black », défaut) — palette « Operator Preview » :
+   fond quasi-noir bleuté #0b0b14, accent indigo #6366f1, bordures alpha-blanc très discrètes. */
+.dark {
+  --background: 240 29% 6%; /* #0b0b14 */
+  --foreground: 240 27% 92%; /* #e6e6f0 */
+  --card: 240 24% 9%; /* surface douce relevée */
+  --card-foreground: 240 27% 92%;
+  --primary: 239 84% 67%; /* #6366f1 */
+  --primary-foreground: 0 0% 100%;
+  --muted: 240 16% 13%;
+  --muted-foreground: 240 12% 58%; /* #8a8aa0 */
+  --accent: 240 14% 12%; /* hover de surface */
+  --accent-foreground: 240 27% 92%;
+  --accent-indigo: 236 100% 82%; /* #a4a6ff — texte sur fond indigo translucide */
+  --accent-purple: 280 84% 72%; /* texte sur fond violet translucide */
+  --destructive: 0 91% 71%; /* #f87171 */
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 70% 58%; /* #4ade80 */
+  --warning: 43 96% 56%; /* #fbbf24 */
+  --border: 240 11% 16%; /* ~ rgba(255,255,255,0.07) sur le fond */
+  --input: 240 12% 20%;
+  --ring: 239 84% 67%;
+  --sidebar: 240 30% 5%; /* légèrement plus sombre que le contenu */
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  html {
+    color-scheme: light dark;
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Focus visible cohérent (spec § 8). */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+    background-clip: content-box;
+  }
+}
+
+/* === Châssis « embed » : la console flotte dans un conteneur centré === */
+
+/* Fond derrière le shell : jamais plat. Mesh indigo multi-stops (sobre, DSI) — un halo
+   principal en haut + deux accents froids hors-axe pour la profondeur, sur la teinte de base. */
+.app-backdrop {
+  position: relative;
+  isolation: isolate; /* contient le grain ::before sans déborder sur le reste */
+  background-color: hsl(var(--muted));
+  background-image: radial-gradient(
+      1100px 520px at 50% -8%,
+      hsl(var(--primary) / 0.07),
+      transparent 60%
+    ), radial-gradient(720px 620px at 102% -4%, hsl(252 90% 60% / 0.05), transparent 58%),
+    radial-gradient(820px 720px at -6% 104%, hsl(217 91% 60% / 0.04), transparent 60%);
+}
+.dark .app-backdrop {
+  background-color: #060610;
+  background-image: radial-gradient(
+      1100px 520px at 50% -8%,
+      hsl(var(--primary) / 0.12),
+      transparent 62%
+    ), radial-gradient(760px 640px at 102% -5%, hsl(252 90% 65% / 0.1), transparent 58%),
+    radial-gradient(860px 780px at -6% 105%, hsl(217 91% 60% / 0.07), transparent 60%);
+}
+/* Grain subtil (SVG feTurbulence) en overlay — sous le contenu, jamais cliquable. */
+.app-backdrop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.dark .app-backdrop::before {
+  opacity: 0.045;
+}
+
+/* Le shell : ombre portée qui le détache du fond (le contour vient de border-border). */
+.app-shell {
+  position: relative;
+  z-index: 0; /* au-dessus du grain ::before (z-index:-1) */
+  box-shadow: 0 10px 40px -14px rgb(0 0 0 / 0.22), 0 2px 10px -6px rgb(0 0 0 / 0.14);
+}
+.dark .app-shell {
+  box-shadow: 0 24px 70px -24px rgb(0 0 0 / 0.75), 0 0 0 1px hsl(var(--border));
+}
+
+/* Zone de contenu : halo indigo TRÈS discret en haut pour que le pane ne soit pas plat.
+   Porté par la colonne non-scrollante → reste pinné quand le contenu défile. */
+.app-content {
+  background-image: radial-gradient(
+    1200px 380px at 50% -12%,
+    hsl(var(--primary) / 0.05),
+    transparent 70%
+  );
+}
+.dark .app-content {
+  background-image: radial-gradient(
+    1200px 380px at 50% -12%,
+    hsl(var(--primary) / 0.08),
+    transparent 70%
+  );
+}
+
+/* === Atomes visuels portés de la maquette « operator preview » === */
+
+/* Logo « nœud de décision » (dégradé indigo). */
+.logo-grad-a {
+  fill: #6366f1;
+}
+.logo-grad-b {
+  fill: #8b8df7;
+}
+
+/* Accessibilité : couper animations/transitions si l'utilisateur le demande (spec design §7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Sparkline en mini-barres (carte KPI). */
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+.spark span {
+  width: 3px;
+  border-radius: 1px;
+  background: rgba(139, 141, 247, 0.55);
+}
+
+/* Barres du graphe de tendance : plein = série principale, .dim = secondaire atténué. */
+.bar {
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(to top, #4f52e5, #8b8df7);
+}
+.bar.dim {
+  background: linear-gradient(to top, #2a2c66, #3d3f8a);
+}

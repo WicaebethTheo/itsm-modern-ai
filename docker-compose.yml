@@ -1,0 +1,84 @@
+# ITSM Modern AI - deploiement on-prem (1 service + volume SQLite).
+# La config (GLPI, cles LLM, perimetre) vit dans ./data (DB + master.key).
+# NE JAMAIS faire `docker compose down -v` (-v supprime ./data). Fixez MASTER_KEY dans .env.
+services:
+  itsm:
+    build: .
+    # Image unique : tout le code (dont les features Supporter) est livre dedans,
+    # verrouille tant qu'aucune licence valide n'est fournie. Pas de swap d'image.
+    image: itsm-modern-ai:latest
+    container_name: itsm-modern-ai
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Defaut SQLite. PostgreSQL (Beta) : ITSM_DATABASE_URL dans .env + profile postgres.
+      DATABASE_URL: ${ITSM_DATABASE_URL:-sqlite:////app/data/itsm.db}
+      # Licence Supporter (vide = Community) ; aussi collable via l'UI (page Supporter).
+      LICENSE_KEY: ${LICENSE_KEY:-}
+      # Amorcage admin au 1er boot (deploiement non-interactif / orchestrateur) :
+      # l'entrypoint cree le compte admin depuis cette valeur si aucun n'est encore
+      # configure (idempotent, jamais ecrase). Vide = pas d'amorcage automatique.
+      ITSM_ADMIN_PASSWORD: ${ITSM_ADMIN_PASSWORD:-}
+    ports:
+      # Port hote pilotable via install.sh --port ; port interne fixe = 8000.
+      - "${ITSM_HOST_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+    # Durcissement : pas d'escalade ; drop ALL caps sauf le minimum requis au boot.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
+    # FS racine en lecture seule ; l'app n'ecrit que dans /app/data. /tmp en tmpfs.
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health?probe=true').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # Bornage CPU/memoire (anti-emballement sur hote mutualise).
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # PostgreSQL (Beta) - service optionnel (profile `postgres`) ; sinon SQLite par defaut.
+  # Activer : docker compose --profile postgres up -d --build (+ ITSM_DATABASE_URL dans .env).
+  postgres:
+    image: postgres:16-alpine
+    container_name: itsm-postgres
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-itsm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-itsm}
+      POSTGRES_DB: ${POSTGRES_DB:-itsm}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-itsm} -d ${POSTGRES_DB:-itsm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
