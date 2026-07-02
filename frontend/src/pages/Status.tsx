@@ -1,3 +1,4 @@
+import { Banner } from "@/components/Banner";
 import { Card } from "@/components/ui/card";
 import { Dot, type DotTone } from "@/components/ui/dot";
 import { useResource } from "@/hooks/useResource";
@@ -32,8 +33,12 @@ export function Status() {
   const t = useT();
   const status = useResource(useCallback(() => Api.status(), []));
   const health = useResource(useCallback(() => Api.health(), []));
+  const cfg = useResource(useCallback(() => Api.getConfig(), []));
   const s = status.data;
   const h = health.data;
+  // Version d'API réellement configurée (comme Layout) — le méta ne doit pas être figé.
+  const isV2 = cfg.data?.glpi_api_version === "v2";
+  const loadError = status.error ?? health.error;
 
   // Champs enrichis renvoyés seulement avec une session admin (la page est derrière
   // RequireAuth, mais on reste défensif : le type les déclare optionnels).
@@ -63,7 +68,9 @@ export function Status() {
         : h.glpi.reachable
           ? t("Connecté", "Connected")
           : t("Injoignable", "Unreachable"),
-      meta: t("API legacy (apirest.php)", "Legacy API (apirest.php)"),
+      meta: isV2
+        ? t("API V2 (high-level OAuth2)", "V2 API (high-level OAuth2)")
+        : t("API legacy (apirest.php)", "Legacy API (apirest.php)"),
       tone: !h?.glpi.configured ? "muted" : h.glpi.reachable ? "green" : "red",
     },
     {
@@ -100,6 +107,12 @@ export function Status() {
 
   return (
     <div className="space-y-4">
+      {/* status/health en échec : on l'affiche au lieu de « — » partout sans explication. */}
+      {loadError && (
+        <Banner kind="error">
+          {t("API injoignable :", "API unreachable:")} {loadError}
+        </Banner>
+      )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {services.map((svc) => (
           <ServicePanel key={svc.name} {...svc} />

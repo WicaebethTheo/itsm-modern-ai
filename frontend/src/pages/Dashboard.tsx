@@ -1,3 +1,4 @@
+import { Banner } from "@/components/Banner";
 import { ProgressBar, Sparkline, StackedBars } from "@/components/Charts";
 import { EmptyState } from "@/components/EmptyState";
 import { Card } from "@/components/ui/card";
@@ -55,8 +56,17 @@ export function Dashboard() {
   );
   const pct = (n: number) => (m?.total ? Math.round((n / m.total) * 100) : 0);
 
+  // GET en échec : on le signale au lieu d'afficher des « — » muets partout.
+  const loadError = metrics.error ?? ops.error ?? decisions.error;
+
   return (
     <div className="space-y-4">
+      {loadError && (
+        <Banner kind="error">
+          {t("Données du tableau de bord indisponibles :", "Dashboard data unavailable:")}{" "}
+          {loadError}
+        </Banner>
+      )}
       {/* 5 cartes KPI */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard

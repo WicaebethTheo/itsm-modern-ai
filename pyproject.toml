@@ -1,6 +1,6 @@
 [project]
 name = "itsm-modern-ai"
-version = "0.9.45"
+version = "0.9.46"
 description = "Assistant IA de triage de tickets GLPI — moteur à garde-fous (pilote V1)."
 readme = "README.md"
 requires-python = ">=3.13"

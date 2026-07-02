@@ -17,7 +17,7 @@ function subscribe(callback: () => void) {
   };
 }
 
-function snapshot(): Lang {
+export function snapshot(): Lang {
   return typeof localStorage !== "undefined" && localStorage.getItem(KEY) === "fr" ? "fr" : "en";
 }
 

@@ -1,3 +1,4 @@
+import { Banner } from "@/components/Banner";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,6 +34,7 @@ export function GlpiConnection() {
   const [apiVersion, setApiVersion] = useState<GlpiApiVersion>("legacy");
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [scopes, setScopes] = useState<Set<string>>(new Set(["api", "user"]));
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -51,6 +53,30 @@ export function GlpiConnection() {
 
   const isV2 = apiVersion === "v2";
 
+  // Champs propres à chaque mode : au switch, on purge de `form` ceux du mode que
+  // l'on quitte pour ne JAMAIS renvoyer au backend une URL/secret saisi puis abandonné
+  // (ce qui n'est plus affiché ne doit pas partir). Généralise le cas du scope.
+  function switchApiVersion(next: GlpiApiVersion) {
+    if (next === apiVersion) return;
+    setApiVersion(next);
+    const drop: (keyof ConfigUpdate)[] =
+      next === "v2"
+        ? ["glpi_base_url", "glpi_user_token", "glpi_app_token"]
+        : [
+            "glpi_v2_base_url",
+            "glpi_oauth_client_id",
+            "glpi_oauth_username",
+            "glpi_oauth_scope",
+            "glpi_oauth_client_secret",
+            "glpi_oauth_password",
+          ];
+    setForm((f) => {
+      const copy = { ...f };
+      for (const k of drop) delete copy[k];
+      return copy;
+    });
+  }
+
   function toggleScope(scope: string, next: boolean) {
     const ns = new Set(scopes);
     if (next) ns.add(scope);
@@ -64,6 +90,7 @@ export function GlpiConnection() {
   }
 
   async function save() {
+    setSaving(true);
     try {
       // On retire un éventuel scope « orphelin » du form (saisi en V2 puis bascule legacy)
       // et on ne le renvoie QUE si l'on est réellement en V2.
@@ -82,6 +109,8 @@ export function GlpiConnection() {
       toast.success(t("Connexion GLPI enregistrée.", "GLPI connection saved."));
     } catch (e: unknown) {
       toast.error(`${t("Erreur", "Error")} : ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -185,6 +214,14 @@ export function GlpiConnection() {
         }
       />
       <CardContent className="flex flex-col gap-4 p-5">
+        {/* GET config en échec : on prévient au lieu de laisser un formulaire muet
+            (les défauts locaux écraseraient la config réelle si on enregistrait). */}
+        {cfg.error && (
+          <Banner kind="error">
+            {t("Impossible de charger la configuration :", "Could not load the configuration:")}{" "}
+            {cfg.error}
+          </Banner>
+        )}
         {/* Aperçu LIVE : sous quel compte GLPI le bot agit (config enregistrée). */}
         {(() => {
           const a = account.data;
@@ -271,10 +308,14 @@ export function GlpiConnection() {
 
         <Field label={t("Version de l'API GLPI", "GLPI API version")}>
           <div className="flex gap-1 rounded-md border border-border bg-muted/40 p-1">
-            <button type="button" className={segBtn(!isV2)} onClick={() => setApiVersion("legacy")}>
+            <button
+              type="button"
+              className={segBtn(!isV2)}
+              onClick={() => switchApiVersion("legacy")}
+            >
               {t("Legacy (apirest.php)", "Legacy (apirest.php)")}
             </button>
-            <button type="button" className={segBtn(isV2)} onClick={() => setApiVersion("v2")}>
+            <button type="button" className={segBtn(isV2)} onClick={() => switchApiVersion("v2")}>
               <span className="inline-flex items-center gap-1.5">
                 {t("API V2 (high-level OAuth2)", "V2 API (high-level OAuth2)")}
                 <Tag tone="amber">{t("Beta", "Beta")}</Tag>
@@ -403,7 +444,9 @@ export function GlpiConnection() {
         />
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={save}>{t("Enregistrer", "Save")}</Button>
+          <Button onClick={save} disabled={!cfg.data || saving}>
+            {saving ? t("Enregistrement…", "Saving…") : t("Enregistrer", "Save")}
+          </Button>
           <Button variant="outline" onClick={testConnection} disabled={testing}>
             {testing ? t("Test…", "Testing…") : t("Tester la connexion", "Test connection")}
           </Button>

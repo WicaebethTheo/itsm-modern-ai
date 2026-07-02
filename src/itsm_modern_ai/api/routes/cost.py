@@ -34,6 +34,10 @@ class CostView(BaseModel):
 def cost(request: Request, cfg: RuntimeConfigService = Depends(get_config_service)) -> CostView:
     s = cfg.settings
     cap = cfg.get_float("cost_cap_eur_per_day", s.cost_cap_eur_per_day)
+    # Tarifs résolus runtime (UI > .env) : sinon la vue afficherait les tarifs .env alors
+    # que le moteur facture avec les tarifs surchargés (cost cap incohérent).
+    price_in = cfg.get_float("llm_price_input_per_mtok", s.llm_price_input_per_mtok)
+    price_out = cfg.get_float("llm_price_output_per_mtok", s.llm_price_output_per_mtok)
     with db.session_scope() as session:
         spent = round(cost_cap.spent_last_24h(session), 4)
         total = journal.count_llm_calls(session)
@@ -44,6 +48,6 @@ def cost(request: Request, cfg: RuntimeConfigService = Depends(get_config_servic
         pct_of_cap=pct,
         over_cap=cap > 0 and spent >= cap,
         llm_calls_total=total,
-        price_input_per_mtok=s.llm_price_input_per_mtok,
-        price_output_per_mtok=s.llm_price_output_per_mtok,
+        price_input_per_mtok=price_in,
+        price_output_per_mtok=price_out,
     )

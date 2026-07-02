@@ -33,6 +33,9 @@ export function Debug() {
   const [err, setErr] = useState("");
 
   const enabled = status.data?.enabled ?? false;
+  // Ne montrer « Outils désactivés » que sur une réponse réelle (enabled=false) :
+  // un GET en échec doit remonter l'erreur, pas se faire passer pour un flag désactivé.
+  const disabledKnown = status.data != null && !status.data.enabled;
 
   async function wrap(name: string, fn: () => Promise<void>) {
     setErr("");
@@ -49,11 +52,16 @@ export function Debug() {
 
   return (
     <div className="flex flex-col gap-4">
-      {!enabled && (
+      {disabledKnown && (
         <Banner kind="warning">
           {t("Outils désactivés. Active ", "Tools disabled. Set ")}
           <code>DEBUG_TOOLS_ENABLED=true</code>
           {t(" pour les utiliser.", " to use them.")}
+        </Banner>
+      )}
+      {status.error && (
+        <Banner kind="error">
+          {t("État des outils indisponible :", "Tools status unavailable:")} {status.error}
         </Banner>
       )}
       {err && <Banner kind="error">{err}</Banner>}

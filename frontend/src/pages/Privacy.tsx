@@ -1,6 +1,6 @@
 import { Banner } from "@/components/Banner";
 import { LockedBadge } from "@/components/ui/LockedBadge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
@@ -216,10 +216,9 @@ export function Privacy() {
                     {t("appels enregistrés", "recorded calls")}
                   </span>
                 </div>
-                <Link to="/journal">
-                  <Button variant="outline" size="sm">
-                    {t("Voir le journal llm_calls", "View llm_calls journal")}
-                  </Button>
+                {/* Link stylé en bouton (pas de <button> dans <a> : HTML invalide). */}
+                <Link to="/journal" className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  {t("Voir le journal llm_calls", "View llm_calls journal")}
                 </Link>
               </CardContent>
             </Card>
@@ -285,11 +284,14 @@ export function Privacy() {
                     </Button>
                   </span>
                 ) : (
-                  <a href={DPO_REPORT_URL} download>
-                    <Button variant="outline" size="sm">
-                      <FileDown className="h-4 w-4" />
-                      {t("Télécharger (.md)", "Download (.md)")}
-                    </Button>
+                  // Ancre stylée en bouton (pas de <button> dans <a> : HTML invalide).
+                  <a
+                    href={DPO_REPORT_URL}
+                    download
+                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                  >
+                    <FileDown className="h-4 w-4" />
+                    {t("Télécharger (.md)", "Download (.md)")}
                   </a>
                 )}
               </CardContent>

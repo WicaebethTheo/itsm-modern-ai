@@ -110,7 +110,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.45";
+export const APP_VERSION = "0.9.46";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -187,6 +187,9 @@ export interface ConfigView {
   ollama_model: string | null;
   anthropic_base_url: string | null;
   anthropic_model: string | null;
+  // Tarifs LLM (EUR/Mtok) surchargeables a chaud : cost cap juste apres bascule de provider.
+  llm_price_input_per_mtok: string | null;
+  llm_price_output_per_mtok: string | null;
   confidence_threshold: string | null;
   cost_cap_eur_per_day: string | null;
   llm_retries: string | null;
@@ -234,6 +237,8 @@ export interface ConfigUpdate {
   ollama_model?: string;
   anthropic_base_url?: string;
   anthropic_model?: string;
+  llm_price_input_per_mtok?: number;
+  llm_price_output_per_mtok?: number;
   confidence_threshold?: number;
   cost_cap_eur_per_day?: number;
   llm_retries?: number;

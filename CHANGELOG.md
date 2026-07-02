@@ -5,6 +5,50 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-07-02 — 0.9.46 — Durcissement du cœur de triage (audit approfondi)
+
+### Sécurité — garde-fous du moteur
+- **Contournement de whitelist fermé (FR-7)** : un `technician_id` proposé par le LLM hors
+  périmètre, accompagné d'un groupe éligible, n'est plus jamais appliqué à GLPI. La mutation
+  et le Journal utilisent la même assignation filtrée (`whitelist.effective_assignment`) —
+  fin du trou d'audit et du vecteur d'injection de prompt en mode automatique.
+- **Dépense LLM bornée** : toute réponse LLM 200 malformée (`content: null`, `usage: null`,
+  corps HTML d'un portail captif) devient une erreur typée `LlmResponseError` — plus de
+  boucle de re-facturation invisible au plafond de coût. Les erreurs de sortie invalide sont
+  désormais retentées (FR-9).
+- **Périmètre vide** : si aucune catégorie n'est sélectionnée, le polling saute le cycle sans
+  consommer les tickets ni lancer d'appel LLM au rejet garanti (l'arriéré est préservé).
+- **Intégrité de l'audit** : une décision appliquée à GLPI est toujours journalisée, même si
+  l'écriture du Suivi échoue ensuite (plus de mutation « fantôme » ni de doublon de réponse).
+
+### Sécurité — surface & configuration
+- **GLPI on-premise** : nouveau flag `GLPI_ALLOW_PRIVATE` (défaut `true`) autorisant une
+  cible GLPI sur IP/hôte privé, sans relâcher la garde SSRF pour le LLM et le vérificateur
+  de mises à jour.
+- **Retrait de licence effectif** : « retirer la clé » re-verrouille en Community même
+  lorsque `LICENSE_KEY` est fourni par l'environnement (sentinelle interne).
+- **Plafond de coût fiable après changement de fournisseur** : les prix €/token sont
+  éditables depuis la console (plus besoin d'éditer le `.env` du conteneur).
+- **Sandbox** : soumise au plafond de coût (409 si atteint) et journalisée comme les appels
+  réels ; en-têtes durcis ; `session_is_authenticated` aligné sur le fail-closed ;
+  rate-limit login non contournable par un X-Forwarded-For trop court ; SQLite en WAL +
+  `busy_timeout` (moins de « database is locked ») ; borne sur `GET /api/decisions?limit`.
+
+### Console
+- Formulaires de configuration : les valeurs (dont les secrets) d'un mode/fournisseur
+  abandonné ne sont plus envoyées à l'insu de l'opérateur ; le bouton Enregistrer est
+  inactif tant que la configuration n'est pas chargée ; erreurs réseau affichées au lieu
+  d'être avalées ; anti double-soumission ; message de login discriminant (panne ≠ mauvais
+  mot de passe).
+
+### Site & docs
+- Landing : navigation mobile, langue correcte au rendu serveur (FR pour un visiteur FR),
+  ancres de la page tarifs réparées, accessibilité (skip-link).
+- Docs : correction d'affirmations fausses (masquage IBAN/secrets = Supporter et non
+  Community ; purge RGPD active par défaut ; anti-brute-force login ; Python 3.13) ;
+  `UPDATE_CHECK_URL`/`TRUST_PROXY_HEADERS` documentés ; note de ré-émission des licences
+  antérieures à la 0.9.44.
+
 ## 2026-07-02 — 0.9.45 — Correctifs de revue post-0.9.44
 
 ### Corrigé

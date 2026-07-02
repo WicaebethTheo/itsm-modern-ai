@@ -194,7 +194,8 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
 export function Automations() {
   const t = useT();
   const retention = useResource(useCallback(() => Api.retention(), []));
-  const activeCount = retention.data ? 1 : 0;
+  // « Active » = purge réellement activée, pas simplement la ressource chargée.
+  const activeCount = retention.data?.enabled ? 1 : 0;
   const total = 1 + PLANNED.length;
 
   return (

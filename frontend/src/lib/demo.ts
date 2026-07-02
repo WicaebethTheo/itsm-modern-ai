@@ -74,7 +74,7 @@ export const demo: {
 } = {
   authStatus: { authenticated: true, auth_configured: false },
   info: {
-    version: "0.9.45",
+    version: "0.9.46",
     title: "ITSM Modern AI — moteur de triage (headless)",
     endpoints: [
       { path: "/health", methods: ["GET"] },
@@ -115,7 +115,7 @@ export const demo: {
   },
   status: {
     ok: true,
-    version: "0.9.45", // même valeur que APP_VERSION — règle de release
+    version: "0.9.46", // même valeur que APP_VERSION — règle de release
     polling_enabled: true,
     polling_interval_seconds: 60,
     whitelist_loaded: true,
@@ -210,6 +210,8 @@ export const demo: {
     ollama_model: "llama3.1",
     anthropic_base_url: "https://api.anthropic.com",
     anthropic_model: "claude-sonnet-4-6",
+    llm_price_input_per_mtok: "2.0",
+    llm_price_output_per_mtok: "6.0",
     confidence_threshold: "0.7",
     cost_cap_eur_per_day: "5",
     llm_retries: "1",
@@ -296,7 +298,7 @@ export const demo: {
     last_run_by: "scheduler",
   },
   version: {
-    current: "0.9.45",
+    current: "0.9.46",
     latest: null,
     update_available: false,
     check_enabled: false,

@@ -71,6 +71,24 @@ async def test_invalid_json_raises_response_error():
 
 
 @respx.mock
+async def test_html_200_body_raises_response_error():
+    # Portail captif / proxy en 200 HTML → LlmResponseError typée, jamais d'exception brute.
+    respx.post(MSG).mock(return_value=httpx.Response(200, text="<html>Bad Gateway</html>"))
+    with pytest.raises(LlmResponseError):
+        await _adapter().complete("sys", "user")
+
+
+@respx.mock
+async def test_null_text_block_raises_response_error():
+    # Bloc de contenu non textuel (`text: null`) → LlmResponseError, pas AttributeError.
+    respx.post(MSG).mock(
+        return_value=httpx.Response(200, json={"content": [{"type": "text", "text": None}], "usage": None})
+    )
+    with pytest.raises(LlmResponseError):
+        await _adapter().complete("sys", "user")
+
+
+@respx.mock
 async def test_http_error_is_transport_error():
     respx.post(MSG).mock(return_value=httpx.Response(529))
     with pytest.raises(LlmTransportError):

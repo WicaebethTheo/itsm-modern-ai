@@ -69,7 +69,12 @@ def _scrape_token_ok(request: Request, expected: str) -> bool:
         presented = auth[7:].strip()
     if not presented:
         presented = request.headers.get("x-metrics-token", "").strip()
-    return bool(presented) and _secrets.compare_digest(presented, expected)
+    # Comparaison en BYTES : `compare_digest(str, str)` lève TypeError sur un caractère
+    # non-ASCII (jeton présenté exotique) → 500 au lieu d'un 401 propre. L'encodage UTF-8
+    # préserve la comparaison à temps constant tout en acceptant n'importe quel octet.
+    return bool(presented) and _secrets.compare_digest(
+        presented.encode("utf-8"), expected.encode("utf-8")
+    )
 
 
 async def metrics_endpoint(request: Request) -> Response:

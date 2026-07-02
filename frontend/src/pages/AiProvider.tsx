@@ -1,3 +1,4 @@
+import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dot } from "@/components/ui/dot";
@@ -15,6 +16,14 @@ import { useCallback, useEffect, useState } from "react";
 
 const PROVIDERS: LlmProvider[] = ["mistral", "openai", "ollama", "anthropic"];
 const NON_SOVEREIGN: LlmProvider[] = ["openai", "anthropic"];
+// Champs de `form` propres à chaque fournisseur — sert à purger au changement de
+// sélection ce qui n'est plus affiché (jamais envoyer une clé/URL abandonnée).
+const PROVIDER_KEYS: Record<LlmProvider, (keyof ConfigUpdate)[]> = {
+  mistral: ["llm_base_url", "llm_model", "llm_api_key"],
+  openai: ["openai_base_url", "openai_model", "openai_api_key"],
+  ollama: ["ollama_base_url", "ollama_model"],
+  anthropic: ["anthropic_base_url", "anthropic_model", "anthropic_api_key"],
+};
 const PROVIDER_DESC: Record<LlmProvider, { fr: string; en: string }> = {
   mistral: { fr: "souverain · UE", en: "sovereign · EU" },
   openai: { fr: "cloud · hors UE", en: "cloud · non-EU" },
@@ -28,6 +37,7 @@ export function AiProvider() {
   const cfg = useResource(useCallback(() => Api.getConfig(), []));
   const [form, setForm] = useState<ConfigUpdate>({});
   const [provider, setProvider] = useState<LlmProvider>("mistral");
+  const [saving, setSaving] = useState(false);
 
   const c = cfg.data;
   useEffect(() => {
@@ -38,7 +48,23 @@ export function AiProvider() {
     setForm((f) => ({ ...f, [k]: v }));
   }
 
+  // Changement de fournisseur : purge de `form` les champs des AUTRES fournisseurs,
+  // pour ne jamais envoyer une clé/URL saisie pour un fournisseur puis abandonné.
+  function selectProvider(next: LlmProvider) {
+    if (next === provider) return;
+    setProvider(next);
+    setForm((f) => {
+      const copy = { ...f };
+      for (const p of PROVIDERS) {
+        if (p === next) continue;
+        for (const k of PROVIDER_KEYS[p]) delete copy[k];
+      }
+      return copy;
+    });
+  }
+
   async function save() {
+    setSaving(true);
     try {
       await Api.updateConfig({ ...form, llm_provider: provider });
       setForm({});
@@ -46,6 +72,8 @@ export function AiProvider() {
       toast.success(t("Fournisseur IA enregistré.", "AI provider saved."));
     } catch (e: unknown) {
       toast.error(`${t("Erreur", "Error")} : ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -104,6 +132,14 @@ export function AiProvider() {
 
   return (
     <div className="space-y-4">
+      {/* GET config en échec : on prévient plutôt que d'afficher un formulaire muet
+          dont l'enregistrement écraserait la config réelle par les défauts locaux. */}
+      {cfg.error && (
+        <Banner kind="error">
+          {t("Impossible de charger la configuration :", "Could not load the configuration:")}{" "}
+          {cfg.error}
+        </Banner>
+      )}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {PROVIDERS.map((p) => {
           const on = provider === p;
@@ -115,7 +151,7 @@ export function AiProvider() {
             <button
               key={p}
               type="button"
-              onClick={() => setProvider(p)}
+              onClick={() => selectProvider(p)}
               className={cn(
                 "rounded-lg border p-4 text-left transition-colors",
                 on
@@ -210,7 +246,9 @@ export function AiProvider() {
             </Field>
           )}
           <div>
-            <Button onClick={save}>{t("Enregistrer", "Save")}</Button>
+            <Button onClick={save} disabled={!cfg.data || saving}>
+              {saving ? t("Enregistrement…", "Saving…") : t("Enregistrer", "Save")}
+            </Button>
           </div>
         </CardContent>
       </Card>

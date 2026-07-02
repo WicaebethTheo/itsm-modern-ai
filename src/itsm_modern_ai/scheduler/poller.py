@@ -76,6 +76,17 @@ class TriagePoller:
             logger.warning("poll: référentiels indisponibles, cycle sauté: %s", exc)
             return stats
 
+        # 1bis) Périmètre vide (aucune catégorie sélectionnée par l'admin) : TOUTE décision
+        # serait rejetée par la whitelist. On saute le cycle SANS marquer les tickets traités
+        # — sinon chaque ticket déclencherait un appel LLM payant au rejet garanti puis serait
+        # consommé pour toujours, et l'arriéré serait perdu une fois le périmètre configuré.
+        if not self._cache.referentials.categories:
+            logger.info(
+                "poll: aucune catégorie dans le périmètre effectif → cycle sauté "
+                "(aucun ticket consommé). Sélectionnez des catégories dans la console."
+            )
+            return stats
+
         # 2) Lire les Tickets « New » (FR-2). Indispo → reprise au cycle suivant.
         try:
             tickets = await self._itsm.get_new_tickets()

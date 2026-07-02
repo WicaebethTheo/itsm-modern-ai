@@ -62,6 +62,23 @@ async def test_handler_invoked_for_new_tickets(temp_db):
     assert seen == [5]
 
 
+async def test_empty_scope_skips_cycle_without_consuming(temp_db):
+    # Périmètre vide (aucune catégorie sélectionnée) : le cycle est sauté SANS appeler le
+    # handler (pas d'appel LLM payant au rejet garanti) NI marquer les tickets traités
+    # (ils restent repris une fois le périmètre configuré).
+    called = []
+
+    async def handler(ticket: Ticket, refs: Referentials) -> bool:
+        called.append(ticket.id)
+        return True
+
+    empty_refs = Referentials(categories={}, technicians={11: "Syl"})
+    itsm = FakeItsm([Ticket(id=1, content="x")], refs=empty_refs)
+    stats = await TriagePoller(itsm, WhitelistCache(), handler=handler).poll_once()
+    assert called == []  # handler jamais appelé
+    assert stats.processed_new == 0 and stats.fetched == 0  # aucun ticket consommé
+
+
 async def test_glpi_unavailable_no_crash_no_loss(temp_db):
     itsm = FakeItsm([Ticket(id=1, content="x")], fail_referentials=True)
     stats = await TriagePoller(itsm, WhitelistCache()).poll_once()

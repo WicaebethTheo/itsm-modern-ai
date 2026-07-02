@@ -93,6 +93,25 @@ describe("GlpiConnection", () => {
     expect("glpi_oauth_scope" in payload).toBe(false); // pas de scope orphelin en legacy
   });
 
+  it("ne renvoie pas une valeur legacy saisie puis abandonnée en passant en V2", async () => {
+    renderWithToast(<GlpiConnection />);
+    await screen.findByText("Paramètres de connexion");
+    // Legacy : modifier l'URL de base → entre dans `form`.
+    const urlInput = screen.getByPlaceholderText("https://glpi.exemple.local/apirest.php");
+    await userEvent.clear(urlInput);
+    await userEvent.type(urlInput, "https://abandon.example/apirest.php");
+    // Bascule V2 (purge les clés legacy de `form`) puis Enregistrer.
+    await userEvent.click(screen.getByRole("button", { name: /API V2/ }));
+    await screen.findByText("Client ID");
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(Api.updateConfig).toHaveBeenCalledTimes(1));
+    const payload = vi.mocked(Api.updateConfig).mock.calls[0][0];
+    expect(payload.glpi_api_version).toBe("v2");
+    // La valeur legacy saisie ne doit PAS partir au backend.
+    expect("glpi_base_url" in payload).toBe(false);
+    expect(Object.values(payload)).not.toContain("https://abandon.example/apirest.php");
+  });
+
   it("le test de connexion rapporte un GLPI joignable", async () => {
     renderWithToast(<GlpiConnection />);
     await screen.findByText("Paramètres de connexion");

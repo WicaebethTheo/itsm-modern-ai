@@ -56,6 +56,7 @@ export function RefEligibilityEditor({
   const [query, setQuery] = useState("");
   const [profile, setProfile] = useState(ALL);
   const [eligibleOnly, setEligibleOnlyState] = useState(() => readEligibleOnly(kind));
+  const [saving, setSaving] = useState(false);
   // Wrapper qui persiste la préférence : survit au démontage et à la navigation.
   const setEligibleOnly = useCallback(
     (next: boolean) => {
@@ -115,12 +116,15 @@ export function RefEligibilityEditor({
   }
 
   async function onSave() {
+    setSaving(true);
     try {
       await save(Object.entries(draft).map(([ext_id, v]) => ({ ext_id: Number(ext_id), ...v })));
       res.reload();
       toast.success(t("Enregistré.", "Saved."));
     } catch (e: unknown) {
       toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -260,7 +264,11 @@ export function RefEligibilityEditor({
         </Card>
       )}
       {items.length > 0 && (
-        <Button onClick={onSave}>{t("Enregistrer la sélection", "Save selection")}</Button>
+        <Button onClick={onSave} disabled={saving}>
+          {saving
+            ? t("Enregistrement…", "Saving…")
+            : t("Enregistrer la sélection", "Save selection")}
+        </Button>
       )}
     </div>
   );

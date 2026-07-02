@@ -90,3 +90,50 @@ def test_ssrf_ollama_localhost_accepted(client):
     r = client.post("/api/config", json={"ollama_base_url": "http://localhost:11434/v1"})
     assert r.status_code == 200
     assert r.json()["ollama_base_url"] == "http://localhost:11434/v1"
+
+
+# ── M4 : garde SSRF assouplie pour GLPI on-premise (IP/host privé) ────────────
+def test_glpi_private_url_accepted_by_default(client):
+    # On-premise : GLPI sur IP privée accepté par défaut (GLPI_ALLOW_PRIVATE=true).
+    r = client.post("/api/config", json={"glpi_base_url": "https://192.168.1.10/apirest.php"})
+    assert r.status_code == 200
+    assert r.json()["glpi_base_url"] == "https://192.168.1.10/apirest.php"
+
+
+def test_glpi_private_http_accepted_by_default(client):
+    # GLPI interne souvent en HTTP : toléré tant que le flag est vrai (hôte privé).
+    r = client.post("/api/config", json={"glpi_v2_base_url": "http://10.0.0.5/api.php/v2.3"})
+    assert r.status_code == 200
+
+
+def test_glpi_private_url_rejected_when_flag_false(client, monkeypatch):
+    # Durcissement complet : GLPI_ALLOW_PRIVATE=false → cible GLPI privée refusée.
+    monkeypatch.setenv("GLPI_ALLOW_PRIVATE", "false")
+    r = client.post("/api/config", json={"glpi_base_url": "https://192.168.1.10/apirest.php"})
+    assert r.status_code == 422
+
+
+def test_llm_private_url_still_blocked_regardless_of_glpi_flag(client):
+    # Le flag GLPI n'assouplit PAS le LLM : une IP privée LLM reste bloquée (fuite de clé).
+    r = client.post("/api/config", json={"llm_base_url": "https://192.168.1.10/v1"})
+    assert r.status_code == 422
+
+
+# ── M11 : tarifs €/Mtok éditables à chaud (cost cap juste après bascule) ──────
+def test_llm_prices_editable_via_config(client):
+    r = client.post(
+        "/api/config",
+        json={"llm_price_input_per_mtok": 9.5, "llm_price_output_per_mtok": 12.0},
+    )
+    assert r.status_code == 200
+    view = r.json()
+    assert view["llm_price_input_per_mtok"] == "9.5"
+    assert view["llm_price_output_per_mtok"] == "12.0"
+    # La vue /api/cost reflète les tarifs RUNTIME (surcharge UI), pas seulement le .env.
+    cost = client.get("/api/cost").json()
+    assert cost["price_input_per_mtok"] == 9.5
+    assert cost["price_output_per_mtok"] == 12.0
+
+
+def test_negative_price_rejected(client):
+    assert client.post("/api/config", json={"llm_price_input_per_mtok": -1}).status_code == 422

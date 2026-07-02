@@ -78,6 +78,7 @@ export function Scope() {
   const [modes, setModes] = useState<Map<number, ExecutionMode | "">>(new Map());
   // Seuil de confiance du mode semi-auto, par entité ("" = défaut global).
   const [thresholds, setThresholds] = useState<Map<number, number | "">>(new Map());
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (categories.data)
@@ -113,6 +114,7 @@ export function Scope() {
   const hasAuto = [...modes.values()].some((m) => m === "semi_auto" || m === "full_auto");
 
   async function save() {
+    setSaving(true);
     try {
       await Api.setScope({ category_ids: [...cats], entity_ids: [...ents] });
       await Api.saveModes(
@@ -130,6 +132,8 @@ export function Scope() {
       toast.success(t("Périmètre et modes enregistrés.", "Scope and modes saved."));
     } catch (e: unknown) {
       toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -344,9 +348,11 @@ export function Scope() {
         </span>
       </div>
 
-      <Button onClick={save}>
+      <Button onClick={save} disabled={saving}>
         <Save className="h-4 w-4" />
-        {t("Enregistrer le périmètre et les modes", "Save scope and modes")}
+        {saving
+          ? t("Enregistrement…", "Saving…")
+          : t("Enregistrer le périmètre et les modes", "Save scope and modes")}
       </Button>
     </div>
   );

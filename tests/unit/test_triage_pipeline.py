@@ -344,6 +344,41 @@ async def test_group_routing_accepted_in_suggestion_mode(temp_db):
     assert itsm.followups and itsm.followups[0][2] is True  # Suivi privé
 
 
+async def test_ineligible_technician_is_dropped_not_applied(temp_db):
+    # SÉCURITÉ (FR-7) : le LLM propose un technicien HORS whitelist (#999) À CÔTÉ d'un
+    # groupe éligible (#20). check() accepte (un acteur éligible), mais GLPI ne doit
+    # JAMAIS recevoir l'utilisateur 999 — seul le groupe est appliqué, et le Journal
+    # reflète le MÊME acteur (pas de trou d'audit / contournement par prompt-injection).
+    refs = Referentials(categories={1: "Compte"}, technicians={11: "Syl"}, groups={20: "N1"})
+    d = Decision(category=1, priority=3, technician_id=999, group_id=20, draft="x", confidence=0.95)
+    itsm = FakeItsm()
+    svc = _service(FakeLlm(d), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=30, content="x"), refs)
+    # technician_id=None dans la mutation (999 filtré), group_id=20 appliqué.
+    assert itsm.applied == [(30, 1, 3, None, 20)]
+    with db.session_scope() as s:
+        row = journal.list_decisions(s)[0]
+    assert row.group_id == 20 and row.applied is True
+
+
+async def test_followup_failure_after_apply_still_journals(temp_db):
+    # M1 : si la mutation GLPI réussit mais l'écriture du Suivi échoue, la décision DOIT
+    # tout de même être journalisée (applied=True) — sinon trou d'audit + le ticket non
+    # marqué serait re-muté au cycle suivant (doublon de réponse publique).
+    class FailingFollowupItsm(FakeItsm):
+        async def write_followup(self, ticket_id, content, *, private=True) -> int:
+            raise RuntimeError("GLPI followup 500")
+
+    itsm = FailingFollowupItsm()
+    svc = _service(FakeLlm(_accepted_decision()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    wrote = await svc.handle(Ticket(id=31, content="x"), REFS)
+    assert wrote is False  # aucun Suivi écrit
+    assert itsm.applied  # mais la mutation a bien eu lieu
+    with db.session_scope() as s:
+        row = journal.list_decisions(s)[0]
+    assert row.applied is True  # journalisé malgré l'échec du Suivi
+
+
 async def test_cost_cap_blocks_subsequent_tickets_same_day(temp_db):
     # Le cap, atteint au 1er ticket, bloque AUSSI les Tickets suivants sur la
     # même fenêtre 24h (aucun appel LLM facturant n'est lancé).

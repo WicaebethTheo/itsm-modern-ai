@@ -89,3 +89,24 @@ def test_delete_license_returns_to_community(client):
     r = client.request("DELETE", "/api/license")
     assert r.status_code == 200 and r.json()["edition"] == "community"
     assert client.get("/api/license").json()["edition"] == "community"
+
+
+# ── M10 : DELETE doit re-verrouiller MÊME quand LICENSE_KEY est en env ────────
+@pytest.fixture
+def client_env_licensed(tmp_path):
+    # Instance pré-licenciée via l'env LICENSE_KEY (image pré-licenciée).
+    with TestClient(create_app(_settings(tmp_path, license_key=VALID))) as c:
+        yield c
+
+
+def test_delete_relocks_even_with_env_license_key(client_env_licensed):
+    c = client_env_licensed
+    # Pré-licenciée via env → supporter au démarrage.
+    assert c.get("/api/license").json()["edition"] == "supporter"
+    # DELETE : la sentinelle empêche le repli sur l'env → retour en community.
+    r = c.request("DELETE", "/api/license")
+    assert r.status_code == 200 and r.json()["edition"] == "community"
+    assert c.get("/api/license").json()["edition"] == "community"
+    # Re-POST d'une clé valide → de nouveau supporter (la sentinelle est écrasée).
+    c.post("/api/license", json={"key": VALID})
+    assert c.get("/api/license").json()["edition"] == "supporter"

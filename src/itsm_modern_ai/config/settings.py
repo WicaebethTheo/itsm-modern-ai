@@ -11,6 +11,7 @@ Exception : `llm_api_key` reste lisible ici UNIQUEMENT pour le script de spike C
 
 from __future__ import annotations
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -129,6 +130,16 @@ class Settings(BaseSettings):
     # Connexion GLPI legacy apirest.php (FR-1) — base_url non-secret ; tokens via UI/API.
     glpi_base_url: str = ""  # ex. https://glpi.exemple.local/apirest.php
     glpi_verify_tls: bool = True
+    # Produit ON-PREMISE : le GLPI est presque toujours sur IP/hostname PRIVÉ (RFC1918,
+    # `.local`, loopback…). Le garde anti-SSRF (validation lexicale à l'écriture + résolution
+    # DNS au runtime) rejetterait alors une cible interne parfaitement légitime et casserait
+    # l'install par défaut. Ce flag AUTORISE explicitement un hôte privé pour les SEULS clients
+    # GLPI (legacy + V2). La garde stricte reste inchangée pour le LLM et l'update-check (dont
+    # les URLs DOIVENT rester publiques, sinon fuite de clé). Défaut True = déploiement on-prem.
+    glpi_allow_private_host: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("GLPI_ALLOW_PRIVATE", "glpi_allow_private_host"),
+    )
     glpi_timeout_seconds: float = 30.0
     # Rename TicketFollowup→ITILFollowup (9.x→10.x). True = GLPI 9.x (legacy).
     glpi_followup_legacy_9x: bool = False

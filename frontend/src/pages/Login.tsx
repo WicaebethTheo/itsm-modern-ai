@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
-import { Api } from "@/lib/api";
+import { Api, ApiError } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -36,8 +36,14 @@ export function Login() {
     try {
       await Api.login(password);
       navigate("/", { replace: true });
-    } catch {
-      setError(t("Mot de passe incorrect.", "Incorrect password."));
+    } catch (e: unknown) {
+      // Seul un 401 signifie « mauvais mot de passe » ; tout le reste (backend down,
+      // 502, erreur réseau) mérite son propre message pour ne pas égarer l'admin.
+      if (e instanceof ApiError && e.status === 401) {
+        setError(t("Mot de passe incorrect.", "Incorrect password."));
+      } else {
+        setError((e as Error).message);
+      }
     } finally {
       setBusy(false);
     }

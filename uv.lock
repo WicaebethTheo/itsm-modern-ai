@@ -384,7 +384,7 @@ wheels = [
 
 [[package]]
 name = "itsm-modern-ai"
-version = "0.9.45"
+version = "0.9.46"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

@@ -40,5 +40,9 @@ def client_ip(request: Request, trusted_proxies: bool, *, trusted_hops: int = 1)
     hops = trusted_hops if trusted_hops >= 1 else 1
     idx = len(parts) - hops
     if idx < 0:
-        idx = 0  # XFF plus court que la chaîne de proxys attendue → valeur connue la plus à gauche
+        # XFF plus court que la chaîne de proxys attendue : la valeur la plus à gauche est
+        # fournie par le client (spoofable) et NON celle posée par notre proxy. La retenir
+        # laisserait injecter une fausse IP (contournement du rate-limit login). On retombe
+        # donc sur l'IP TCP réelle (request.client.host), non falsifiable.
+        return fallback or "unknown"
     return parts[idx] or fallback or "unknown"

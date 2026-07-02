@@ -15,9 +15,13 @@ from ....domain.url_safety import UrlSafetyError
 from ...ssrf import make_guarded_event_hooks
 
 
-def _ssrf_event_hooks(guard: bool) -> dict[str, list] | None:
-    """Event hook httpx anti-SSRF (garde partagé, DNS hors event loop). GLPI n'est jamais local."""
-    return make_guarded_event_hooks(guard=guard, allow_local=False)
+def _ssrf_event_hooks(guard: bool, allow_local: bool = False) -> dict[str, list] | None:
+    """Event hook httpx anti-SSRF (garde partagé, DNS hors event loop).
+
+    `allow_local=True` (produit on-premise, GLPI sur IP/host privé) tolère une cible interne
+    pour CE client GLPI uniquement — cf. settings.glpi_allow_private_host.
+    """
+    return make_guarded_event_hooks(guard=guard, allow_local=allow_local)
 
 
 class GlpiClient:
@@ -30,6 +34,7 @@ class GlpiClient:
         verify_tls: bool = True,
         timeout: float = 30.0,
         ssrf_guard: bool = False,
+        allow_local: bool = False,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         if not base_url or not user_token:
@@ -40,8 +45,11 @@ class GlpiClient:
         self._session_token: str | None = None
         self._owns_client = client is None
         # Garde anti-SSRF (résolution DNS au runtime) sur le client que CE client possède.
+        # `allow_local` tolère une cible GLPI interne (on-premise, cf. glpi_allow_private_host).
         self._client = client or httpx.AsyncClient(
-            verify=verify_tls, timeout=timeout, event_hooks=_ssrf_event_hooks(ssrf_guard) or {}
+            verify=verify_tls,
+            timeout=timeout,
+            event_hooks=_ssrf_event_hooks(ssrf_guard, allow_local) or {},
         )
 
     # ── session ───────────────────────────────────────────────────────────────

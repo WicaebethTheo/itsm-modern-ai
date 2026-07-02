@@ -1,4 +1,4 @@
-import { Api } from "@/lib/api";
+import { Api, ApiError } from "@/lib/api";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -39,13 +39,25 @@ describe("Login", () => {
     vi.mocked(Api.authStatus).mockResolvedValue({ authenticated: false, auth_configured: true });
   });
 
-  it("affiche une erreur si le mot de passe est rejeté (401)", async () => {
-    vi.mocked(Api.login).mockRejectedValue(new Error("401"));
+  it("affiche « mot de passe incorrect » sur un vrai 401", async () => {
+    vi.mocked(Api.login).mockRejectedValue(new ApiError(401, null));
     renderLogin();
     await userEvent.type(passwordInput(), "mauvais");
     await userEvent.click(screen.getByRole("button", { name: "Se connecter" }));
     expect(await screen.findByText("Mot de passe incorrect.")).toBeInTheDocument();
     expect(Api.login).toHaveBeenCalledWith("mauvais");
+  });
+
+  it("distingue une panne réseau/serveur d'un mot de passe erroné (non-401)", async () => {
+    // 503 (backend down) → message dédié, PAS « Mot de passe incorrect. ».
+    vi.mocked(Api.login).mockRejectedValue(
+      new ApiError(503, { detail: { message: "Service indisponible" } }),
+    );
+    renderLogin();
+    await userEvent.type(passwordInput(), "s3cret");
+    await userEvent.click(screen.getByRole("button", { name: "Se connecter" }));
+    expect(await screen.findByText("Service indisponible")).toBeInTheDocument();
+    expect(screen.queryByText("Mot de passe incorrect.")).not.toBeInTheDocument();
   });
 
   it("connecte et redirige vers le dashboard au succès", async () => {

@@ -52,6 +52,7 @@ export function EngineSettings() {
   const toast = useToast();
   const cfg = useResource(useCallback(() => Api.getConfig(), []));
   const [form, setForm] = useState<ConfigUpdate>({});
+  const [saving, setSaving] = useState(false);
   const [pollingOn, setPollingOn] = useState(true);
   const [sysPrompt, setSysPrompt] = useState("");
   // Masquage PII (FR-14) — défaut ON ; tant que la config n'est pas chargée, on suppose ON.
@@ -85,6 +86,7 @@ export function EngineSettings() {
   const num = (v: string) => (v === "" ? undefined : Number(v));
 
   async function save() {
+    setSaving(true);
     try {
       await Api.updateConfig({
         ...form,
@@ -101,6 +103,8 @@ export function EngineSettings() {
       toast.success(t("Réglages enregistrés.", "Settings saved."));
     } catch (e: unknown) {
       toast.error(`${t("Erreur", "Error")} : ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -114,6 +118,14 @@ export function EngineSettings() {
 
   return (
     <div className="space-y-6">
+      {/* GET config en échec : on prévient plutôt que de laisser un formulaire muet
+          dont l'enregistrement écraserait la config réelle par les défauts locaux. */}
+      {cfg.error && (
+        <Banner kind="error">
+          {t("Impossible de charger la configuration :", "Could not load the configuration:")}{" "}
+          {cfg.error}
+        </Banner>
+      )}
       <div className="space-y-6">
         {/* ── Comportement du moteur ─────────────────────────────────────── */}
         <section className="space-y-3">
@@ -533,7 +545,9 @@ export function EngineSettings() {
           <p className="truncate text-[12px] text-muted-foreground">
             {t("Les modifications s'appliquent après enregistrement.", "Changes apply once saved.")}
           </p>
-          <Button onClick={save}>{t("Enregistrer", "Save")}</Button>
+          <Button onClick={save} disabled={!cfg.data || saving}>
+            {saving ? t("Enregistrement…", "Saving…") : t("Enregistrer", "Save")}
+          </Button>
         </div>
       </div>
     </div>
