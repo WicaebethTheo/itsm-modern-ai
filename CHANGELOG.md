@@ -22,6 +22,35 @@ deux **garde-fous trop laxistes**. Aucun changement de comportement du moteur.
   d'IP bidon ne permet donc pas de se débloquer. Sémantique du limiteur inchangée (seuils,
   durées, `retry_after`, `reset`).
 
+### Sécurité — déni de service par expression régulière (ReDoS)
+
+- **Deux motifs de masquage étaient à backtracking quadratique** (`domain/masking.py`) et
+  atteignables par le **contenu d'un ticket**, donc par le demandeur : `_EMAIL_RE`
+  (`[\w.+-]+@…` sur un texte sans arobase) et `_SECRET_KEYWORD_RE` (`…\s*[:=]?\s*`, deux
+  quantificateurs illimités adjacents). Mesuré avant correctif : `password` + 32 000
+  espaces = **5,7 s de CPU**, avec une croissance ×4 à chaque doublement de l'entrée.
+  Le masquage étant appelé **synchronement depuis une coroutine**, un seul ticket gelait
+  l'event loop — donc l'API *et* le poller. Quantificateurs désormais **bornés** (limites
+  RFC 5321 pour l'e-mail) : même charge à **6,5 ms**, croissance linéaire, masquage
+  inchangé. Test de non-régression sur la **propriété** (linéarité), pas sur un seuil en
+  millisecondes qui serait instable en CI.
+  *La seconde occurrence (`_EMAIL_RE`) n'avait pas été signalée par l'analyse statique ;
+  elle a été trouvée en mesurant chaque motif du module.*
+
+### Sécurité — surface d'attaque
+
+- **Vérification de version : garde anti-SSRF rendu inconditionnel** (`routes/version.py`).
+  L'URL du flux était validée à l'écriture et re-vérifiée par résolution DNS, mais ce
+  second garde dépendait de `ssrf_guard_enabled` — un opérateur le désactivant pour une
+  cible GLPI/LLM on-premise laissait cet appel sans protection, alors qu'un flux de
+  versions n'a aucune raison légitime de pointer un hôte interne. La validation est
+  désormais refaite **au point d'appel**, quel que soit le flag.
+- **`/api/debug/diagnostics` : détails d'exception masqués et bornés**. Le endpoint
+  (admin authentifié **et** `DEBUG_TOOLS_ENABLED`, livré à `false`) renvoyait `str(exc)`
+  brut, or une erreur de transport LLM embarque jusqu'à 500 caractères du corps renvoyé
+  par le fournisseur. Le message reste diagnostiquable mais passe par le masquage PII du
+  produit et est borné à 300 caractères.
+
 ### Qualité du masquage (feature Supporter)
 
 - **NIR / SIREN / SIRET validés par leur clé de contrôle** (`features/pii_advanced.py`) :
@@ -96,9 +125,9 @@ deux **garde-fous trop laxistes**. Aucun changement de comportement du moteur.
 - `.gitignore` : sorties de `coverage.py` (`.coverage`, `.coverage.*`, `htmlcov/`,
   `coverage.xml`) ignorées — un `.coverage` traînait à la racine, exposé à un commit
   accidentel.
-- Tests : **+9** (purge et plafond du limiteur, non-contournement d'un blocage par
-  saturation, clés de contrôle NIR/SIREN/SIRET, non-régression des patterns custom).
-  Total **376 pytest** + 89 Vitest.
+- Tests : **+13** (purge et plafond du limiteur, non-contournement d'un blocage par
+  saturation, clés de contrôle NIR/SIREN/SIRET, non-régression des patterns custom,
+  linéarité du masquage sur entrées pathologiques). Total **380 pytest** + 89 Vitest.
 
 ## 2026-07-02 — 0.9.46 — Durcissement du cœur de triage (audit approfondi)
 

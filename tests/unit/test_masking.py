@@ -5,6 +5,10 @@ Invariant : aucun motif sensible en clair ne doit subsister dans le texte masqu�
 
 from __future__ import annotations
 
+import time
+
+import pytest
+
 from itsm_modern_ai.domain import masking
 
 
@@ -156,3 +160,44 @@ def test_card_and_ip_follow_toggles():
     # IP/MAC suivent désormais `network` (et plus `phone`).
     r2 = masking.mask(text, phone=False, network=True)
     assert "[IP]" in r2.text
+
+
+# ── Résistance au ReDoS (durcissement audit CodeQL 2026-08) ───────────────────
+# Le texte masqué est le CONTENU D'UN TICKET, écrit par le demandeur : donnée non
+# fiable. `mask()` étant appelé synchronement depuis une coroutine (services/triage),
+# un motif à backtracking polynomial gelait l'event loop — donc l'API ET le poller —
+# avec un seul ticket. Deux motifs étaient concernés (`_EMAIL_RE` et
+# `_SECRET_KEYWORD_RE`) ; leurs quantificateurs sont désormais BORNÉS.
+#
+# On teste la PROPRIÉTÉ (croissance linéaire), pas un temps absolu : un seuil en
+# millisecondes serait instable sur un runner CI chargé. Avant correctif, doubler
+# l'entrée quadruplait le temps (×4) ; on exige ici un facteur nettement sous-quadratique.
+@pytest.mark.parametrize(
+    "charge",
+    [
+        pytest.param(lambda n: "password" + " " * n + "abc", id="secret-espaces"),
+        pytest.param(lambda n: "1." * n + "!", id="longue-suite-sans-arobase"),
+        pytest.param(lambda n: "a" * n + "!", id="longue-suite-de-mots"),
+    ],
+)
+def test_masquage_reste_lineaire_sur_entree_pathologique(charge):
+    def chrono(n: int) -> float:
+        texte = charge(n)
+        debut = time.perf_counter()
+        masking.mask(texte)
+        return time.perf_counter() - debut
+
+    # On mesure sur 4× la taille : linéaire → ~×4, quadratique → ~×16.
+    petit = max(chrono(2_000), 1e-4)  # plancher : évite une division par ~0
+    grand = chrono(8_000)
+    assert grand / petit < 8, (
+        f"croissance suspecte (×{grand / petit:.1f} pour une entrée ×4) — "
+        "un quantificateur non borné a probablement été réintroduit"
+    )
+
+
+def test_email_long_reste_masque_malgre_les_bornes():
+    """Les bornes RFC (locale ≤ 64, label ≤ 63) ne doivent pas perdre d'adresse réelle."""
+    locale = "prenom.nom.service-informatique.n1"
+    adresse = f"{locale}@sous-domaine.exemple-client.co.uk"
+    assert masking.mask(f"écrire à {adresse} svp").text == "écrire à [EMAIL] svp"

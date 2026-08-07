@@ -22,7 +22,15 @@ IP_PLACEHOLDER = "[IP]"
 MAC_PLACEHOLDER = "[MAC]"
 CLOUD_KEY_PLACEHOLDER = "[CLOUD_KEY]"
 
-_EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
+# ⚠️ QUANTIFICATEURS BORNÉS, PAS `+` (durcissement ReDoS, audit CodeQL 2026-08).
+# `[\w.+-]+@…` est POLYNOMIAL sur une entrée sans `@` : la classe avale toute une longue
+# suite puis rend un caractère à la fois en cherchant l'arobase, à chaque position de
+# départ → coût quadratique. Or le texte masqué est le CONTENU D'UN TICKET, écrit par le
+# demandeur (non fiable), et `mask()` est appelé SYNCHRONEMENT dans une coroutine : un
+# seul ticket suffisait à geler l'event loop (donc l'API ET le poller). Les bornes
+# suivent les limites RFC 5321 (partie locale ≤ 64, label DNS ≤ 63) : aucune adresse
+# légitime n'est perdue, et le backtracking devient constant par position.
+_EMAIL_RE = re.compile(r"\b[\w.+-]{1,64}@[\w-]{1,63}\.[\w.-]{1,190}\b")
 
 # IBAN : 2 lettres pays + 2 clés + 11 à 30 caractères (groupes espacés tolérés).
 _IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b")
@@ -69,8 +77,17 @@ def _luhn_ok(digits: str) -> bool:
     return total % 10 == 0
 
 # Mot de passe / token : mot-clé déclencheur puis une chaîne 8+ à classes mixtes.
+# ⚠️ ESPACES BORNÉS, PAS `\s*` (durcissement ReDoS, audit CodeQL 2026-08). Le motif
+# `…\s*[:=]?\s*` porte DEUX quantificateurs illimités adjacents séparés par un optionnel :
+# sur « password » suivi de N espaces puis d'une valeur trop courte pour `\S{8,}`, le
+# moteur essaie les N+1 découpes des espaces entre les deux `\s*` → coût quadratique
+# (mesuré : 32 000 espaces = 5,7 s de CPU). Même vecteur que pour `_EMAIL_RE` : contenu
+# de ticket non fiable, masquage synchrone dans l'event loop. Les bornes ci-dessous
+# couvrent très largement l'usage réel (« mot  de  passe : … ») et rendent le
+# backtracking constant.
 _SECRET_KEYWORD_RE = re.compile(
-    r"(?P<kw>(?:mots?\s*de\s*passe|mot\s*d[e']\s*passe|password|passwd|pwd|mdp|token|secret|cl[ée]\s*api|api[_\s-]?key)\s*[:=]?\s*)"
+    r"(?P<kw>(?:mots?\s{0,4}de\s{0,4}passe|mot\s{0,4}d[e']\s{0,4}passe|password|passwd|pwd|mdp"
+    r"|token|secret|cl[ée]\s{0,4}api|api[_\s-]?key)\s{0,8}[:=]?\s{0,8})"
     r"(?P<val>\S{8,})",
     re.IGNORECASE,
 )

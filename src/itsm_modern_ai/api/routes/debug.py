@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ...adapters.itsm.glpi.debug import GlpiDebugOps
+from ...domain import masking
 from ...domain.errors import ItsmError
 from ...persistence import db
 from ...services.runtime_config import RuntimeConfigService
@@ -59,6 +60,28 @@ def info(request: Request) -> dict:
     return {"version": request.app.version, "title": request.app.title, "endpoints": endpoints}
 
 
+# Longueur max d'un détail d'erreur renvoyé au client. Les erreurs de transport LLM
+# embarquent un extrait du corps de réponse du fournisseur (jusqu'à 500 caractères) :
+# on borne pour limiter ce qui traverse l'API.
+_DETAIL_MAX_CHARS = 300
+
+
+def _detail_sur(exc: Exception) -> str:
+    """Message d'erreur exploitable pour l'admin, sans exposer plus que nécessaire.
+
+    Durcissement audit CodeQL 2026-08 (« information exposure through an exception ») :
+    ce point de sortie renvoyait `str(exc)` tel quel. La surface reste étroite —
+    l'endpoint exige l'auth admin ET `debug_tools_enabled` (livré à False) — et un
+    diagnostic vide n'aurait aucune valeur : on GARDE donc le message, mais on le fait
+    passer par le masquage PII du produit (un corps d'erreur renvoyé par un fournisseur
+    peut recracher une adresse, un jeton…) et on le borne en longueur. Le type de
+    l'exception est préfixé : c'est souvent lui qui qualifie la panne.
+    """
+    brut = f"{type(exc).__name__}: {exc}"
+    propre = masking.mask(brut).text
+    return propre if len(propre) <= _DETAIL_MAX_CHARS else propre[:_DETAIL_MAX_CHARS].rstrip() + "…"
+
+
 @router.get("/diagnostics", dependencies=[Depends(require_debug)])
 async def diagnostics(request: Request) -> dict:
     settings = request.app.state.settings
@@ -82,7 +105,7 @@ async def diagnostics(request: Request) -> dict:
             since = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=14)
             out["glpi"]["recent_tickets_14d"] = len(await connector.get_recent_tickets(since))
         except ItsmError as exc:
-            out["glpi"]["error"] = str(exc)
+            out["glpi"]["error"] = _detail_sur(exc)
 
     llm = build_llm(settings, secrets)
     out["llm"]["configured"] = llm is not None
@@ -90,7 +113,7 @@ async def diagnostics(request: Request) -> dict:
         try:
             out["llm"]["reachable"] = await llm.healthcheck()
         except Exception as exc:  # noqa: BLE001
-            out["llm"]["error"] = str(exc)
+            out["llm"]["error"] = _detail_sur(exc)
     return out
 
 

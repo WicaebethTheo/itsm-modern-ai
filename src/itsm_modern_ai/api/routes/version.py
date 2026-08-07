@@ -32,6 +32,7 @@ from pydantic import BaseModel
 
 from ... import __version__
 from ...adapters.llm._http import make_guarded_event_hooks
+from ...domain.url_safety import UrlSafetyError, validate_base_url
 from ...services.runtime_config import RuntimeConfigService
 from ..deps import get_config_service
 from ..security import require_auth
@@ -107,6 +108,19 @@ async def _fetch_latest(url: str, timeout: float, *, guard: bool) -> dict | None
     en `event_hooks` (il refire à CHAQUE saut de redirection) → une `update_check_url`
     pointée sur un hôte interne / IMDS (169.254.169.254) est refusée à l'exécution.
     """
+    # Garde-fou LOCAL et INCONDITIONNEL (durcissement audit CodeQL 2026-08). L'URL vient
+    # de la config runtime : elle est déjà validée à l'écriture (`RuntimeConfigService.set`
+    # → `validate_base_url`) et re-vérifiée par résolution DNS via `event_hooks`. Mais ce
+    # dernier garde est conditionné à `ssrf_guard_enabled` : si un opérateur le désactive
+    # (flag prévu pour les cibles GLPI/LLM on-premise), plus RIEN ne protégeait cet appel,
+    # alors qu'un flux de versions n'a AUCUNE raison légitime de pointer un hôte interne.
+    # On revalide donc ici, à l'appel, indépendamment du flag : schéma https + hôte public.
+    try:
+        validate_base_url(url, allow_local=False)
+    except UrlSafetyError as exc:
+        logger.warning("update_check_url refusée (anti-SSRF) : %s", exc)
+        return None
+
     hooks = make_guarded_event_hooks(guard=guard, allow_local=False)
     try:
         async with httpx.AsyncClient(
