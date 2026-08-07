@@ -60,12 +60,36 @@ deux **garde-fous trop laxistes**. Aucun changement de comportement du moteur.
   la description honnête de la fenêtre et de son impact par mode.
 - **`api/routes/version.py`** : docstring « OPT-IN, URL vide par défaut » corrigée en
   « OPT-OUT » avec les garde-fous réels et les formats de flux acceptés.
-- **`les conventions internes`** : la règle de release pointait les releases GitLab comme déclencheur de
+- **Les conventions internes** : la règle de release pointait les releases GitLab comme déclencheur de
   la notification de MAJ ; le défaut du code est le flux **GitHub** `releases/latest`.
 - **`docs/testing.md`** : compteurs de tests remis à jour (**376** pytest, **89** Vitest) +
   documentation de la CI GitHub, qui n'y figurait pas.
 - **`.env.example`** : `UPDATE_CHECK_URL` documenté avec sa valeur par défaut, son
   caractère opt-out et la procédure air-gap.
+
+### Outillage — automatisations GitHub
+
+- **Renovate** (`renovate.json`) : mises à jour de dépendances groupées (Python/uv, npm
+  prod, npm dev, GitHub Actions, images de base), alertes de vulnérabilité prioritaires,
+  `lockFileMaintenance` hebdomadaire. Auto-merge volontairement limité aux **patchs de
+  devDependencies npm** et aux **digests d'actions** : aucune dépendance runtime
+  (`cryptography`, `pydantic`, `fastapi`, `react`…) n'est mergée sans relecture humaine.
+  Point clé : `rangeStrategy: update-lockfile` sur le manager `pep621`, sans quoi Renovate
+  resterait muet côté Python (toutes les deps sont déclarées en planchers `>=`, donc déjà
+  satisfaites par toute version nouvelle).
+- **CodeQL** (`codeql.yml`) : analyse statique Python + TypeScript sur PR, push `main` et
+  hebdomadaire, en `build-mode: none`.
+- **Scan de secrets** (`secret-scan.yml`, `.gitleaks.toml`) : gitleaks **bloquant** sur PR.
+  Allowlist par **valeur exacte** (clé Ed25519 de test, jeton de licence factice,
+  placeholder AWS de la doc) et non par exclusion de `tests/**`, qui créerait un angle mort.
+- **Audit de dépendances** (`security-audit.yml`) : portage des jobs `pip-audit` et
+  `npm audit` du GitLab, **non bloquant** (comme leur `allow_failure`) mais visible (résumé
+  de job, annotation, artefact 30 j).
+- **Release automatisée** (`release.yml`) : un tag `vX.Y.Z` crée la release GitHub avec les
+  notes extraites du CHANGELOG (repli sur les notes générées si la section est absente),
+  après vérification que `pyproject.toml`, `__init__.py` et `api.ts` portent bien la même
+  version. Gère le fait qu'une release créée par le `GITHUB_TOKEN` ne déclencherait pas les
+  workflows en aval.
 
 ### Divers
 
@@ -400,7 +424,7 @@ Corrections suite à la revue multi-agents de la 0.8.11 :
 
 - Code Supporter **réaligné** sur la version du cœur (était figé en 0.7.0).
 - `.env.example` : `UPDATE_CHECK_TTL_SECONDS` documenté. Doc de MAJ clarifiée
-  (`update.sh` = avec sauvegarde ; `install.sh --update` = rapide). **`les conventions internes`** ajouté
+  (`update.sh` = avec sauvegarde ; `install.sh --update` = rapide). **Conventions internes** ajoutées
   (conventions : bump version + CHANGELOG + release + docs à jour à chaque changement).
 - `is_newer` : comparaison semver robuste aux longueurs inégales (1.0 vs 1.0.0).
 
@@ -668,7 +692,7 @@ Aucun changement de fonctionnalité métier visible. Tests : **244 pytest** (ver
 ## 2026-05-29 — Docs : sortie du planning interne du repo public
 
 Sortie des artefacts internes du repo public vers un dossier `notes/`
-(gitignored) : `HANDOFF.md` (archives de passation IA), `bootstrap-archive.md`
+(gitignored) : `HANDOFF.md` (notes de passation), `bootstrap-archive.md`
 (archive d'amorçage) et tout `docs/planning/` (PRD, architecture
 détaillée, epics, addendum). Le repo public garde le README pro,
 `docs/install.md`, `docs/dpo.md`, `docs/spike.md`, `docs/project-context.md`
@@ -734,7 +758,7 @@ Tests : **177 → 180 pytest**, vitest **58/58**, E2E Playwright **2 → 3 parco
   parcours E2E**), liste complète des endpoints (ajoute `operational-metrics`,
   `automations/retention*`, `debug/*`), pistes ouvertes § 8 nettoyées (version GLPI
   topbar marquée ✅ fait, durcissement prod partiel précisé).
-- Plan `notes/planning/plan.md` annoté COMPLET.
+- Plan de développement annoté COMPLET.
 - Réorganisation des docs : `docs/design/` regroupe les specs design ; le doc
   d'amorçage initial est renommé `docs/bootstrap-archive.md` pour le distinguer
   du `HANDOFF.md` actif.

@@ -1,0 +1,360 @@
+# Création automatique de la release GitHub à partir d'un tag `vX.Y.Z`.
+#
+# But : `git push origin vX.Y.Z` suffit — plus de passage par l'UI web. Le workflow
+#   1. vérifie que le tag correspond à la version réellement embarquée dans le dépôt
+#      (pyproject.toml + __init__.py + APP_VERSION frontend) — c'est LA règle de release
+#      du projet, et l'oubli le plus fréquent ;
+#   2. extrait les notes de version de la section `## DATE — X.Y.Z — titre` du CHANGELOG ;
+#   3. crée la release via `gh release create` ;
+#   4. s'assure que les workflows AVAL partent bien (voir le gros pavé GITHUB_TOKEN
+#      ci-dessous — c'est le piège central de cette automatisation).
+#
+# ─────────────────────────────────────────────────────────────────────────────────────
+# ⚠️ PIÈGE : une release créée avec le GITHUB_TOKEN par défaut ne déclenche RIEN en aval
+# ─────────────────────────────────────────────────────────────────────────────────────
+# Doc officielle (Actions → « GITHUB_TOKEN ») : « when you use the repository's
+# GITHUB_TOKEN to perform tasks, events triggered by the GITHUB_TOKEN will not create a
+# new workflow run », garde-fou anti-récursion. Autrement dit, une release créée ici avec
+# le token par défaut n'émet PAS d'événement `release: published` exploitable, donc :
+#   - `docker-publish.yml` (déclencheur `release: types [published]`) ne publierait PAS
+#     l'image GHCR semver → les déploiements resteraient bloqués sur l'ancienne version ;
+#   - `discord-release.yml` (même déclencheur) n'annoncerait PAS la sortie.
+# Ce serait une régression PIRE que la création manuelle actuelle, et silencieuse.
+#
+# La même doc liste UNE exception : « workflow_dispatch and repository_dispatch events
+# always create workflow runs » (dispatch = appel explicite, pas de risque de boucle).
+#
+# D'où la stratégie à deux niveaux retenue ici :
+#
+#   A. NOMINAL — secret `RELEASE_PAT` défini (PAT fine-grained, scope `contents: write`
+#      sur ce dépôt, ou token d'une GitHub App). `gh release create` s'authentifie avec
+#      lui → l'événement `release: published` est émis par une identité NON-GITHUB_TOKEN
+#      → docker-publish.yml ET discord-release.yml se déclenchent naturellement, sans
+#      qu'aucun des deux n'ait à être modifié. C'est le seul mode 100 % équivalent à la
+#      création manuelle depuis l'UI.
+#
+#   B. DÉGRADÉ — secret `RELEASE_PAT` ABSENT. On ne veut pas planter (le PAT ne doit pas
+#      être une dépendance dure), donc :
+#        - la release est quand même créée avec le GITHUB_TOKEN (elle existe, elle est
+#          correcte, elle porte les bonnes notes) ;
+#        - on relance explicitement `docker-publish.yml` via `gh workflow run --ref <tag>`
+#          (workflow_dispatch = exception documentée, ça PART même avec GITHUB_TOKEN ;
+#          dispatché sur la ref du tag, `docker/metadata-action` y retrouve le semver et
+#          produit les mêmes tags `X.Y.Z` / `X.Y` que sur l'événement release) ;
+#        - `discord-release.yml` n'a PAS de `workflow_dispatch` : il est donc IMPOSSIBLE
+#          de le relancer depuis ici sans le modifier (hors périmètre). On ne masque pas
+#          le trou : une `::warning::` explicite + un encart dans le résumé de job disent
+#          quoi faire (poster à la main, ou ajouter le PAT). Rien d'obscur, rien de muet.
+#
+#   Pourquoi pas « seulement du dispatch », sans PAT ? Parce que le dispatch ne peut
+#   toucher que les workflows qui exposent `workflow_dispatch`, et qu'il perd le contexte
+#   `github.event.release` (nom, corps, URL) dont Discord se sert. Le PAT reste la voie
+#   propre ; le dispatch n'est qu'un filet.
+name: Créer la release GitHub
+
+on:
+  # Filtre `v*.*.*` : matche `v0.9.47` comme `v1.0.0-rc.1` (le suffixe reste dans le
+  # dernier segment du glob). Les tags hors forme sont ignorés.
+  push:
+    tags: ["v*.*.*"]
+  # Rejeu manuel d'une release ratée (ou création après coup pour un tag déjà poussé).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag à publier (ex. v0.9.47). Doit déjà exister sur le remote."
+        required: true
+        type: string
+
+# Minimum vital :
+#   - contents: write  → créer la release (et lire les fichiers de version) ;
+#   - actions:  write  → `gh workflow run` du mode dégradé (B). Inutile en mode A, mais
+#                        la permission ne peut pas être conditionnelle ; elle reste
+#                        cantonnée à ce dépôt et à ce run.
+permissions:
+  contents: write
+  actions: write
+
+# Deux runs sur le MÊME tag (push + rejeu manuel) se marcheraient dessus sur la création
+# de la release → on sérialise par tag. Jamais d'annulation : un run déjà lancé peut être
+# celui qui crée la release, l'interrompre laisserait un état à moitié fait.
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # `ref` explicite : sur `push: tags` c'est déjà le bon commit, mais en rejeu manuel
+      # `github.ref` vaut la branche par défaut → il faut checkouter le tag demandé, sinon
+      # la garde de version comparerait le tag aux fichiers de `main` (faux positif/négatif).
+      - name: Checkout du tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          # Historique complet : `gh release create --generate-notes` compare au tag
+          # précédent, et un clone superficiel fausserait la liste des commits.
+          fetch-depth: 0
+
+      # Entrée utilisateur passée par `env` et jamais interpolée dans le corps du script :
+      # `${{ ... }}` inline serait de l'injection de shell dans un run.
+      - name: Résoudre et valider le tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          # vX.Y.Z, avec suffixe de pré-version SemVer optionnel (-rc.1, -beta, …).
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$'; then
+            echo "::error::Tag « $TAG » invalide : attendu vX.Y.Z (suffixe -rc.N / -beta toléré)."
+            exit 1
+          fi
+          VERSION="${TAG#v}"          # 0.9.47      ou 1.0.0-rc.1
+          BASE="${VERSION%%-*}"       # 0.9.47      ou 1.0.0
+          # Pré-version = suffixe présent. GitHub marquera la release `prerelease`, ce qui
+          # l'exclut aussi du « Latest » (et donc de l'update-checker des instances).
+          PRERELEASE=false
+          [ "$VERSION" != "$BASE" ] && PRERELEASE=true
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+            echo "base=$BASE"
+            echo "prerelease=$PRERELEASE"
+          } >> "$GITHUB_OUTPUT"
+          echo "Tag=$TAG version=$VERSION prerelease=$PRERELEASE"
+
+      # GARDE DE COHÉRENCE. La règle de release du projet impose de bumper la version dans
+      # plusieurs fichiers en même temps ; taguer avec un bump oublié produit une image et
+      # une console qui s'annoncent sous l'ancien numéro. On échoue AVANT de créer quoi que
+      # ce soit — un tag mal placé se supprime, une release publiée beaucoup moins bien.
+      # Les pré-versions sont tolérantes : les fichiers peuvent porter `1.0.0` ou
+      # `1.0.0-rc.1` pour un tag `v1.0.0-rc.1`.
+      - name: Garde — le tag correspond aux versions du dépôt
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          BASE: ${{ steps.tag.outputs.base }}
+        run: |
+          set -euo pipefail
+          fail=0
+          # Chaque entrée : "chemin|libellé|motif grep -E avec @V@ en placeholder de version".
+          checks='
+          pyproject.toml|pyproject.toml ([project].version)|^version = "@V@"$
+          src/itsm_modern_ai/__init__.py|src/itsm_modern_ai/__init__.py (__version__)|^__version__ = "@V@"$
+          frontend/src/lib/api.ts|frontend/src/lib/api.ts (APP_VERSION)|^export const APP_VERSION = "@V@";$
+          '
+          while IFS='|' read -r file label pattern; do
+            [ -n "${file:-}" ] || continue
+            if [ ! -f "$file" ]; then
+              echo "::error::$label : fichier absent du dépôt au tag v$VERSION."
+              fail=1
+              continue
+            fi
+            # Alternative VERSION|BASE, points échappés pour ne pas jouer le rôle de joker.
+            alt="$(printf '%s\n' "$VERSION" "$BASE" | sort -u | paste -sd'|' -)"
+            alt="$(printf '%s' "$alt" | sed 's/\./\\./g')"
+            re="$(printf '%s' "$pattern" | sed "s/@V@/($alt)/")"
+            if grep -Eq "$re" "$file"; then
+              echo "OK   $label porte bien $VERSION (ou son socle $BASE)"
+            else
+              found="$(grep -Eo '[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.-]*' "$file" | head -n1 || true)"
+              echo "::error::$label ne porte pas la version du tag ($VERSION) — trouvé : « ${found:-?} ». Bumper ce fichier puis re-taguer."
+              fail=1
+            fi
+          done <<EOF
+          $(printf '%s' "$checks" | grep -v '^[[:space:]]*$' | sed 's/^[[:space:]]*//')
+          EOF
+          [ "$fail" -eq 0 ] || exit 1
+
+      # NOTES DE VERSION. `CHANGELOG.md` est normalement présent (il fait partie du dépôt
+      # public), mais on ne le SUPPOSE pas : certains fichiers internes restent hors dépôt,
+      # et une entrée peut manquer. Trois cas, aucun n'est une erreur :
+      #   1. CHANGELOG présent + section trouvée  → notes = la section, titre = son intitulé ;
+      #   2. CHANGELOG présent mais section absente (oubli d'entrée) → repli GitHub ;
+      #   3. CHANGELOG absent                                       → repli GitHub.
+      # Repli = `--generate-notes` (API « Generate release notes ») : liste des commits et
+      # PR depuis le tag précédent. Jamais d'échec, jamais de release au corps vide.
+      #
+      # Extraction : on repère l'en-tête `## …` dont un des champs séparés par des espaces
+      # est EXACTEMENT la version. La comparaison champ à champ (et non un `grep` de
+      # sous-chaîne) est indispensable : `0.9.4` est un préfixe de `0.9.41`/`0.9.47`, tous
+      # présents dans ce CHANGELOG. Le corps court jusqu'au `## ` suivant.
+      - name: Extraire les notes du CHANGELOG (avec repli)
+        id: notes
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          BASE: ${{ steps.tag.outputs.base }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          use_changelog=false
+          title="$TAG"
+
+          if [ -f CHANGELOG.md ]; then
+            start=""
+            for v in "$VERSION" "$BASE"; do
+              start="$(awk -v ver="$v" '/^## / { for (i=2; i<=NF; i++) if ($i == ver) { print NR; exit } }' CHANGELOG.md)"
+              if [ -n "$start" ]; then
+                matched="$v"
+                break
+              fi
+            done
+            if [ -n "$start" ]; then
+              # Fin de section = prochain `## ` ; 0 => jusqu'à la fin du fichier.
+              end="$(awk -v s="$start" 'NR > s && /^## / { print NR; exit }' CHANGELOG.md)"
+              end="${end:-0}"
+              awk -v s="$start" -v e="$end" 'NR > s && (e == 0 || NR < e)' CHANGELOG.md \
+                | awk 'BEGIN { blank = 1 } { if ($0 ~ /[^[:space:]]/) blank = 0; if (!blank) print }' \
+                > "$notes_file"
+              # Coupe les lignes vides de fin (release au corps proprement terminé).
+              printf '%s\n' "$(cat "$notes_file")" > "$notes_file"
+              if [ -s "$notes_file" ]; then
+                use_changelog=true
+                # Titre = ce qui suit « … — X.Y.Z — » dans l'en-tête, sinon le tag seul.
+                tail_txt="$(awk -v ver="$matched" -v ln="$start" 'NR == ln {
+                    p = 0
+                    for (i = 2; i <= NF; i++) if ($i == ver) { p = i; break }
+                    i = p + 1
+                    if (i <= NF && ($i == "—" || $i == "-" || $i == "–")) i++
+                    s = ""
+                    for (; i <= NF; i++) s = s (s == "" ? "" : " ") $i
+                    print s
+                  }' CHANGELOG.md)"
+                [ -n "$tail_txt" ] && title="$TAG — $tail_txt"
+                echo "Notes extraites du CHANGELOG (section « $matched », lignes $start→${end:-EOF})."
+              else
+                echo "::notice::Section « $VERSION » du CHANGELOG vide → repli sur les notes générées."
+              fi
+            else
+              echo "::notice::Aucune section « $VERSION » dans CHANGELOG.md → repli sur les notes générées par GitHub."
+            fi
+          else
+            echo "::notice::CHANGELOG.md absent (attendu sur le mirror public) → repli sur les notes générées par GitHub."
+          fi
+
+          {
+            echo "use_changelog=$use_changelog"
+            echo "file=$notes_file"
+            echo "title=$title"
+          } >> "$GITHUB_OUTPUT"
+
+      # Détection du mode A/B. On ne teste PAS le secret dans un `if:` de job (les secrets
+      # n'y sont pas évaluables de façon fiable) : on passe par une sortie d'étape.
+      # `-n "$PAT"` ne fuite rien, la valeur n'est jamais affichée.
+      - name: Mode de publication (PAT présent ?)
+        id: mode
+        env:
+          PAT: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -n "${PAT:-}" ]; then
+            echo "has_pat=true" >> "$GITHUB_OUTPUT"
+            echo "RELEASE_PAT présent → mode NOMINAL : les workflows aval (image GHCR, Discord) partiront sur l'événement release."
+          else
+            echo "has_pat=false" >> "$GITHUB_OUTPUT"
+            echo "RELEASE_PAT absent → mode DÉGRADÉ : release créée avec GITHUB_TOKEN, docker-publish relancé par dispatch, Discord non déclenchable."
+          fi
+
+      # `secrets.RELEASE_PAT || secrets.GITHUB_TOKEN` : une chaîne vide est falsy dans les
+      # expressions GitHub, le repli est donc automatique et le workflow ne casse jamais
+      # par simple absence du secret.
+      #
+      # Idempotent : si la release existe déjà (rejeu), on la MET À JOUR au lieu d'échouer
+      # sur un « release already exists » opaque. Attention, `gh release edit` n'émet pas
+      # de nouvel événement `published` — un rejeu ne rejoue donc pas Discord.
+      - name: Créer (ou mettre à jour) la release
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          TITLE: ${{ steps.notes.outputs.title }}
+          NOTES_FILE: ${{ steps.notes.outputs.file }}
+          USE_CHANGELOG: ${{ steps.notes.outputs.use_changelog }}
+          PRERELEASE: ${{ steps.tag.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          args=(--title "$TITLE")
+          if [ "$USE_CHANGELOG" = "true" ]; then
+            args+=(--notes-file "$NOTES_FILE")
+          else
+            args+=(--generate-notes)
+          fi
+          # `--prerelease` uniquement si le tag porte un suffixe ; sinon on marque
+          # explicitement `--latest` (c'est cette release que lit l'update-checker).
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease --latest=false)
+          else
+            args+=(--latest)
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::warning::La release $TAG existe déjà → mise à jour de son titre et de ses notes. Aucun événement « release: published » n'est réémis (Discord ne repartira pas)."
+            # `gh release edit` ne connaît pas --generate-notes : en repli on laisse le
+            # corps existant intact plutôt que de l'écraser par du vide.
+            edit=(--title "$TITLE")
+            [ "$USE_CHANGELOG" = "true" ] && edit+=(--notes-file "$NOTES_FILE")
+            [ "$PRERELEASE" = "true" ] && edit+=(--prerelease)
+            gh release edit "$TAG" "${edit[@]}"
+            echo "existed=true" >> "$GITHUB_OUTPUT"
+          else
+            # --verify-tag : refuse de créer le tag à la volée. En rejeu manuel, un tag mal
+            # orthographié doit échouer bruyamment, pas fabriquer un tag fantôme sur main.
+            gh release create "$TAG" --verify-tag "${args[@]}"
+            echo "existed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "url=$(gh release view "$TAG" --json url --jq .url)" >> "$GITHUB_OUTPUT"
+
+      # MODE DÉGRADÉ uniquement. `workflow_dispatch` est l'exception documentée qui part
+      # même quand l'appel vient du GITHUB_TOKEN. On dispatche sur la ref du TAG (et non
+      # sur main) pour que `docker/metadata-action` y lise le semver et publie bien
+      # `X.Y.Z` / `X.Y`. Non bloquant : si le dispatch échoue (workflow renommé, permission
+      # `actions` restreinte…), la release reste valide et on le dit clairement.
+      - name: Relancer la publication de l'image (repli sans PAT)
+        if: steps.mode.outputs.has_pat != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh workflow run docker-publish.yml --ref "$TAG"; then
+            echo "docker-publish.yml dispatché sur $TAG (l'événement « release » n'ayant pas été émis)."
+          else
+            echo "::warning::Dispatch de docker-publish.yml échoué. La release $TAG existe mais l'image GHCR n'a PAS été publiée : lancer le workflow « Publish image (GHCR) » à la main sur le tag $TAG."
+          fi
+
+      # Résumé lisible dans l'onglet du run : ce qui a été fait et, en mode dégradé, ce qui
+      # reste à faire à la main. Le but est qu'aucun trou ne soit silencieux.
+      - name: Résumé du run
+        if: always()
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          URL: ${{ steps.create.outputs.url }}
+          EXISTED: ${{ steps.create.outputs.existed }}
+          HAS_PAT: ${{ steps.mode.outputs.has_pat }}
+          USE_CHANGELOG: ${{ steps.notes.outputs.use_changelog }}
+          PRERELEASE: ${{ steps.tag.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Release ${TAG:-?}"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Release | ${URL:-non créée} |"
+            echo "| Action | $([ "${EXISTED:-}" = "true" ] && echo "mise à jour (existait déjà)" || echo "création") |"
+            echo "| Notes | $([ "${USE_CHANGELOG:-}" = "true" ] && echo "section CHANGELOG.md" || echo "générées par GitHub (CHANGELOG absent ou section introuvable)") |"
+            echo "| Pré-version | ${PRERELEASE:-false} |"
+            echo "| Mode | $([ "${HAS_PAT:-}" = "true" ] && echo "nominal (RELEASE_PAT)" || echo "dégradé (GITHUB_TOKEN)") |"
+            echo
+            if [ "${HAS_PAT:-}" = "true" ]; then
+              echo "L'événement \`release: published\` a été émis par le PAT : **docker-publish.yml** et **discord-release.yml** se déclenchent seuls."
+            else
+              echo "### ⚠️ Mode dégradé — secret \`RELEASE_PAT\` absent"
+              echo
+              echo "Une release créée avec le \`GITHUB_TOKEN\` par défaut n'émet pas d'événement déclencheur (garde-fou anti-récursion de GitHub Actions)."
+              echo
+              echo "- **Image GHCR** : \`docker-publish.yml\` a été relancé par \`workflow_dispatch\` sur le tag — vérifier son run."
+              echo "- **Annonce Discord** : \`discord-release.yml\` n'expose pas \`workflow_dispatch\`, il **n'a pas pu être déclenché**. Poster l'annonce à la main, ou définir le secret \`RELEASE_PAT\` (PAT fine-grained, \`contents: write\` sur ce dépôt) pour repasser en mode nominal."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

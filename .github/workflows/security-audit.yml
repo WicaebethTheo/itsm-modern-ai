@@ -1,0 +1,222 @@
+# Audit des dépendances (CVE connues) — portage du stage `security` de .gitlab-ci.yml.
+#
+# Deux jobs, un par écosystème, repris à l'identique des jobs GitLab :
+#   - `security:deps-python`   → pip-audit sur l'environnement résolu depuis uv.lock ;
+#   - `security:deps-frontend` → npm audit --audit-level=high dans frontend/.
+#
+# ── NON BLOQUANT : décision assumée, et cohérente avec GitLab ──────────────────
+# Les deux jobs GitLab portent `allow_failure: true`. On garde ce contrat, pour une
+# raison de fond : une CVE dans une dépendance TRANSITIVE n'est ni causée ni
+# corrigeable par la PR qui se fait bloquer. Rendre ces jobs bloquants produirait
+# l'effet exactement inverse de celui recherché — un correctif de sécurité urgent sur
+# le moteur de triage se retrouverait retenu par une CVE `undici` héritée de la chaîne
+# de build frontend, et la seule issue serait de désactiver le job.
+# Ce n'est pas théorique : à l'écriture de ce fichier, `pip-audit` remonte 8 avis sur
+# 3 paquets et `npm audit --audit-level=high` en remonte 9 dont 1 critique. Un job
+# bloquant serait donc rouge dès le premier run, en permanence, et ignoré de tous.
+#
+# Non bloquant ≠ invisible, et c'est là que ce portage va plus loin que GitLab :
+# chaque job écrit le rapport COMPLET dans le résumé du run (`$GITHUB_STEP_SUMMARY`)
+# et pose une annotation `::warning::` visible dans l'onglet Checks de la PR. On ne
+# peut pas « ne pas voir » une CVE, on peut seulement décider de merger malgré elle.
+# À repasser bloquant (`exit "$code"` au lieu de `exit 0`) le jour où le triage des
+# vulnérabilités est routinier et le backlog à zéro — même trajectoire que celle notée
+# dans .gitlab-ci.yml.
+name: Security audit (deps)
+
+on:
+  # Rythme principal : hebdomadaire. Une CVE est publiée sur du code figé — c'est
+  # l'avis qui bouge, pas le dépôt. Sans planification, une dépendance pourrie le
+  # lundi ne serait signalée qu'au prochain commit touchant un lockfile.
+  # Mercredi 06:13 UTC, décalé de codeql.yml (mardi) et secret-scan.yml (lundi) :
+  # les trois runs planifiés ne se marchent pas dessus.
+  schedule:
+    - cron: "13 6 * * 3"
+  # Vérification à la demande (après un `uv lock` ou un `npm audit fix` local).
+  workflow_dispatch:
+  # Sur PR, UNIQUEMENT si la surface de dépendances change : c'est le seul moment où
+  # une PR peut *introduire* une CVE. Filtrer par `paths:` évite de payer ~2 min de
+  # runner et d'ajouter du bruit sur les PR de doc ou de refacto qui, par construction,
+  # ne peuvent pas changer le verdict.
+  pull_request:
+    paths:
+      - "uv.lock"
+      - "pyproject.toml"
+      - "frontend/package-lock.json"
+      - "frontend/package.json"
+      # Le workflow lui-même : une modification doit pouvoir être testée sur sa PR.
+      - ".github/workflows/security-audit.yml"
+
+concurrency:
+  group: security-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+# Ces jobs ne font que lire le code et interroger des bases publiques d'avis (PyPI,
+# OSV, registre npm). Aucune écriture nécessaire — pas même `security-events`, les
+# résultats ne partant pas dans Code scanning.
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: pip-audit (backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Python 3.13 épinglé (pyproject requires-python >=3.13), comme ci.yml : un
+      # autre interpréteur résoudrait un autre jeu de marqueurs d'environnement et
+      # donc un autre ensemble de paquets à auditer.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # L'incantation qui marche vraiment avec uv, et pourquoi celle-là :
+      #
+      # GitLab faisait `uv sync --frozen --all-extras` puis `pip-audit` sur le venv
+      # actif. Transposé tel quel ici, c'est fragile : les venvs créés par uv ne
+      # contiennent pas `pip`, et l'audit d'environnement de pip-audit s'appuie
+      # dessus. On passe donc par l'export du lock, qui est STRICTEMENT équivalent en
+      # couverture (mêmes versions épinglées, mêmes extras) et bien plus rapide —
+      # aucune roue n'est téléchargée ni installée.
+      #
+      #   --frozen          : lit uv.lock tel quel, sans le régénérer (échoue si le
+      #                       lock a dérivé de pyproject → on audite bien ce qui ship) ;
+      #   --all-extras      : inclut `postgres` et `dev`, comme ci.yml et GitLab ;
+      #   --no-emit-project : exclut le paquet local `itsm-modern-ai` lui-même (il n'a
+      #                       pas d'avis PyPI ; sans ce drapeau pip-audit s'étrangle
+      #                       sur une distribution introuvable) ;
+      #   les hashes sont conservés → voir --require-hashes plus bas.
+      - name: Exporter les dépendances verrouillées (uv.lock → requirements)
+        run: |
+          set -euo pipefail
+          # `--quiet` : sans lui, uv recopie les ~660 lignes de l'export (hashes
+          # compris) sur stdout en plus du fichier — les logs du run deviennent
+          # illisibles alors que le contenu utile est déjà en artefact.
+          uv export --quiet --frozen --all-extras --no-emit-project \
+            --format requirements-txt -o requirements-audit.txt
+          echo "$(grep -c '^[a-zA-Z0-9]' requirements-audit.txt) lignes de paquets exportées."
+
+      - name: pip-audit
+        id: audit
+        run: |
+          set -uo pipefail
+          # --require-hashes : chaque paquet est déjà épinglé ET haché par uv export.
+          #   pip-audit passe alors en mode « la liste fournie est la liste finale »
+          #   (implique --no-deps) : aucune résolution, aucun réseau vers un index,
+          #   donc aucune dérive possible entre ce qui est audité et ce qui est livré.
+          # --disable-pip : interdit à pip-audit de retomber sur pip pour résoudre.
+          #   Inutile en théorie avec --require-hashes, mais c'est la ceinture qui
+          #   évite l'échec obscur « ensurepip is not available » quand pip-audit
+          #   tente de fabriquer un venv d'isolation.
+          # uvx : exécute pip-audit dans un environnement jetable, sans polluer
+          #   l'environnement du projet ni ajouter une dépendance au lock.
+          uvx pip-audit \
+            --requirement requirements-audit.txt \
+            --require-hashes \
+            --disable-pip \
+            --progress-spinner off \
+            --format markdown \
+            --output rapport.md
+          code=$?
+
+          {
+            echo "## Audit des dépendances Python (pip-audit)"
+            echo
+            if [ "$code" -eq 0 ]; then
+              echo "✅ Aucune vulnérabilité connue dans les dépendances verrouillées (\`uv.lock\`, tous extras)."
+            else
+              echo "⚠️ Vulnérabilités connues détectées. **Non bloquant** (cf. en-tête du workflow),"
+              echo "mais à trier : \`uv lock --upgrade-package <paquet>\` puis vérifier la CI."
+              echo
+              cat rapport.md
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          cat rapport.md || true
+          if [ "$code" -ne 0 ]; then
+            echo "::warning title=pip-audit::Des CVE connues affectent les dépendances Python — voir le résumé du run."
+          fi
+          # NON BLOQUANT, par décision (cf. en-tête). Le `exit 0` est explicite plutôt
+          # qu'un `|| true` noyé dans la commande : l'intention doit se lire.
+          exit 0
+
+      - name: Publier le rapport
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-report
+          path: |
+            rapport.md
+            requirements-audit.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
+  frontend:
+    name: npm audit (frontend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` (et non `npm install`) : installe exactement package-lock.json, sans
+      # jamais le réécrire. On audite l'arbre réellement livré.
+      - run: npm ci
+
+      - name: npm audit
+        id: audit
+        run: |
+          set -uo pipefail
+          # Seuil de sévérité EXPLICITE, identique à GitLab (`--audit-level=high`) :
+          # sans lui, npm échoue dès la première alerte `low`, dont la quasi-totalité
+          # provient d'outils de build qui ne s'exécutent jamais en production. On
+          # cible ce qui mérite une action : high + critical.
+          npm audit --audit-level=high
+          code=$?
+          # Rapport lisible pour le résumé : `--json` est complet mais illisible, on
+          # réutilise donc la sortie texte. Deuxième passe volontaire (l'arbre est déjà
+          # en cache, coût négligeable) parce que npm audit n'écrit pas de fichier.
+          npm audit --audit-level=high > rapport.txt 2>&1 || true
+
+          {
+            echo "## Audit des dépendances frontend (npm audit, seuil \`high\`)"
+            echo
+            if [ "$code" -eq 0 ]; then
+              echo "✅ Aucune vulnérabilité de sévérité \`high\` ou \`critical\`."
+            else
+              echo "⚠️ Vulnérabilités \`high\`/\`critical\` détectées. **Non bloquant** (cf. en-tête)."
+              echo "Piste : \`npm audit fix\` (sans \`--force\`, qui casserait les majeures)."
+              echo
+              echo '```'
+              cat rapport.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$code" -ne 0 ]; then
+            echo "::warning title=npm audit::Des CVE high/critical affectent les dépendances frontend — voir le résumé du run."
+          fi
+          exit 0
+
+      - name: Publier le rapport
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: frontend/rapport.txt
+          if-no-files-found: ignore
+          retention-days: 30

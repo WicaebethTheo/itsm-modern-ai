@@ -35,7 +35,7 @@ spike-report*.md
 Untitled.png
 *.mockup.png
 
-# Notes internes (planning, archives de passation, archives) — non publié
+# Notes internes (planning, archives) — non publié
 notes/
 
 # Sauvegardes locales créées par update.sh (base + master.key)

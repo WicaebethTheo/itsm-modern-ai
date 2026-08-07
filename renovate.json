@@ -1,0 +1,148 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Renovate — ITSM Modern AI (dépôt public GitHub `WicaebethTheo/itsm-modern-ai`, branche `main`).",
+    "Principe directeur, calqué sur celui du produit : le bot PROPOSE, un humain DÉCIDE. Aucun automerge sur une dépendance de runtime (fastapi, pydantic, cryptography, httpx, sqlmodel, react…) — ce moteur fait du triage de tickets avec des garde-fous de sécurité, un bump silencieux s'y voit à l'oeil nu ou pas du tout.",
+    "Build reproductible : le Dockerfile installe via `uv sync --frozen`, qui ÉCHOUE si `uv.lock` diverge de `pyproject.toml`. Le manager `pep621` lance `uv lock --upgrade-package <dep>` pendant la mise à jour, donc `pyproject.toml` et `uv.lock` partent toujours dans le MÊME commit. Le job `docker-build` de `ci.yml` rejoue ce build sur chaque PR : une PR Renovate qui casserait la cohérence du lock est rouge avant merge.",
+    "Langue : préfixes de commit conventionnels `chore(deps):` / `fix(deps):` (preset `:semanticPrefixFixDepsChoreOthers`, inclus dans `config:recommended` — `fix` pour les deps de production, `chore` pour le reste). Le corps des messages et les titres de PR restent en anglais standard Renovate : ces textes sont assemblés à partir de templates (`commitMessageAction`/`Topic`/`Extra`) que Renovate écrase lui-même selon le cas (Pin, Rollback, Lock file maintenance…), les franciser produirait du franglais bancal à la première PR non prévue."
+  ],
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    "security:minimumReleaseAgeNpm",
+    "security:minimumReleaseAgePypi",
+    ":enableVulnerabilityAlerts"
+  ],
+  "timezone": "Europe/Paris",
+  "schedule": ["* 20-23,0-5 * * 1-5", "* * * * 0,6"],
+  "prHourlyLimit": 2,
+  "prConcurrentLimit": 5,
+  "labels": ["dependencies"],
+  "semanticCommits": "enabled",
+  "osvVulnerabilityAlerts": true,
+  "lockFileMaintenance": {
+    "description": "Rafraîchit `uv.lock` (`uv lock --upgrade`) et `frontend/package-lock.json` une fois par semaine, lundi tôt. Complémentaire des PR par dépendance : celles-ci ne touchent que les deps DIRECTES, le lock maintenance récupère aussi les transitives. Jamais automergé (des transitives de runtime changent).",
+    "enabled": true,
+    "schedule": ["* 0-5 * * 1"]
+  },
+  "vulnerabilityAlerts": {
+    "description": "Correctifs de vulnérabilité prioritaires : Renovate les force hors `schedule`, hors `prHourlyLimit`/`prConcurrentLimit` (elles « doublent la file »), et hors délai de quarantaine `minimumReleaseAge` — c'est le comportement par défaut, rappelé ici explicitement. Suffixe de titre `[SECURITY]`. Jamais automergées : un correctif de sécurité se lit.",
+    "enabled": true,
+    "addLabels": ["security"],
+    "minimumReleaseAge": null,
+    "automerge": false
+  },
+  "packageRules": [
+    {
+      "description": "INVARIANT — notre propre image produit n'est pas une dépendance. Ne jamais proposer de bump de `ghcr.io/wicaebeththeo/itsm-modern-ai` (docker-compose.portainer.yml) ni du tag local `itsm-modern-ai` (docker-compose.yml, construit depuis ce dépôt) : leur version est décidée par la release, pas par un bot.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/wicaebeththeo/**", "itsm-modern-ai"],
+      "enabled": false
+    },
+    {
+      "description": "INVARIANT — `requires-python` reste figé à `>=3.13`. Passer à 3.14 impose de bouger en même temps le Dockerfile, la CI GitHub et la CI GitLab : décision humaine, pas une PR de bot.",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["requires-python"],
+      "enabled": false
+    },
+    {
+      "description": "INVARIANT — image de base `python:3.13-slim` gelée, alignée sur `requires-python`. Corollaire de la règle précédente : un bump ici sans bump du `requires-python` ferait diverger l'interpréteur de référence.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["python"],
+      "enabled": false
+    },
+    {
+      "description": "`ghcr.io/astral-sh/uv` est PINNÉ volontairement dans le Dockerfile (« build reproductible » : le tag `latest` contredisait la promesse). Un pin n'est pas un gel : Renovate a le droit de proposer `0.11.25` → version suivante, en gardant la forme épinglée. Rien à désactiver ici — cette règle ne fait que documenter l'intention (et `docker:pinDigests` n'est volontairement PAS activé, il transformerait le pin lisible en digest).",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/astral-sh/uv"],
+      "enabled": true
+    },
+    {
+      "description": "Les deps Python sont déclarées en PLANCHERS (`pydantic>=2.7`, `fastapi>=0.115`…). Avec la stratégie par défaut, toute nouvelle version satisfait déjà le plancher : Renovate serait muet. `update-lockfile` met à jour `uv.lock` en laissant le plancher tranquille, et retombe sur `replace` quand la version sort de la borne (ex. `apscheduler>=3.10,<4`). C'est ce qui garde lock ⇄ pyproject cohérents pour `uv sync --frozen`. NB : `rangeStrategy` est résolu AVANT le calcul des updateTypes — cette règle ne peut donc pas porter de `matchUpdateTypes`.",
+      "matchManagers": ["pep621"],
+      "rangeStrategy": "update-lockfile"
+    },
+    {
+      "description": "GROUPE 1 — deps Python non majeures en une seule PR hebdomadaire (pyproject + uv.lock). Les MAJEURES ne sont pas dans le groupe : elles arrivent en PR individuelles, ce qui est le bon grain de relecture pour un cryptography ou un pydantic.",
+      "matchManagers": ["pep621"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Python dependencies (uv)"
+    },
+    {
+      "description": "GROUPE 2 — deps npm de PRODUCTION (react, react-router-dom, lucide-react…) : groupées pour le bruit, jamais automergées, elles finissent dans le bundle servi par le moteur.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "npm production dependencies"
+    },
+    {
+      "description": "devDependencies npm : on SÉPARE `patch` de `minor`. Par défaut Renovate fusionne les deux dans une seule PR « minor », ce qui rendrait impossible la règle d'automerge des seuls patchs plus bas.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "separateMinorPatch": true
+    },
+    {
+      "description": "GROUPE 3 — devDependencies npm en `minor` (vite, vitest, typescript, biome, playwright…) : groupées, relues par un humain (un minor de Vite ou de Biome peut changer le build ou le formatage).",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor"],
+      "groupName": "npm devDependencies (minor)"
+    },
+    {
+      "description": "GROUPE 4 — actions GitHub (checkout, setup-python, setup-node, setup-uv, docker/*). `pin`/`pinDigest` restent hors du groupe : Renovate les range déjà dans sa PR « Pin Dependencies ». `digest` aussi, il a sa propre règle automergeable plus bas.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "GROUPE 5 — images de base Docker (node:22-slim, postgres:16-alpine, ghcr.io/astral-sh/uv) en non majeur. Les MAJEURES (node 22→24, postgres 16→17) sortent en PR individuelles : elles impliquent une migration ou un alignement avec `actions/setup-node`.",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Docker base images"
+    },
+    {
+      "description": "AUTOMERGE 1/2 — patchs de devDependencies npm UNIQUEMENT : outillage de build/test, jamais livré dans l'image de runtime. `matchCurrentVersion: !/^0/` écarte les paquets 0.x (SemVer autorise une rupture sur un patch avant 1.0). `platformAutomerge: false` : on ne parie pas sur l'existence d'une règle de protection de branche GitHub — c'est Renovate lui-même qui attend que les checks de `ci.yml` (ruff + pytest + biome + tsc + vitest + build + build Docker) soient verts avant de merger. Quarantaine de 3 jours héritée de `security:minimumReleaseAgeNpm`.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["patch"],
+      "matchCurrentVersion": "!/^0/",
+      "groupName": "npm devDependencies (patch)",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false
+    },
+    {
+      "description": "AUTOMERGE 2/2 — digests d'actions GitHub. Une fois les actions épinglées au SHA (`helpers:pinGitHubActionDigests`), un digest qui bouge = le même tag repointé en amont : il faut le suivre vite, et il n'y a rien à relire dans un SHA. Même garde-fou : merge par Renovate après CI verte, pas par la plateforme.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest"],
+      "groupName": "GitHub Actions digests",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false
+    },
+    {
+      "description": "CEINTURE ET BRETELLES — dernière règle du fichier, elle gagne sur toutes les précédentes : jamais d'automerge sur le coeur runtime (backend et front), quoi qu'une règle plus haut ait pu décider.",
+      "matchPackageNames": [
+        "fastapi",
+        "pydantic",
+        "pydantic-settings",
+        "uvicorn",
+        "sqlmodel",
+        "alembic",
+        "httpx",
+        "anyio",
+        "cryptography",
+        "pwdlib",
+        "itsdangerous",
+        "apscheduler",
+        "prometheus-client",
+        "pyyaml",
+        "psycopg",
+        "react",
+        "react-dom",
+        "react-router-dom"
+      ],
+      "automerge": false
+    }
+  ]
+}

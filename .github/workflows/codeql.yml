@@ -1,0 +1,117 @@
+# Analyse statique de sécurité CodeQL (SAST) — backend Python + frontend TS/React.
+#
+# Complémentaire de ci.yml, pas redondant : ci.yml fait du *lint* (ruff, biome) et du
+# *test* (pytest, vitest) — des règles de style et des assertions écrites à la main.
+# CodeQL fait de l'analyse de flux de données inter-procédurale : il suit une valeur
+# depuis une source non fiable (corps de requête FastAPI, paramètre d'URL, réponse
+# d'un LLM…) jusqu'à un puits dangereux (SQL, `subprocess`, `eval`, `innerHTML`,
+# chemin de fichier). C'est exactement la classe de bugs qu'un linter ne voit pas et
+# qui compte le plus ici : le produit ingère du texte de ticket GLPI arbitraire et le
+# fait transiter par un LLM avant que le code ne décide.
+#
+# Les résultats atterrissent dans l'onglet « Security › Code scanning » du dépôt
+# (gratuit et public sur les dépôts publics), pas seulement dans les logs du run.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Balayage hebdomadaire : la base de règles CodeQL évolue en continu (nouvelles
+  # requêtes, nouveaux modèles de bibliothèques). Un code inchangé peut donc devenir
+  # « vulnérable » sans le moindre commit — sans planification, on ne l'apprendrait
+  # qu'au prochain push. Mardi 04:17 UTC : creux de charge des runners hébergés (on
+  # évite minuit pile et l'heure ronde, où toutes les crontabs du monde se déclenchent
+  # en même temps et où la file d'attente explose).
+  schedule:
+    - cron: "17 4 * * 2"
+  workflow_dispatch:
+
+# Même logique que ci.yml : un nouveau push sur la même branche/PR rend l'analyse en
+# cours obsolète (~5 min de runner par langage). On l'annule.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+# Permissions minimales au niveau workflow ; le job les élargit strictement de ce
+# dont CodeQL a besoin (dépôt public → le jeton par défaut est déjà large, on le
+# restreint explicitement).
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyse (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    # Une analyse qui part en boucle ne doit pas manger 6 h de runner.
+    timeout-minutes: 30
+    permissions:
+      # Publication des résultats SARIF dans « Security › Code scanning ».
+      security-events: write
+      # Lecture du code à analyser.
+      contents: read
+      # CodeQL interroge l'API Actions pour corréler le run courant avec le dernier
+      # run réussi sur la branche de base (calcul du diff des alertes sur les PR) ;
+      # sans `actions: read`, l'étape `analyze` échoue sur les dépôts privés et perd
+      # le contexte différentiel sur les publics.
+      actions: read
+
+    strategy:
+      # Une analyse Python cassée ne doit PAS annuler l'analyse TypeScript en cours :
+      # on veut les deux verdicts à chaque run, pas le premier échec.
+      fail-fast: false
+      matrix:
+        include:
+          # Backend : src/itsm_modern_ai (FastAPI + SQLModel + Alembic).
+          - language: python
+            build-mode: none
+          # Frontend : frontend/src (React 19 + Vite 6). L'identifiant de langage
+          # unifié est `javascript-typescript` — l'ancien `javascript` reste accepté
+          # mais est déprécié ; les deux couvrent .js/.jsx/.ts/.tsx.
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # `build-mode: none` = on construit la base CodeQL directement depuis les
+      # sources, SANS installer les dépendances ni exécuter quoi que ce soit.
+      #
+      # Pourquoi c'est le bon choix pour Python ici (et non un raccourci) :
+      #   - Python et TypeScript sont des langages interprétés : l'extracteur CodeQL
+      #     parse les fichiers, il n'a aucun artefact de compilation à récupérer.
+      #     `none` est le mode recommandé (et le défaut) pour ces langages.
+      #   - Faire un `uv sync --frozen --all-extras` avant l'analyse n'améliorerait
+      #     que la résolution de quelques modèles de bibliothèques tierces, pour un
+      #     coût de plusieurs minutes par run ET un risque de faux rouge permanent :
+      #     un lock qui dérive ferait échouer le job *sécurité* alors que c'est le
+      #     job de ci.yml de signaler ça. On garde les responsabilités séparées.
+      #   - Les requêtes qui comptent pour nous (injection, path traversal, SSRF,
+      #     désérialisation, XSS) sont modélisées sur la bibliothèque standard et sur
+      #     les frameworks connus de CodeQL (FastAPI/Starlette, SQLAlchemy, React),
+      #     pas sur le contenu du site-packages installé.
+      - name: Init CodeQL (${{ matrix.language }})
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # Pas de `queries:` → suite `default`, celle des requêtes à haute précision.
+          # `security-extended` remonterait davantage de pistes mais avec un taux de
+          # faux positifs qui, sur un projet à un mainteneur, transforme l'onglet
+          # Security en bruit qu'on finit par ignorer — le pire résultat possible.
+          # À réévaluer quand le triage des alertes sera routinier. (Attention si on
+          # y touche : les seules valeurs valides sont `default`, `security-extended`,
+          # `security-and-quality` et `security-experimental` ; un simple `security`
+          # fait échouer l'étape `init`.)
+
+      # Pas d'étape `autobuild` : elle n'a de sens que pour les langages compilés,
+      # et `build-mode: none` la rend inutile (elle échouerait même, faute de cible).
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v4
+        with:
+          # Catégorise les résultats par langage : sans ça, les deux jobs de la
+          # matrice écrasent mutuellement leur SARIF dans Code scanning et seul le
+          # dernier arrivé reste visible.
+          category: "/language:${{ matrix.language }}"

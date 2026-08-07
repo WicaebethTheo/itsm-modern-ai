@@ -1,0 +1,81 @@
+# Configuration gitleaks — scan de secrets (cf. .github/workflows/secret-scan.yml).
+#
+# Principe : on N'AFFAIBLIT PAS la détection. `useDefault = true` reprend l'intégralité
+# du jeu de règles embarqué dans le binaire gitleaks (AWS, GCP, GitLab PAT, GitHub PAT,
+# clés privées, JWT, etc.) ; on se contente d'ajouter des exceptions *chirurgicales*
+# pour les faux positifs connus de ce dépôt.
+[extend]
+useDefault = true
+
+# ── Allowlist globale ─────────────────────────────────────────────────────────
+# L'allowlist porte sur la VALEUR détectée (`regexTarget = "match"`), pas sur un
+# chemin de fichier : c'est volontaire. Exclure `tests/**` en bloc aurait créé un
+# angle mort permanent (un vrai secret collé dans une fixture serait passé
+# inaperçu) ; ici seule la chaîne exacte du placeholder est tolérée, où qu'elle
+# apparaisse, et n'importe quelle *autre* clé AWS dans les mêmes fichiers reste
+# détectée et fait rougir le job.
+[[allowlists]]
+description = """
+Placeholder officiel de la documentation AWS (« AKIAIOSFODNN7EXAMPLE »). Utilisé
+comme fixture par les tests du masquage PII : tests/unit/test_masking.py vérifie que
+domain/masking.py remplace bien une clé cloud par [CLOUD_KEY]. Ce n'est pas un
+identifiant réel — il est publié tel quel par AWS dans ses propres exemples.
+"""
+regexTarget = "match"
+regexes = [
+  '''AKIAIOSFODNN7EXAMPLE''',
+]
+
+# Idem pour la clé secrète compagne du même exemple AWS : elle n'apparaît pas
+# aujourd'hui dans le dépôt, mais si un test du masquage l'ajoute demain (paire
+# access-key/secret-key), le scan ne doit pas rougir pour un placeholder public.
+[[allowlists]]
+description = "Secret access key de l'exemple officiel AWS (compagnon de AKIAIOSFODNN7EXAMPLE)."
+regexTarget = "match"
+regexes = [
+  '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
+]
+
+# ── Fixtures de la suite de tests licensing ───────────────────────────────────
+# Paire Ed25519 DÉDIÉE AUX TESTS (tests/unit/test_licensing.py). La clé privée y vit
+# en clair par conception : elle ne signe que des jetons vérifiés contre
+# TEST_PUBLIC_KEY_HEX, et un test dédié assure qu'elle DIFFÈRE de la clé publique
+# embarquée du produit (licensing.PUBLISHER_PUBLIC_KEY_HEX). La vraie clé privée de
+# signature des licences ne quitte jamais le dépôt privé de signature — elle n'est
+# donc pas concernée. On allowliste la valeur exacte : toute *autre* clé hex de
+# 64 caractères reste détectée.
+[[allowlists]]
+description = "Paire Ed25519 de test de tests/unit/test_licensing.py (sans valeur hors des tests)."
+regexTarget = "match"
+regexes = [
+  '''6207e5305adef0b557a9e568dbefd1b97094a8bdb44996e6785591b6250f7c85''',
+  '''c56015ecbbd074740f2adf93a6c0024336d329982853b7973d006fb8168d6bb6''',
+]
+
+# Jetons de licence factices des tests d'intégration (« itsm-lic.v1.bidon.bidon »,
+# utilisé pour vérifier qu'une clé invalide est bien rejetée). `condition = "AND"`
+# exige les DEUX critères : le fichier doit être sous tests/ ET la valeur doit
+# ressembler à un jeton itsm-lic. Un jeton de licence réel collé ailleurs dans le
+# code resterait signalé.
+[[allowlists]]
+description = "Jetons de licence factices des tests d'intégration (itsm-lic.v1.*)."
+condition = "AND"
+paths = [
+  '''^tests/''',
+]
+regexTarget = "match"
+regexes = [
+  '''itsm-lic\.v1\.[A-Za-z0-9._-]+''',
+]
+
+# ── Faux positifs structurels ─────────────────────────────────────────────────
+# Lockfiles : `uv.lock` et `frontend/package-lock.json` sont truffés de hashes
+# sha256/sha512 en base64 qui déclenchent les règles « generic high entropy ».
+# Ce sont des empreintes d'artefacts publics, jamais des secrets — et ils sont
+# régénérés par l'outillage, donc impossibles à « corriger ».
+[[allowlists]]
+description = "Hashes d'intégrité des lockfiles (uv.lock, package-lock.json) — entropie élevée mais publique."
+paths = [
+  '''(^|/)uv\.lock$''',
+  '''(^|/)package-lock\.json$''',
+]
