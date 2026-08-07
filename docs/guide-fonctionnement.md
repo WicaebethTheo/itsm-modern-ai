@@ -192,8 +192,8 @@ flowchart TD
 | Masquage **IBAN/cartes, IP/MAC, secrets, NIR/SIRET** | ❌ | ✅ |
 | Vérification licence **hors-ligne** (Ed25519, air-gap) | — | ✅ |
 
-> La licence est un **jeton signé Ed25519**, vérifié **100 % hors-ligne** (aucun appel
-> sortant, compatible air-gap). Pas de « phone-home ».
+> La licence est un **jeton signé Ed25519**, vérifié **100 % hors-ligne** : sa validation
+> n'émet **aucun appel sortant** (pas de serveur de licence), compatible air-gap.
 
 ---
 
@@ -252,7 +252,12 @@ stateDiagram-v2
 - **Hébergement** : 100 % chez vous (mono-conteneur). Aucun backend éditeur dont vous dépendez.
 - **Données** : avec Ollama, le contenu ne quitte **jamais** votre réseau ; avec Mistral, il reste sur une infrastructure **UE**.
 - **Masquage PII** appliqué **avant** tout appel LLM (portée selon la licence).
-- **Zéro phone-home** par défaut ; vérification de mise à jour **opt-in** ; licence **hors-ligne**.
+- **Sorties réseau** : le fournisseur LLM configuré, votre GLPI, et — seule sortie
+  supplémentaire — la **vérification de version**, **activée par défaut** (opt-**out**) :
+  elle lit uniquement le dernier numéro de version publié sur `api.github.com`,
+  **sans transmettre aucune donnée**, en cache, et seulement quand un admin connecté
+  ouvre la console. `UPDATE_CHECK_URL=` vide dans `.env` la coupe (air-gap total).
+- **Licence vérifiée hors-ligne** (Ed25519) : aucun serveur de licence, aucun appel sortant.
 - **Auditable** : chaque décision est journalisée (entrées masquées, réponse, validation, action).
 
 > ⚠️ Le moteur fournit des **garde-fous**, pas une garantie absolue. La sécurisation du

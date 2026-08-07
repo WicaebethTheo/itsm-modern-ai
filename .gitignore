@@ -6,6 +6,11 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+# Sorties de coverage.py (rapports locaux — jamais committés)
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 
 # Env & secrets — JAMAIS committer (invariant souveraineté / secrets chiffrés)
 .env

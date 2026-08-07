@@ -5,6 +5,77 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-08-07 — 0.9.47 — Honnêteté des claims + bornes mémoire (revue complète)
+
+Revue complète du dépôt (architecture, sécurité, doc, CI). Le cœur de triage n'a pas
+bougé : cette version corrige des **promesses de documentation devenues fausses** et
+deux **garde-fous trop laxistes**. Aucun changement de comportement du moteur.
+
+### Sécurité — anti brute-force
+
+- **Table du rate-limiter de login BORNÉE** (`api/ratelimit.py`). La table des clés (une
+  entrée par IP cliente) n'était jamais purgée : sous `TRUST_PROXY_HEADERS=true`, la clé
+  vient de `X-Forwarded-For`, donc un attaquant faisant varier cet en-tête faisait croître
+  la mémoire du process sans limite. Ajout d'une purge des entrées mortes (aucun échec
+  dans la fenêtre, aucun blocage actif) amortie sur les écritures, plus un **plafond dur**
+  (`_MAX_ENTRIES = 10 000`). **Un blocage actif n'est JAMAIS évincé** : saturer la table
+  d'IP bidon ne permet donc pas de se débloquer. Sémantique du limiteur inchangée (seuils,
+  durées, `retry_after`, `reset`).
+
+### Qualité du masquage (feature Supporter)
+
+- **NIR / SIREN / SIRET validés par leur clé de contrôle** (`features/pii_advanced.py`) :
+  Luhn pour SIREN/SIRET (règle INSEE), `97 - (numéro mod 97)` pour le NIR. Auparavant
+  **toute** suite de 9, 14 ou 15 chiffres était caviardée en `[SIRET]` / `[NIR]` — un
+  numéro de ticket, de série ou une référence fournisseur disparaissait du prompt envoyé
+  au LLM, dégradant la qualité du triage. Un candidat dont la clé est invalide est
+  désormais **laissé tel quel** (même contrat que la validation Luhn des cartes du cœur).
+  Exception connue et assumée : les SIRET de La Poste (SIREN `356000000`) ne suivent pas
+  Luhn et ne sont pas masqués.
+
+### Documentation — claims corrigés (le produit se vend sur son honnêteté)
+
+- **Fin du « aucun phone-home / aucun appel sortant »**. La vérification de version est
+  **activée par défaut** (opt-**out**) depuis plusieurs versions et interroge
+  `api.github.com`. L'affirmation absolue figurait dans `README.md`, `SECURITY.md`,
+  `docs/dpo.md`, `docs/architecture.md` et `docs/guide-fonctionnement.md` (qui la
+  qualifiait encore d'« opt-in »). Ces documents décrivent maintenant l'inventaire exact
+  des sorties réseau et, pour la vérification de version : URL appelée, déclencheur
+  (chargement de la console par un **admin authentifié**, jamais de tâche de fond),
+  fréquence (cache 1 h), **données transmises : aucune**, et la coupure air-gap
+  (`UPDATE_CHECK_URL=` vide). La **licence Supporter reste vérifiée 100 % hors-ligne** —
+  cette garantie-là est inchangée et clarifiée.
+- **`docs/dpo.md`** : fiche opposable de la vérification de version à consigner au
+  registre ; mention explicite du **titre de ticket conservé en clair** dans le Journal de
+  décision (`subject`, non masqué, rétention 365 j, **exclu** de l'export CSV DPO).
+- **`SECURITY.md`** : la 2FA TOTP était annoncée « codée mais désactivée » alors qu'aucune
+  ligne n'existe dans le produit → requalifiée **« en alpha — non implémentée à ce jour »**,
+  à ne pas présenter comme un contrôle disponible en audit.
+- **`SECURITY.md`** : nouveau risque résiduel assumé — **fenêtre d'idempotence** (le poller
+  marque `processed` après l'action) : un arrêt brutal entre la mutation GLPI et ce
+  marquage peut produire une seconde mutation et une seconde réponse **publique**, en
+  modes `semi_auto`/`full_auto` uniquement ; impact nul en `suggestion` (défaut).
+- **`persistence/tables.py`** : la docstring de `ProcessedTicket` promettait une
+  re-vérification côté GLPI avant écriture qui n'a jamais été implémentée — remplacée par
+  la description honnête de la fenêtre et de son impact par mode.
+- **`api/routes/version.py`** : docstring « OPT-IN, URL vide par défaut » corrigée en
+  « OPT-OUT » avec les garde-fous réels et les formats de flux acceptés.
+- **`les conventions internes`** : la règle de release pointait les releases GitLab comme déclencheur de
+  la notification de MAJ ; le défaut du code est le flux **GitHub** `releases/latest`.
+- **`docs/testing.md`** : compteurs de tests remis à jour (**376** pytest, **89** Vitest) +
+  documentation de la CI GitHub, qui n'y figurait pas.
+- **`.env.example`** : `UPDATE_CHECK_URL` documenté avec sa valeur par défaut, son
+  caractère opt-out et la procédure air-gap.
+
+### Divers
+
+- `.gitignore` : sorties de `coverage.py` (`.coverage`, `.coverage.*`, `htmlcov/`,
+  `coverage.xml`) ignorées — un `.coverage` traînait à la racine, exposé à un commit
+  accidentel.
+- Tests : **+9** (purge et plafond du limiteur, non-contournement d'un blocage par
+  saturation, clés de contrôle NIR/SIREN/SIRET, non-régression des patterns custom).
+  Total **376 pytest** + 89 Vitest.
+
 ## 2026-07-02 — 0.9.46 — Durcissement du cœur de triage (audit approfondi)
 
 ### Sécurité — garde-fous du moteur

@@ -19,7 +19,7 @@ Déploiement **pilote** prévu pour un **réseau interne non exposé**. La base 
 - Mot de passe administrateur, haché avec **Argon2** ; gestion par session.
 - **Fail-closed (durcissement audit 2026-05)** : si **aucun** mot de passe admin n'est configuré, les endpoints d'admin sont **refusés (401)** par défaut. L'ancien comportement « ouvert » (pilote réseau interne) doit être activé **explicitement** via le réglage `dev_open_admin=true` — réservé au dev/labo, **jamais en prod**.
 - **Rate-limit du login** (anti brute-force) **en mémoire** par IP (mono-process pilote, pas de store partagé / pas de HA). Honore `X-Forwarded-For` si `trust_proxy_headers=true`.
-- **2FA TOTP** : codé mais **désactivé par défaut** (réseau interne non exposé).
+- **2FA TOTP : en alpha** — **non implémentée à ce jour** dans le produit. À ne **pas** considérer comme un contrôle disponible, ni la présenter comme telle en audit.
 
 ## Transport
 
@@ -36,6 +36,7 @@ Déploiement **pilote** prévu pour un **réseau interne non exposé**. La base 
 - **Re-masquage des brouillons en modes auto** : avant toute publication **publique** (`semi_auto`/`full_auto`), le brouillon LLM est **re-masqué** (PII, selon la licence) et **borné en longueur**.
 - **Bornes de génération LLM** (`max_tokens`) : plafonne coût/latence (consommation non bornée, OWASP LLM10).
 - **Neutralisation de l'injection de formule CSV** : les cellules d'export DPO commençant par `= + - @ \t \r` sont préfixées d'une apostrophe (protège tableurs).
+- **Fenêtre d'idempotence (risque résiduel assumé)** : le poller marque un Ticket `processed` **après** l'action. Un arrêt brutal entre la mutation GLPI et ce marquage peut, au cycle suivant, produire une **seconde mutation et une seconde réponse publique** — **en modes `semi_auto`/`full_auto` uniquement**. En mode `suggestion` (défaut) l'impact est nul : au pire un Suivi **privé** en double. Fenêtre connue et assumée (pas de transaction distribuée avec GLPI).
 
 ## Observabilité
 
@@ -44,8 +45,9 @@ Déploiement **pilote** prévu pour un **réseau interne non exposé**. La base 
 
 ## Souveraineté
 
-- **Aucun phone-home.**
-- **Aucun appel sortant** hors du fournisseur LLM configuré (Mistral EU par défaut ; **Ollama** ne sort pas du tout, modèle local).
+- **Une seule sortie réseau en plus du fournisseur LLM configuré** (Mistral EU par défaut ; **Ollama** ne sort pas du tout, modèle local) : la **vérification de version**, **activée par défaut** (`update_check_url` → `https://api.github.com/repos/WicaebethTheo/itsm-modern-ai/releases/latest`). Elle est *best-effort*, déclenchée uniquement quand un **admin authentifié** charge la console (`GET /api/version`, sous `require_auth`), **mise en cache** (`update_check_ttl_seconds`, défaut 3 600 s), soumise au garde anti-SSRF, et **lit uniquement** le dernier numéro de version publié + les notes de release : **aucune donnée de l'instance n'est transmise** (pas d'identifiant, pas de télémétrie, requête GET sans corps).
+- **Désactivation totale** : `UPDATE_CHECK_URL=` (vide) dans `.env` → aucun appel sortant hors LLM, déploiement **air-gap 100 % hors-ligne**.
+- **Licence Supporter vérifiée 100 % hors-ligne** (signature Ed25519, clé publique embarquée) : **aucun serveur de licence**, aucun appel sortant, y compris en air-gap.
 - Application 100 % on-premise sur l'infrastructure du client.
 - **Périmètre d'action restreint par sélection admin** : l'IA n'agit que sur les **catégories, techniciens, groupes et entités** explicitement autorisés par l'admin (Whitelist curée depuis un scan GLPI). Tout ID hors de ce périmètre effectif est rejeté → Ticket « à trier », aucune écriture (FR-7).
 

@@ -50,7 +50,18 @@ nominatives peuvent donc apparaître en clair dans le contenu transmis au LLM. L
   - **Ollama** — modèle **100 % local** sur l'infra du client : **aucune donnée ne sort** (pas de clé API, pas de transfert).
 - ⚠️ **OpenAI et Anthropic sont hors UE** : s'ils sont activés, le contenu masqué des tickets est transmis hors UE. À **valider explicitement** avec la DPO avant activation ; le défaut souverain reste Mistral EU.
 - Toute l'application tourne **on-premise** sur l'infrastructure du client.
-- **Aucun appel sortant** hors du fournisseur LLM configuré. **Aucun phone-home.**
+- **Sorties réseau de l'instance — liste exhaustive** :
+  1. le **fournisseur LLM configuré** (contenu masqué du ticket — cf. « Portée du masquage ») ;
+  2. le **GLPI** du client (réseau interne) ;
+  3. la **vérification de version**, **activée par défaut** (opt-**out**, et non opt-in).
+- **Détail de la vérification de version** (à consigner tel quel au registre) :
+  - **URL appelée** : `https://api.github.com/repos/WicaebethTheo/itsm-modern-ai/releases/latest` (paramètre `UPDATE_CHECK_URL`) ;
+  - **Déclencheur** : uniquement le chargement de la console par un **administrateur authentifié** (`GET /api/version`) — pas de tâche de fond, pas d'appel si personne ne se connecte ;
+  - **Fréquence** : au plus **une requête par heure** (cache, `update_check_ttl_seconds`, défaut 3 600 s) ;
+  - **Données transmises par l'instance** : **aucune**. Requête `GET` sans corps, sans identifiant d'instance, sans compteur d'usage, sans donnée de ticket. Le fournisseur de la plateforme d'hébergement du dépôt voit ce que voit n'importe quel visiteur d'une page publique (adresse IP publique de sortie, en-têtes HTTP standard) ;
+  - **Données reçues** : le dernier numéro de version publié et les notes de release ;
+  - **Désactivation** : `UPDATE_CHECK_URL=` (valeur vide) dans `.env` → **aucun appel**, déploiement **air-gap 100 % hors-ligne**. Le produit reste pleinement fonctionnel.
+- **Licence Supporter** : vérifiée **100 % hors-ligne** (signature Ed25519, clé publique embarquée). **Aucun serveur de licence, aucun appel sortant** — y compris en air-gap.
 - **Périmètre d'action restreint par l'admin** : l'IA n'utilise que les **catégories, techniciens, groupes et entités explicitement sélectionnés** par l'admin (Whitelist curée depuis un scan GLPI). Tout objet hors de ce périmètre est ignoré (Ticket « à trier »).
 
 ## Minimisation
@@ -81,7 +92,8 @@ permet de vérifier en réunion, **sans lire le code**, ce qui est réellement m
 ## Traçabilité
 
 - **Log exhaustif des appels LLM** (FR-19) : ticket, horodatage, modèle, contenu envoyé et reçu. Le contenu loggé **reflète toujours le masquage** — aucun secret en clair dans les logs.
-- **Journal de décision** (FR-20) : ticket, décision, catégorie, confiance, horodatage, lien GLPI.
+- **Journal de décision** (FR-20) : ticket, décision, catégorie, confiance, horodatage, lien GLPI, **titre du ticket**.
+- **Titre du ticket conservé en clair** : le Journal de décision stocke le **titre brut du ticket GLPI** (`subject`), **non masqué**, et l'affiche dans la console (page Journal, sous authentification) — il sert à relire une décision sans rouvrir GLPI. Si un titre de ticket contient une donnée personnelle, elle est donc conservée en clair dans la base locale pour la durée de rétention du Journal (`retention_decisions_days`, défaut 365 j). Ce champ est **exclu de l'export CSV DPO** (`GET /api/export/decisions.csv` n'a pas de colonne `subject`). Le masquage PII s'applique au **contenu envoyé au LLM**, pas à ce champ d'audit local.
 - **Export CSV** (FR-21) pour l'audit :
   - `GET /api/export/decisions.csv` — journal de décision ;
   - `GET /api/export/llm-calls.csv` — logs des appels LLM.

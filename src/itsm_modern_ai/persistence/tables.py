@@ -54,8 +54,19 @@ class ProcessedTicket(SQLModel, table=True):
 
     Un Ticket déjà traité (présent ici) n'est jamais retraité. La clé est le
     `ticket_id` GLPI ; `state_fingerprint` permet de détecter un changement d'état.
-    Posé de façon à survivre à un redémarrage entre l'écriture GLPI et l'enregistrement
-    local (au pire on re-vérifie côté GLPI avant d'écrire — cf. Epic 3).
+
+    ⚠️ Fenêtre de crash connue (pas de transaction distribuée avec GLPI) : le poller
+    (`scheduler/poller.py`) appelle le handler de triage PUIS `mark_processed`. Un arrêt
+    brutal ENTRE les deux laisse l'écriture GLPI faite sans marquage local → le Ticket est
+    repris au cycle suivant. Impact selon le mode du périmètre :
+    - `suggestion` (défaut) → au pire un Suivi interne PRIVÉ en double (aucune mutation,
+      rien de visible par le demandeur) ;
+    - `semi_auto` / `full_auto` → seconde mutation GLPI du Ticket ET seconde réponse
+      PUBLIQUE au demandeur.
+
+    Fermer cette fenêtre suppose une re-vérification côté GLPI avant mutation (relire les
+    Suivis / l'état du Ticket pour détecter un passage déjà effectué) : **non implémentée
+    à ce jour** dans `services/triage.py`.
     """
 
     __tablename__ = "processed_tickets"

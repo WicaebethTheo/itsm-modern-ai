@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from itsm_modern_ai.domain.licensing import FEATURE_PII_ADVANCED
@@ -36,8 +37,70 @@ SIRET_PLACEHOLDER = "[SIRET]"
 # NIR : sexe(1) + année(2) + mois(2) + dép(2) + commune(3) + ordre(3) + clé(2) = 15 chiffres,
 # groupes espacés tolérés. Ancré pour éviter de grignoter d'autres longues suites.
 _NIR_RE = re.compile(r"(?<!\d)[12][ ]?\d{2}[ ]?\d{2}[ ]?\d{2}[ ]?\d{3}[ ]?\d{3}[ ]?\d{2}(?!\d)")
-# SIRET (14 chiffres) ou SIREN (9 chiffres), groupes espacés tolérés.
+# SIRET (14 chiffres) ou SIREN (9 chiffres), groupes espacés tolérés. Le groupe final
+# est GREEDY : un SIRET de 14 chiffres est donc capturé en entier et jamais coupé en un
+# faux SIREN de 9 + reliquat.
 _SIRET_RE = re.compile(r"(?<!\d)\d{3}[ ]?\d{3}[ ]?\d{3}(?:[ ]?\d{5})?(?!\d)")
+
+
+def _luhn_ok(digits: str) -> bool:
+    """Validation Luhn (mod 10) d'une suite de chiffres.
+
+    Reprend à l'identique l'algorithme de `domain.masking._luhn_ok` (anti faux positifs
+    carte bancaire) : on le redéclare ici pour garder ce module de feature autonome et
+    pur, sans importer un helper privé du cœur.
+    """
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        d = ord(ch) - 48
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
+def _siret_ok(digits: str) -> bool:
+    """Clé de contrôle SIREN (9 chiffres) / SIRET (14 chiffres) : Luhn (règle INSEE).
+
+    Sans cette validation, TOUTE suite de 9 ou 14 chiffres (n° de ticket, n° de série,
+    référence fournisseur) partait en `[SIRET]` — faux positifs massifs sur du contenu ITSM.
+
+    ⚠️ Exception connue NON traitée : les SIRET de La Poste (SIREN `356000000`) ne
+    suivent pas Luhn mais la règle « somme des chiffres multiple de 5 ». Conséquence
+    assumée : un SIRET La Poste n'est pas masqué — faux négatif isolé sur un identifiant
+    d'entreprise public, pas sur une donnée personnelle. (Le SIREN `356000000` seul, lui,
+    satisfait Luhn et reste masqué.)
+    """
+    return len(digits) in (9, 14) and _luhn_ok(digits)
+
+
+def _nir_ok(digits: str) -> bool:
+    """Clé de contrôle NIR : les 13 premiers chiffres forment le numéro, les 2 derniers
+    la clé, avec `clé = 97 - (numéro mod 97)` (résultat dans 01..97).
+
+    ⚠️ Corse : le calcul officiel remplace les départements `2A`/`2B` par `19`/`18` dans
+    le numéro. `_NIR_RE` n'accepte QUE des chiffres → un NIR corse saisi avec sa lettre
+    n'est jamais candidat ici, il n'y a donc rien à gérer. Élargir le regex aux lettres
+    est hors périmètre (et rouvrirait des faux positifs).
+    """
+    if len(digits) != 15:
+        return False
+    return int(digits[13:]) == 97 - (int(digits[:13]) % 97)
+
+
+def _checked_sub(is_valid: Callable[[str], bool], placeholder: str) -> Callable[[re.Match[str]], str]:
+    """Remplace par `placeholder` seulement si la clé de contrôle est valide.
+
+    Même contrat que `_luhn_sub` du cœur : un candidat qui échoue à la validation est
+    LAISSÉ TEL QUEL (aucun masquage), pour ne pas caviarder des identifiants métier.
+    """
+
+    def repl(m: re.Match[str]) -> str:
+        return placeholder if is_valid(m.group(0).replace(" ", "")) else m.group(0)
+
+    return repl
 
 
 @dataclass
@@ -77,8 +140,13 @@ class AdvancedPiiMasker:
         return cls(custom_patterns=compiled)
 
     def mask(self, text: str) -> str:
-        out = _NIR_RE.sub(NIR_PLACEHOLDER, text)
-        out = _SIRET_RE.sub(SIRET_PLACEHOLDER, out)
+        # Ordre : NIR (15 chiffres) AVANT SIRET (9/14) pour qu'un NIR ne soit pas grignoté.
+        # Chaque candidat n'est masqué que si sa clé de contrôle est valide (cf. `_checked_sub`).
+        # NB : quand un candidat de 14 chiffres échoue à Luhn, le scan reprend APRÈS le match ;
+        # ses 9 premiers chiffres ne sont donc pas ré-essayés comme SIREN — voulu, c'est ce
+        # qui évite de masquer un « SIREN » au milieu d'un numéro de série plus long.
+        out = _NIR_RE.sub(_checked_sub(_nir_ok, NIR_PLACEHOLDER), text)
+        out = _SIRET_RE.sub(_checked_sub(_siret_ok, SIRET_PLACEHOLDER), out)
         for pattern, placeholder in self.custom_patterns:
             out = pattern.sub(placeholder, out)
         return out

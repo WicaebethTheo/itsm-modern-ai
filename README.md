@@ -9,11 +9,11 @@
 *The LLM proposes, the code decides — GLPI ticket triage with deterministic guardrails.*
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.9.46-blueviolet)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.9.47-blueviolet)](pyproject.toml)
 [![GHCR image](https://img.shields.io/badge/GHCR-image_publique-2496ED?logo=github&logoColor=white)](https://github.com/WicaebethTheo/itsm-modern-ai/pkgs/container/itsm-modern-ai)
 [![Docker multi-arch](https://img.shields.io/badge/docker-amd64_·_arm64-2496ED?logo=docker&logoColor=white)](docker-compose.portainer.yml)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-367_pytest_·_89_vitest-success)](https://docs.itsm-modern-ai.com)
+[![Tests](https://img.shields.io/badge/tests-376_pytest_·_89_vitest-success)](https://docs.itsm-modern-ai.com)
 [![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_par_défaut-6B46C1)](https://docs.itsm-modern-ai.com)
 
 [Déploiement](#déploiement) · [Comment ça marche](#comment-ça-marche) · [Documentation](https://docs.itsm-modern-ai.com) · [Site produit](https://itsm-modern-ai.com)
@@ -26,7 +26,7 @@
 
 GLPI gère bien les tickets structurés. **ITSM Modern AI** prend en charge le reste — la *« queue longue »* : tickets flous, mal formulés, sans champ posé. Le **LLM propose**, le **code valide et décide** : liste blanche déterministe, seuil de confiance, masquage PII avant tout appel LLM, et un fallback unique *« à trier »* quand le doute subsiste.
 
-- 🔒 **Souverain & on-premise** — Mistral EU par défaut, ou 100 % local (Ollama). Aucun phone-home, aucun appel sortant hors fournisseur LLM configuré.
+- 🔒 **Souverain & on-premise** — Mistral EU par défaut, ou 100 % local (Ollama). Une seule sortie réseau en plus du fournisseur LLM configuré : la vérification de version (activée par défaut, lit le dernier numéro de version publié, n'envoie aucune donnée), coupée par `UPDATE_CHECK_URL=` vide pour un air-gap total.
 - 🛡️ **À garde-fous** — le LLM ne décide jamais seul : whitelist + seuil de confiance + validation par le code.
 - 🧩 **Open-core MIT** — une seule image, tout le code livré ; les fonctions **Supporter** se déverrouillent en place par une licence **Ed25519 vérifiée hors-ligne**.
 - 🐳 **Déploiement *pull-only*** — image GHCR multi-arch (amd64 + arm64), prête pour Portainer, `docker run` ou le one-liner. Ni clone, ni build.
@@ -116,7 +116,7 @@ Le pipeline est **immuable** : aucune action n'est appliquée à GLPI sans avoir
 
 ## Sécurité & RGPD
 
-- **On-premise**, aucun phone-home ; seul le fournisseur LLM configuré est appelé.
+- **On-premise** : hors du fournisseur LLM configuré, la seule sortie réseau est la **vérification de version** — **activée par défaut**, best-effort, déclenchée quand un admin authentifié charge la console (cache 1 h). Elle lit uniquement le dernier numéro de version publié sur `api.github.com` et **n'envoie aucune donnée** de l'instance. `UPDATE_CHECK_URL=` (vide) la désactive → **100 % hors-ligne**. La licence Supporter, elle, est vérifiée hors-ligne en toutes circonstances (Ed25519, aucun serveur de licence).
 - **Secrets chiffrés Fernet** au repos ; `master.key` dans le volume `itsm_data` (`0600`).
 - **Masquage PII avant le LLM** : e-mail + téléphone toujours inclus ; IBAN/cartes, secrets (mots de passe/tokens/clés API), IP/MAC et identifiants FR (NIR/SIRET) débloqués par une licence **Supporter**. ⚠️ Sans licence, IBAN et secrets partent **en clair** au LLM (avertissement affiché en console + fiche DPO).
 - **Console DPO** dédiée : tableau des catégories masquées, testeur de masquage, export d'un rapport DPO pour validation en réunion.

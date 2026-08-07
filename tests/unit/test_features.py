@@ -31,11 +31,41 @@ def test_register_installs_all_three_features():
     }
 
 
+# Valeurs SYNTHÉTIQUES à clé de contrôle correcte (calculées, pas des numéros réels).
+# NIR : 13 chiffres + clé = 97 - (numéro mod 97) → 1851275116001 / 74.
+_NIR_VALID = "1 85 12 75 116 001 74"
+_NIR_BAD_KEY = "1 85 12 75 116 001 42"  # même numéro, clé fausse
+_SIREN_VALID = "123456782"  # Luhn ok
+_SIRET_VALID = "12345678200010"  # Luhn ok (et ses 9 premiers chiffres = _SIREN_VALID)
+
+
 def test_pii_advanced_masks_nir_and_siret():
     m = AdvancedPiiMasker()
-    out = m.mask("NIR 1 85 12 75 116 001 42 SIRET 732 829 320 00074")
+    out = m.mask(f"NIR {_NIR_VALID} SIRET 732 829 320 00074")
     assert "[NIR]" in out and "[SIRET]" in out
     assert "85 12 75" not in out
+
+
+def test_pii_advanced_nir_with_bad_key_left_in_clear():
+    """Clé de contrôle NIR invalide → aucun masquage (comme `_luhn_sub` pour les cartes)."""
+    m = AdvancedPiiMasker()
+    assert m.mask(f"NIR {_NIR_BAD_KEY}") == f"NIR {_NIR_BAD_KEY}"
+
+
+def test_pii_advanced_masks_valid_siren_and_siret():
+    m = AdvancedPiiMasker()
+    assert m.mask(f"SIREN {_SIREN_VALID}") == "SIREN [SIRET]"
+    # Un SIRET de 14 chiffres est capturé en ENTIER : pas de coupure en faux SIREN + reliquat.
+    assert m.mask(f"SIRET {_SIRET_VALID}") == "SIRET [SIRET]"
+    assert m.mask("SIRET 123 456 782 00010") == "SIRET [SIRET]"
+
+
+def test_pii_advanced_non_luhn_numbers_left_in_clear():
+    """Faux positifs ITSM : n° de ticket (9 chiffres) et n° de série (14) non-Luhn."""
+    m = AdvancedPiiMasker()
+    text = "ticket 123456789 / serie SN 20260807000123 / ref 987654321"
+    assert m.mask(text) == text
+    assert "[SIRET]" not in m.mask(text)
 
 
 def test_pii_advanced_custom_patterns():

@@ -34,7 +34,7 @@ GLPI poll  →  règles déterministes  →  cost cap  →  masquage PII
 - Aucune écriture GLPI sans validation whitelist + seuil.
 - Aucune PII non masquée n'atteint le LLM (email, téléphone, IBAN, mot de passe/token).
 - Aucune métrique par technicien (anti-mouchard, RGPD).
-- Aucun phone-home (souveraineté).
+- Aucun appel sortant depuis le pipeline hors du fournisseur LLM configuré et du GLPI (souveraineté). Seule sortie supplémentaire du moteur, hors pipeline : la vérification de version (activée par défaut, déclenchée par un admin authentifié, lecture seule du dernier numéro publié, aucune donnée envoyée) — `UPDATE_CHECK_URL=` vide la coupe.
 - Une seule échappatoire : « à trier » — jamais de crash bloquant la file.
 
 ## Structure hexagonale

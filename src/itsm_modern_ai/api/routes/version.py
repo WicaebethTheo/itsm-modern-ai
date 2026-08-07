@@ -1,10 +1,23 @@
-"""Version courante du moteur + vérification de mise à jour — OPT-IN, souverain.
+"""Version courante du moteur + vérification de mise à jour — OPT-OUT, souveraine.
 
-Par défaut, `update_check_url` est vide → AUCUN appel sortant (air-gap / souveraineté
-respectés) : l'endpoint ne renvoie que la version courante. Si une URL est configurée,
-le moteur l'interroge (best-effort, mis en cache) pour savoir si une version plus récente
-existe. Le flux doit renvoyer du JSON {"version": "x.y.z"} (ou {"tag_name": ...}) ou la
-version en texte brut.
+La vérification est **ACTIVÉE par défaut** : `update_check_url` pointe sur le flux des
+releases publiques du projet (cf. `config/settings.py`). Ce qui la garde souveraine :
+
+- l'endpoint est protégé par `require_auth` → l'appel sortant n'est déclenché QUE par un
+  admin authentifié qui consulte la page (jamais en tâche de fond, jamais au boot) ;
+- le résultat est mis en cache par process (`update_check_ttl_seconds`, défaut 1 h) → au
+  plus une requête par fenêtre, quel que soit le nombre de consultations ;
+- c'est une lecture SEULE du dernier numéro de version publié + des notes de release :
+  **AUCUNE donnée de l'instance n'est transmise** (ni identité, ni télémétrie) ;
+- durcissement SSRF : le garde anti-rebinding est posé en `event_hooks` et re-joué à
+  CHAQUE saut de redirection (cf. `_fetch_latest`) ;
+- air-gap / 100 % hors-ligne : mettre `UPDATE_CHECK_URL=` (vide) dans `.env` → aucun appel
+  sortant, l'endpoint ne renvoie plus que la version courante.
+
+Formats de flux acceptés par le parseur : JSON GitHub (objet `{"tag_name": …, "body": …}`),
+JSON GitLab (tableau de releases, **plus récent en tête**, `{"tag_name": …,
+"description": …}`), un objet `{"version": "x.y.z"}`, ou la version en texte brut
+(première ligne).
 """
 
 from __future__ import annotations

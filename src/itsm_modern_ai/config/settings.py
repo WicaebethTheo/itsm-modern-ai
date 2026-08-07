@@ -88,8 +88,10 @@ class Settings(BaseSettings):
     license_key: str = ""
 
     # Vérification de mise à jour. ACTIVÉE par défaut : best-effort, en cache, l'instance
-    # lit UNIQUEMENT le dernier numéro de version publié (aucune donnée envoyée). Pour un
-    # déploiement air-gap / 100 % hors-ligne : mettre UPDATE_CHECK_URL= (vide) dans .env.
+    # lit UNIQUEMENT le dernier numéro de version publié (aucune donnée envoyée). L'appel
+    # sortant n'est déclenché QUE par un admin AUTHENTIFIÉ consultant la page (endpoint
+    # /api/version protégé par require_auth) — jamais en tâche de fond, jamais au boot.
+    # Pour un déploiement air-gap / 100 % hors-ligne : mettre UPDATE_CHECK_URL= (vide) dans .env.
     # Le flux doit renvoyer du JSON {"version": "x.y.z"} (ou {"tag_name": ...}) ou du texte brut.
     update_check_url: str = "https://api.github.com/repos/WicaebethTheo/itsm-modern-ai/releases/latest"
     # Fraîcheur du cache de vérification (s). Le moteur ré-interroge le flux au plus une
