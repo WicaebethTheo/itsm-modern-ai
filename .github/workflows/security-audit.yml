@@ -63,16 +63,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Python 3.13 épinglé (pyproject requires-python >=3.13), comme ci.yml : un
       # autre interpréteur résoudrait un autre jeu de marqueurs d'environnement et
       # donc un autre ensemble de paquets à auditer.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
@@ -148,7 +148,7 @@ jobs:
 
       - name: Publier le rapport
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pip-audit-report
           path: |
@@ -165,9 +165,9 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -214,7 +214,7 @@ jobs:
 
       - name: Publier le rapport
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: npm-audit-report
           path: frontend/rapport.txt

@@ -89,7 +89,7 @@ jobs:
       # `github.ref` vaut la branche par défaut → il faut checkouter le tag demandé, sinon
       # la garde de version comparerait le tag aux fichiers de `main` (faux positif/négatif).
       - name: Checkout du tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
           # Historique complet : `gh release create --generate-notes` compare au tag

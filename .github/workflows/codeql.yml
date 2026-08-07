@@ -73,7 +73,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # `build-mode: none` = on construit la base CodeQL directement depuis les
       # sources, SANS installer les dépendances ni exécuter quoi que ce soit.
