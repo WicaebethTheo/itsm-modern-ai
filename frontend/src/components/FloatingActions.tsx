@@ -1,8 +1,8 @@
-import { useResource } from "@/hooks/useResource";
-import { AUTHOR_NAME, Api, BUYMEACOFFEE_URL, GITHUB_URL } from "@/lib/api";
-import { useT } from "@/lib/i18n";
 import { Coffee } from "lucide-react";
 import { useCallback } from "react";
+import { useResource } from "@/hooks/useResource";
+import { Api, AUTHOR_NAME, BUYMEACOFFEE_URL, GITHUB_URL } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 
 function GithubIcon() {
   return (

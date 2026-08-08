@@ -1,3 +1,6 @@
+import { Heart, LogOut } from "lucide-react";
+import { useCallback, useEffect } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { FloatingActions } from "@/components/FloatingActions";
 import { LangToggle } from "@/components/LangToggle";
 import { Logo } from "@/components/Logo";
@@ -7,9 +10,6 @@ import { Api, updateCommand } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { type IconName, NAV, navByPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
-import { Heart, LogOut } from "lucide-react";
-import { useCallback, useEffect } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 /** Les 4 icônes de la section « Opération » (fidèles à la maquette). */
 function SidebarIcon({ name }: { name: IconName }) {

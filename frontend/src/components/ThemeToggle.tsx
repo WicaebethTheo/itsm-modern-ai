@@ -1,8 +1,8 @@
-import { useT } from "@/lib/i18n";
-import { type Theme, getStoredTheme, setTheme } from "@/lib/theme";
-import { cn } from "@/lib/utils";
 import { Moon, Sun } from "lucide-react";
 import { useState } from "react";
+import { useT } from "@/lib/i18n";
+import { getStoredTheme, setTheme, type Theme } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 
 /** Bascule clair/sombre, persistée. `compact` = carré-icône pour la topbar (mock-ctrl). */
 export function ThemeToggle({ compact = false }: { compact?: boolean }) {

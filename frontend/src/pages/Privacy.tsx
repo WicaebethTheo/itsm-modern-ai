@@ -1,7 +1,10 @@
+import { Clock, Eye, FileDown, Lock, ScrollText, ShieldCheck } from "lucide-react";
+import { type ReactNode, useCallback, useState } from "react";
+import { Link } from "react-router-dom";
 import { Banner } from "@/components/Banner";
-import { LockedBadge } from "@/components/ui/LockedBadge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { LockedBadge } from "@/components/ui/LockedBadge";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,9 +12,6 @@ import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
 import { Api, DEMO, DPO_REPORT_URL, type PiiCategory } from "@/lib/api";
 import { useLang, useT } from "@/lib/i18n";
-import { Clock, Eye, FileDown, Lock, ScrollText, ShieldCheck } from "lucide-react";
-import { type ReactNode, useCallback, useState } from "react";
-import { Link } from "react-router-dom";
 
 const MASK_EXAMPLE =
   "Bonjour, je n'arrive plus à me connecter. Mon e-mail est jean.dupont@example.com " +

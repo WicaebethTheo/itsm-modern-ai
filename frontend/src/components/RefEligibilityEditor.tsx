@@ -1,3 +1,5 @@
+import { CheckCircle2, Search, Users } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
@@ -12,8 +14,6 @@ import { useResource } from "@/hooks/useResource";
 import { Api, type EligibilityItem, type RefItem, type RefKind } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, Search, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
 
 const ALL = "__all__";
 

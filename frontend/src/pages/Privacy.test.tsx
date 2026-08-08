@@ -1,7 +1,7 @@
-import { Api, type PrivacyView } from "@/lib/api";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Api, type PrivacyView } from "@/lib/api";
 import { Privacy } from "./Privacy";
 
 // On mocke le module Api : on garde les exports réels (types, DEMO, URLs…) et on

@@ -1,3 +1,5 @@
+import { FlaskConical } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,18 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Api, type SandboxResult } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { confidenceTone, priorityLabel, priorityTone } from "@/lib/labels";
-import { FlaskConical } from "lucide-react";
-import { type ReactNode, useState } from "react";
 
-function Row({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: ReactNode;
-  mono?: boolean;
-}) {
+function Row({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-0">
       <span className="text-[12px] text-muted-foreground">{label}</span>

@@ -1,18 +1,3 @@
-import { Banner } from "@/components/Banner";
-import { LockedBadge } from "@/components/ui/LockedBadge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Field } from "@/components/ui/label";
-import { PanelHead } from "@/components/ui/panel";
-import { Tag } from "@/components/ui/tag";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/components/ui/toast";
-import { Toggle } from "@/components/ui/toggle";
-import { useResource } from "@/hooks/useResource";
-import { Api, type ConfigUpdate, type ExecutionMode, asBool } from "@/lib/api";
-import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
 import {
   Activity,
   BarChart3,
@@ -24,6 +9,21 @@ import {
   Timer,
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { Banner } from "@/components/Banner";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { LockedBadge } from "@/components/ui/LockedBadge";
+import { Field } from "@/components/ui/label";
+import { PanelHead } from "@/components/ui/panel";
+import { Tag } from "@/components/ui/tag";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toast";
+import { Toggle } from "@/components/ui/toggle";
+import { useResource } from "@/hooks/useResource";
+import { Api, asBool, type ConfigUpdate, type ExecutionMode } from "@/lib/api";
+import { useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 const SYS_MAX = 8000;
 

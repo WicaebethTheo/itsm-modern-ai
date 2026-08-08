@@ -1,7 +1,9 @@
+import { Check } from "lucide-react";
+import { useCallback, useState } from "react";
 import { Banner } from "@/components/Banner";
-import { LockedBadge } from "@/components/ui/LockedBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { LockedBadge } from "@/components/ui/LockedBadge";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,8 +11,6 @@ import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
 import { Api, updateCommand } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { Check } from "lucide-react";
-import { useCallback, useState } from "react";
 
 export function Store() {
   const t = useT();

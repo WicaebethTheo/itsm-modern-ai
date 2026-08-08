@@ -1,9 +1,9 @@
-import { Api } from "@/lib/api";
-import { demo } from "@/lib/demo";
-import { renderWithToast } from "@/test-utils";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Api } from "@/lib/api";
+import { demo } from "@/lib/demo";
+import { renderWithToast } from "@/test-utils";
 import { GlpiConnection } from "./GlpiConnection";
 
 vi.mock("@/lib/api", async (orig) => {

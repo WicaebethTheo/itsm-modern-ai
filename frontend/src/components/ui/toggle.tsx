@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import { useId } from "react";
+import { cn } from "@/lib/utils";
 
 /**
  * Toggle — interrupteur (spec Operator Preview) : piste w-10 h-5.5, ON = indigo,

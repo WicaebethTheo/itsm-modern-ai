@@ -1,3 +1,6 @@
+import { Gauge, Settings, TrendingUp, Wallet } from "lucide-react";
+import { useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,9 +10,6 @@ import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
 import { useLang, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { Gauge, Settings, TrendingUp, Wallet } from "lucide-react";
-import { useCallback } from "react";
-import { useNavigate } from "react-router-dom";
 
 /** Symbole monétaire — EUR → €, fallback : code ISO tel quel. */
 function currencySymbol(currency: string): string {
@@ -151,8 +151,9 @@ export function CostQuotas() {
           <CardContent className="flex flex-col gap-2 p-5">
             {/* Jauge accessible : rôle progressbar + valeurs ARIA (la valeur réelle, non bornée,
                 est annoncée via aria-valuetext pour les dépassements > 100 %). */}
-            {/* biome-ignore lint/a11y/useFocusableInteractive: progressbar est un rôle ARIA NON
-                interactif (WAI-ARIA APG) — il ne doit pas être focusable, donc pas de tabIndex. */}
+            {/* NB : progressbar est un rôle ARIA NON interactif (WAI-ARIA APG) — il ne doit pas
+                être focusable, donc pas de tabIndex. (La suppression `useFocusableInteractive`
+                n'est plus nécessaire depuis Biome 2, qui ne signale plus ce faux positif.) */}
             <div
               className="h-2.5 w-full overflow-hidden rounded-full bg-muted"
               data-testid="cost-cap-bar"

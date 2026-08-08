@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 // Le titre de la vue vit dans la topbar (dérivé de la route, cf. lib/nav).
 // Ce module n'expose plus que la bannière d'alerte inline.

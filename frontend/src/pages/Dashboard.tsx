@@ -1,3 +1,6 @@
+import { ListChecks } from "lucide-react";
+import type { ReactNode } from "react";
+import { useCallback } from "react";
 import { Banner } from "@/components/Banner";
 import { ProgressBar, Sparkline, StackedBars } from "@/components/Charts";
 import { EmptyState } from "@/components/EmptyState";
@@ -7,9 +10,6 @@ import { Tag } from "@/components/ui/tag";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { ListChecks } from "lucide-react";
-import type { ReactNode } from "react";
-import { useCallback } from "react";
 
 /** Carte KPI (label 11.5px + valeur 22px + tag coloré + sparkline) — style maquette. */
 function KpiCard({

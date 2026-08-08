@@ -1,3 +1,4 @@
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Banner } from "@/components/Banner";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -12,15 +13,14 @@ import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import {
   Api,
+  asBool,
   type ConfigUpdate,
   DEMO,
   GLPI_AVATAR_URL,
   GLPI_OAUTH_SCOPES,
   type GlpiApiVersion,
-  asBool,
 } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 export function GlpiConnection() {
   const t = useT();

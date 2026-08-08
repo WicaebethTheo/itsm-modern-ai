@@ -1,6 +1,6 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
-  "files": { "ignore": ["dist", "node_modules"] },
+  "$schema": "https://biomejs.dev/schemas/2.5.7/schema.json",
+  "files": { "includes": ["**", "!**/dist", "!**/node_modules"] },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
@@ -10,10 +10,13 @@
   "javascript": {
     "formatter": { "quoteStyle": "double", "trailingCommas": "all" }
   },
+  "css": {
+    "parser": { "tailwindDirectives": true }
+  },
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "style": {
         "noNonNullAssertion": "off"
       },

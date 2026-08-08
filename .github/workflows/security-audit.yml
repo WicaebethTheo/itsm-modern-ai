@@ -63,16 +63,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Python 3.13 épinglé (pyproject requires-python >=3.13), comme ci.yml : un
       # autre interpréteur résoudrait un autre jeu de marqueurs d'environnement et
       # donc un autre ensemble de paquets à auditer.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
-      - uses: astral-sh/setup-uv@v7
+      # Version EXACTE obligatoire (`@v9.0.0`, pas `@v9`) : cette action ne publie
+      # plus de tag majeur mobile depuis sa v8. Cf. commentaire détaillé dans ci.yml.
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
 
@@ -148,7 +150,7 @@ jobs:
 
       - name: Publier le rapport
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: pip-audit-report
           path: |
@@ -165,11 +167,11 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -214,7 +216,7 @@ jobs:
 
       - name: Publier le rapport
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: npm-audit-report
           path: frontend/rapport.txt

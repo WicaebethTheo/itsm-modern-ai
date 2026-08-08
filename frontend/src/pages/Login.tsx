@@ -1,3 +1,5 @@
+import { type FormEvent, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Banner } from "@/components/Banner";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
@@ -6,8 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
 import { Api, ApiError } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { type FormEvent, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 export function Login() {
   const t = useT();

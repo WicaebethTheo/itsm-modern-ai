@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 
 /** Calcule les initiales (1 à 2 lettres) d'un nom affichable. "?" si vide. */
 export function initials(name: string | null | undefined): string {

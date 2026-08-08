@@ -1,8 +1,8 @@
-import { Layout } from "@/components/Layout";
-import { Api } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
+import { Layout } from "@/components/Layout";
+import { Api } from "@/lib/api";
 
 /**
  * Garde d'authentification (FR-24). On se fie à `authenticated` SEUL : le backend

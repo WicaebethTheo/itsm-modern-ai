@@ -42,13 +42,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       # setup-uv plutot que `pip install uv` : version geree par l'action + cache uv
       # automatique (cle sur uv.lock). Coherent avec ci.yml.
-      - uses: astral-sh/setup-uv@v7
+      # Version EXACTE obligatoire (`@v9.0.0`, pas `@v9`) : cette action ne publie
+      # plus de tag majeur mobile depuis sa v8. Cf. commentaire detaille dans ci.yml.
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
       - name: Install deps (uv.lock fige)
@@ -67,7 +69,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Nom d'image en minuscules (GHCR l'exige)
         id: img

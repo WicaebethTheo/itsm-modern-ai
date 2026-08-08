@@ -31,10 +31,12 @@
 
   /* Police : Geist (auto-hébergé via @fontsource-variable) avec fallback système.
      Tant que le paquet n'est pas installé, le fallback s'applique sans casse. */
-  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    Helvetica, Arial, sans-serif;
-  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo,
-    Consolas, monospace;
+  --font-sans:
+    "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-mono:
+    "Geist Mono Variable", ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas,
+    monospace;
 }
 
 /* Thème CLAIR (mode « white ») — variante claire dérivée de la palette indigo. */
@@ -135,20 +137,16 @@
   position: relative;
   isolation: isolate; /* contient le grain ::before sans déborder sur le reste */
   background-color: hsl(var(--muted));
-  background-image: radial-gradient(
-      1100px 520px at 50% -8%,
-      hsl(var(--primary) / 0.07),
-      transparent 60%
-    ), radial-gradient(720px 620px at 102% -4%, hsl(252 90% 60% / 0.05), transparent 58%),
+  background-image:
+    radial-gradient(1100px 520px at 50% -8%, hsl(var(--primary) / 0.07), transparent 60%),
+    radial-gradient(720px 620px at 102% -4%, hsl(252 90% 60% / 0.05), transparent 58%),
     radial-gradient(820px 720px at -6% 104%, hsl(217 91% 60% / 0.04), transparent 60%);
 }
 .dark .app-backdrop {
   background-color: #060610;
-  background-image: radial-gradient(
-      1100px 520px at 50% -8%,
-      hsl(var(--primary) / 0.12),
-      transparent 62%
-    ), radial-gradient(760px 640px at 102% -5%, hsl(252 90% 65% / 0.1), transparent 58%),
+  background-image:
+    radial-gradient(1100px 520px at 50% -8%, hsl(var(--primary) / 0.12), transparent 62%),
+    radial-gradient(760px 640px at 102% -5%, hsl(252 90% 65% / 0.1), transparent 58%),
     radial-gradient(860px 780px at -6% 105%, hsl(217 91% 60% / 0.07), transparent 60%);
 }
 /* Grain subtil (SVG feTurbulence) en overlay — sous le contenu, jamais cliquable. */
@@ -169,10 +167,14 @@
 .app-shell {
   position: relative;
   z-index: 0; /* au-dessus du grain ::before (z-index:-1) */
-  box-shadow: 0 10px 40px -14px rgb(0 0 0 / 0.22), 0 2px 10px -6px rgb(0 0 0 / 0.14);
+  box-shadow:
+    0 10px 40px -14px rgb(0 0 0 / 0.22),
+    0 2px 10px -6px rgb(0 0 0 / 0.14);
 }
 .dark .app-shell {
-  box-shadow: 0 24px 70px -24px rgb(0 0 0 / 0.75), 0 0 0 1px hsl(var(--border));
+  box-shadow:
+    0 24px 70px -24px rgb(0 0 0 / 0.75),
+    0 0 0 1px hsl(var(--border));
 }
 
 /* Zone de contenu : halo indigo TRÈS discret en haut pour que le pane ne soit pas plat.
@@ -202,7 +204,10 @@
   fill: #8b8df7;
 }
 
-/* Accessibilité : couper animations/transitions si l'utilisateur le demande (spec design §7). */
+/* Accessibilité : couper animations/transitions si l'utilisateur le demande (spec design §7).
+   `!important` est ici volontaire et non négociable : ce reset doit primer sur TOUTES les
+   animations déclarées par les composants (motif standard « reduced motion »). */
+/* biome-ignore-start lint/complexity/noImportantStyles: reset d'accessibilité, doit primer */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -213,6 +218,7 @@
     scroll-behavior: auto !important;
   }
 }
+/* biome-ignore-end lint/complexity/noImportantStyles: fin du reset d'accessibilité */
 
 /* Sparkline en mini-barres (carte KPI). */
 .spark {

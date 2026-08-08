@@ -1,8 +1,8 @@
-import { Api, type RefItem } from "@/lib/api";
-import { renderWithToast } from "@/test-utils";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Api, type RefItem } from "@/lib/api";
+import { renderWithToast } from "@/test-utils";
 import { Scope } from "./Scope";
 
 vi.mock("@/lib/api", async (orig) => {

@@ -5,11 +5,54 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
-## 2026-08-07 — 0.9.47 — Honnêteté des claims + bornes mémoire (revue complète)
+## 2026-08-08 — 0.9.47 — Honnêteté des claims, bornes mémoire et remise à niveau complète
 
-Revue complète du dépôt (architecture, sécurité, doc, CI). Le cœur de triage n'a pas
-bougé : cette version corrige des **promesses de documentation devenues fausses** et
-deux **garde-fous trop laxistes**. Aucun changement de comportement du moteur.
+Revue complète du dépôt (architecture, sécurité, doc, CI) **et remise à niveau de toute
+la chaîne de dépendances**. Le cœur de triage n'a pas bougé : cette version corrige des
+**promesses de documentation devenues fausses**, deux **garde-fous trop laxistes**, et
+remet l'ensemble des composants à jour. Aucun changement de comportement du moteur.
+
+### Dépendances — remise à niveau intégrale
+
+Point de départ : `pip-audit` remontait **8 avis** sur 3 paquets et `npm audit` **9
+vulnérabilités dont 1 critique**. Après la montée, les deux audits sont **vides**.
+
+- **Backend** : `cryptography` 48 → **50** (deux majeures ; c'est le chiffrement Fernet au
+  repos et la vérification Ed25519 des licences), `starlette` 1.1 → **1.5**, `fastapi`
+  0.136 → 0.141, `uvicorn` 0.48 → 0.52, `pydantic-settings` 2.14 → 2.15, `sqlmodel`,
+  `alembic`, `sqlalchemy`, `apscheduler`, `prometheus-client`, plus l'outillage de dev
+  (`pytest` 9.1, `pytest-asyncio` 1.4, `ruff` 0.16).
+- **Rupture silencieuse rattrapée — FastAPI 0.138** : `include_router()` **n'aplatit plus**
+  les routes dans `app.routes`. Deux endroits en dépendaient sans le dire :
+  `api/metrics.py` (label `path` templaté des métriques Prometheus) serait tombé sur
+  `<other>` pour **toutes** les requêtes, et `/api/debug/info` aurait renvoyé une liste
+  d'endpoints **vide**. Les deux passent désormais par `iter_route_contexts()`, l'API
+  publique prévue pour ça, et le plancher est relevé à `fastapi>=0.138` — sous cette
+  version, le code ne fonctionne tout simplement plus.
+- **Frontend** : `biome` 1.9 → **2.5** (migration de configuration), `vite` 6 → **8**,
+  `vitest` 2 → **4**, `typescript` 5.9 → **7**, `@vitejs/plugin-react` 4 → 6, `jsdom`
+  29 → 30, `lucide-react` 0.460 → **1.30**, `tailwind-merge` 2 → **3** (la v2 ciblait
+  Tailwind 3 alors que le projet est en Tailwind 4 — c'était la v2 qui était le mauvais
+  choix), plus React, React Router, Playwright et les types.
+- **Outillage & images** : `uv` 0.11.25 → **0.12.3**, image `node` 22 → **24**, image
+  `python` 3.13 → **3.14**, actions GitHub aux dernières majeures (`checkout` v7,
+  `setup-python` v7, `setup-node` v7, `upload-artifact` v7, `setup-uv` v9).
+- **Python 3.14** : la suite complète (380 tests, extras `postgres` inclus) a été rejouée
+  sur 3.14.5 **avant** le bump de l'image. `requires-python` reste à `>=3.13` : c'est
+  l'image livrée qui avance, pas le socle minimal supporté.
+
+Deux montées ont été **volontairement refusées**, contre l'intuition du « tout mettre à
+jour » :
+
+- **Node 26** : les majeures paires deviennent LTS, mais 26 ne le devient que le
+  **2026-10-28**. Livrer une ligne « Current » dans une image de production n'a pas de
+  sens ; on reste sur **Node 24**, LTS active jusqu'en avril 2028.
+- **PostgreSQL 18** : un changement de majeure PostgreSQL **n'est pas un bump d'image**.
+  Les fichiers d'un cluster PG 16 sont illisibles par une majeure supérieure — le
+  conteneur refuserait de démarrer sur un `data/postgres/` existant. Le tag reste en
+  **16-alpine** (supportée jusqu'en 2028, correctifs de sécurité inclus), avec la
+  procédure de migration `pg_dump`/restauration documentée dans le compose, ainsi que le
+  piège du `PGDATA` déplacé par l'image officielle PG 18.
 
 ### Sécurité — anti brute-force
 

@@ -8,7 +8,9 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: "/",
-  resolve: { alias: { "@": path.resolve(__dirname, "src") } },
+  // `import.meta.dirname` (et non `__dirname`) : requis par le chargeur de config natif
+  // de Vite 8, qui évalue ce fichier en ESM.
+  resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
   build: { outDir: "dist", emptyOutDir: true },
   server: {
     proxy: {

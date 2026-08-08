@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dot } from "@/components/ui/dot";
@@ -10,7 +11,6 @@ import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type RetentionView } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { useCallback, useEffect, useState } from "react";
 
 // Automatisations PRÉVUES — seule la purge est active aujourd'hui.
 const PLANNED: { fr: string; en: string; descFr: string; descEn: string }[] = [

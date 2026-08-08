@@ -1,3 +1,5 @@
+import { ScrollText } from "lucide-react";
+import { useCallback, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -9,8 +11,6 @@ import { useResource } from "@/hooks/useResource";
 import { Api, DEMO, type DecisionEntry } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { confidenceTone, priorityLabel, priorityTone } from "@/lib/labels";
-import { ScrollText } from "lucide-react";
-import { useCallback, useState } from "react";
 
 function AnnotationCell({ d, ph }: { d: DecisionEntry; ph: string }) {
   const t = useT();

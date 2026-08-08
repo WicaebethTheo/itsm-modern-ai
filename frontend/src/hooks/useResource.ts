@@ -1,5 +1,5 @@
-import { tr } from "@/lib/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { tr } from "@/lib/i18n";
 
 interface ResourceState<T> {
   data: T | null;

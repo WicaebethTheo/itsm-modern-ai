@@ -1,8 +1,8 @@
+import { RefreshCw } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { RefreshCw } from "lucide-react";
-import { useState } from "react";
 
 /** Bouton « Scanner GLPI » : rafraîchit le cache des référentiels, puis onSynced(). */
 export function SyncButton({ onSynced }: { onSynced: () => void }) {

@@ -1,3 +1,4 @@
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ToastProvider } from "@/components/ui/toast";
 import { DEMO } from "@/lib/api";
@@ -17,7 +18,6 @@ import { Scope } from "@/pages/Scope";
 import { Status } from "@/pages/Status";
 import { Store } from "@/pages/Store";
 import { Technicians } from "@/pages/Technicians";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 export default function App() {
   return (

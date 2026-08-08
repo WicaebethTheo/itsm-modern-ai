@@ -1,10 +1,10 @@
+import { useCallback } from "react";
 import { Banner } from "@/components/Banner";
 import { Card } from "@/components/ui/card";
 import { Dot, type DotTone } from "@/components/ui/dot";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { useCallback } from "react";
 
 function ServicePanel({
   name,

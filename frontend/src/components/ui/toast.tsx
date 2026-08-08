@@ -6,18 +6,18 @@
  * 3 s (6 s pour les erreurs) puis disparaît. Cliquer dessus le ferme tout de suite.
  */
 
-import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
 import { CheckCircle2, Info, X, XCircle } from "lucide-react";
 import {
-  type ReactNode,
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
+import { useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 type ToastKind = "success" | "error" | "info";
 

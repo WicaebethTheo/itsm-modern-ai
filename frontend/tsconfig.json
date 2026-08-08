@@ -15,7 +15,8 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "baseUrl": ".",
+    // TypeScript 7 a supprimé `baseUrl` : les chemins de `paths` sont désormais résolus
+    // relativement à ce fichier tsconfig.json, ce qui suffit pour l'alias `@/`.
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src", "vite.config.ts"]

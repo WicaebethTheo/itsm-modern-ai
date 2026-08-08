@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 /**
  * PanelHead — en-tête de Panel (spec Operator Preview) : titre 13px + sous-titre 11px

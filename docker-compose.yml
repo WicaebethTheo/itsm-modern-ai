@@ -61,6 +61,35 @@ services:
 
   # PostgreSQL (Beta) - service optionnel (profile `postgres`) ; sinon SQLite par defaut.
   # Activer : docker compose --profile postgres up -d --build (+ ITSM_DATABASE_URL dans .env).
+  #
+  # ############################################################################
+  # #  ATTENTION - NE JAMAIS CHANGER LE CHIFFRE MAJEUR DE CE TAG A LA LEGERE.  #
+  # ############################################################################
+  # Le tag reste volontairement sur la majeure 16 (le suffixe `16-alpine` continue
+  # de recevoir les correctifs mineurs/securite ; PG 16 est supporte jusqu'en 2028).
+  # Passer a 17/18/... N'EST PAS un simple bump d'image, pour DEUX raisons :
+  #
+  #   1) FORMAT DES DONNEES. Les fichiers d'un cluster PG 16 sont illisibles par une
+  #      majeure superieure. Sur un ./data/postgres existant, le conteneur refuse de
+  #      demarrer (« database files are incompatible with server ») et boucle en
+  #      restart. Migration OBLIGATOIRE avant le bump, instance a l'arret cote app :
+  #        docker compose exec -T postgres pg_dump -U itsm itsm > dump.sql
+  #        docker compose --profile postgres down       # SANS -v
+  #        mv data/postgres data/postgres.pg16.bak      # on garde l'ancien cluster
+  #        # ... changer le tag ici, puis :
+  #        docker compose --profile postgres up -d postgres
+  #        docker compose exec -T postgres psql -U itsm itsm < dump.sql
+  #      (`pg_upgrade` est l'alternative, mais exige les binaires des DEUX majeures
+  #      dans la meme image - non fourni par l'image officielle.)
+  #
+  #   2) PIEGE PROPRE A PG 18+ : l'image officielle a DEPLACE son PGDATA de
+  #      /var/lib/postgresql/data vers /var/lib/postgresql/<major>/docker, et son
+  #      VOLUME de /var/lib/postgresql/data vers /var/lib/postgresql. Le montage
+  #      ci-dessous deviendrait donc HORS-SUJET : PG initialiserait un cluster VIDE
+  #      dans la couche ecrivable du conteneur, l'app demarrerait sur une base vide
+  #      sans la moindre erreur, et tout serait perdu au prochain `up -d`. Un bump
+  #      vers 18+ impose donc AUSSI de changer la cible du montage volumes: en
+  #      `- ./data/postgres:/var/lib/postgresql`.
   postgres:
     image: postgres:16-alpine
     container_name: itsm-postgres

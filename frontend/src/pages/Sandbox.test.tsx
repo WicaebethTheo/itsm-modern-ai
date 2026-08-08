@@ -1,7 +1,7 @@
-import { Api, ApiError } from "@/lib/api";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Api, ApiError } from "@/lib/api";
 import { Sandbox } from "./Sandbox";
 
 vi.mock("@/lib/api", async (orig) => {

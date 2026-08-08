@@ -1,8 +1,8 @@
-import { Api, ApiError } from "@/lib/api";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Api, ApiError } from "@/lib/api";
 import { Login } from "./Login";
 
 // On mocke le module Api : on garde les exports réels (asBool, types…) et on

@@ -1,3 +1,5 @@
+import { AlertTriangle, CheckSquare, FolderTree, Layers, Save, Square } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Banner } from "@/components/Banner";
 import { SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
@@ -9,8 +11,6 @@ import { useResource } from "@/hooks/useResource";
 import { Api, type ExecutionMode, type RefItem } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, CheckSquare, FolderTree, Layers, Save, Square } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 /** Couleur du badge de mode : neutre → amber → rouge selon l'autonomie accordée. */
 const MODE_TONE: Record<ExecutionMode, TagTone> = {

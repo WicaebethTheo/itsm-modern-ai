@@ -1,7 +1,7 @@
-import { Api } from "@/lib/api";
-import { demo } from "@/lib/demo";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Api } from "@/lib/api";
+import { demo } from "@/lib/demo";
 import { Status } from "./Status";
 
 vi.mock("@/lib/api", async (orig) => {

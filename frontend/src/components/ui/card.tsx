@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import type * as React from "react";
+import { cn } from "@/lib/utils";
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Ajoute un retour visuel au survol (utile pour les cartes cliquables). */

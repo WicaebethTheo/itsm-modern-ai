@@ -1,3 +1,5 @@
+import { AlertTriangle } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,8 +13,6 @@ import { useResource } from "@/hooks/useResource";
 import { Api, type ConfigUpdate, type LlmProvider, PROVIDER_LABELS } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { AlertTriangle } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
 
 const PROVIDERS: LlmProvider[] = ["mistral", "openai", "ollama", "anthropic"];
 const NON_SOVEREIGN: LlmProvider[] = ["openai", "anthropic"];

@@ -1,5 +1,10 @@
 # ── Étape 1 : build de l'UI (SPA React/Vite) ─────────────────────────────────
-FROM node:22-slim AS ui
+# Node 24 « Krypton » = LTS ACTIVE (LTS depuis 2025-10-28, maintenance 2026-10-20,
+# fin de vie 2028-04-30). Volontairement PAS Node 26 : les majeures paires finissent
+# LTS, mais 26 ne le devient que le 2026-10-28 — d'ici là c'est la ligne « Current »
+# (tag `26-slim` == `current-slim`), inadaptée au build d'un produit livré on-prem.
+# Doit rester aligné avec `node-version` des workflows GitHub et `.gitlab-ci.yml`.
+FROM node:24-slim AS ui
 WORKDIR /ui
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -7,11 +12,15 @@ COPY frontend/ ./
 RUN npm run build
 
 # ── Étape 2 : moteur Python + UI statique ─────────────────────────────────────
-FROM python:3.13-slim
+# Python 3.14 : la suite complète (380 tests, extras `postgres` inclus) a été rejouée
+# sur 3.14.5 avant ce bump — aucune régression, aucune dépendance sans roue 3.14.
+# `requires-python` reste à `>=3.13` : rien n'oblige à exclure 3.13 d'une install
+# depuis les sources ; c'est l'image LIVRÉE qui avance, pas le socle minimal supporté.
+FROM python:3.14-slim
 
 # uv pour la gestion des deps (cohérent avec le dev). Version PINNÉE (repro : le tag
 # `latest` contredisait le « build reproductible » plus bas).
-COPY --from=ghcr.io/astral-sh/uv:0.11.25 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.3 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \

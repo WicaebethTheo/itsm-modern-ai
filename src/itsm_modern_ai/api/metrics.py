@@ -19,6 +19,7 @@ import secrets as _secrets
 import time
 
 from fastapi import FastAPI
+from fastapi.routing import iter_route_contexts
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from starlette.requests import Request
 from starlette.responses import Response
@@ -37,11 +38,20 @@ _LATENCY = Histogram(
 
 
 def _route_template(request: Request) -> str:
-    """Chemin templaté de la route (borne la cardinalité, évite la PII dans les labels)."""
-    for route in request.app.routes:
-        match, _ = route.matches(request.scope)
+    """Chemin templaté de la route (borne la cardinalité, évite la PII dans les labels).
+
+    ⚠️ Depuis FastAPI 0.138, `include_router()` n'aplatit plus les routes dans
+    `app.routes` : on y trouve des nœuds de routeur paresseux, qui n'ont pas d'attribut
+    `path` et dont le `matches()` ne rend pas le chemin templaté de la route finale.
+    `iter_route_contexts()` (API publique FastAPI) redonne la vue à plat, chaque contexte
+    portant le chemin EFFECTIF (préfixe du routeur appliqué) et le `matches()` de la
+    route réelle. L'ordre d'itération reste l'ordre de déclaration, donc la première
+    correspondance FULL est bien celle que le routeur aurait choisie.
+    """
+    for ctx in iter_route_contexts(request.app.routes):
+        match, _ = ctx.matches(request.scope)
         if match == Match.FULL:
-            return getattr(route, "path", "<other>")
+            return ctx.path or "<other>"
     return "<other>"
 
 

@@ -48,14 +48,22 @@ def status(request: Request) -> dict:
 
 @router.get("/info", dependencies=[Depends(require_debug)])
 def info(request: Request) -> dict:
-    """Version du logiciel + endpoints exposés (introspection des routes)."""
-    from fastapi.routing import APIRoute
+    """Version du logiciel + endpoints exposés (introspection des routes).
+
+    ⚠️ Depuis FastAPI 0.138, `include_router()` n'APLATIT PLUS les routes dans
+    `app.routes` : chaque routeur inclus y figure comme un nœud paresseux, et les
+    `APIRoute` réelles ne sont plus visibles au premier niveau. `iter_route_contexts()`
+    est l'API publique qui redonne la vue à plat, avec le chemin EFFECTIF (préfixe du
+    routeur déjà appliqué — `/api/debug/info` et non `/info`).
+    """
+    from fastapi.routing import APIRoute, iter_route_contexts
 
     endpoints = []
-    for r in request.app.routes:
-        if isinstance(r, APIRoute) and (r.path.startswith("/api") or r.path == "/health"):
-            methods = sorted(m for m in r.methods if m not in ("HEAD", "OPTIONS"))
-            endpoints.append({"path": r.path, "methods": methods})
+    for ctx in iter_route_contexts(request.app.routes):
+        path = ctx.path or ""
+        if isinstance(ctx.original_route, APIRoute) and (path.startswith("/api") or path == "/health"):
+            methods = sorted(m for m in (ctx.methods or set()) if m not in ("HEAD", "OPTIONS"))
+            endpoints.append({"path": path, "methods": methods})
     endpoints.sort(key=lambda e: e["path"])
     return {"version": request.app.version, "title": request.app.title, "endpoints": endpoints}
 
