@@ -120,8 +120,14 @@ async def _fetch_latest(url: str, timeout: float, *, guard: bool) -> dict | None
     # GLPI/LLM on-premise. Autrement dit : sans la validation ci-dessous, un `.env` pointant
     # 169.254.169.254 partait sans aucun contrôle. Un flux de versions n'a aucune raison
     # légitime de viser un hôte interne → on valide ici, à l'appel, quel que soit le flag.
+    # On REAFFECTE `url` depuis la valeur de retour du validateur (qui renvoie l'URL
+    # inchangée si elle est sûre). Ce n'est pas cosmétique : seule la valeur VALIDÉE part
+    # ensuite dans la requête, ce qui rend la sanitisation explicite pour le lecteur ET
+    # pour l'analyse statique (cf. `.github/codeql/` — `validate_base_url` y est déclaré
+    # comme barrière de la requête SSRF). Ignorer le retour laisserait circuler la valeur
+    # d'origine, non validée en apparence.
     try:
-        validate_base_url(url, allow_local=False)
+        url = validate_base_url(url, allow_local=False)
     except UrlSafetyError as exc:
         logger.warning("update_check_url refusée (anti-SSRF) : %s", exc)
         return None

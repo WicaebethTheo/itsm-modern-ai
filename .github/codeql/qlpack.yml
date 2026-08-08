@@ -1,0 +1,15 @@
+# Pack de requêtes CodeQL propre au projet.
+#
+# Il ne contient qu'UNE requête : une variante de `py/full-ssrf` qui connaît le
+# validateur anti-SSRF maison (`domain/url_safety.py`). Voir `FullSsrf.ql` pour le
+# pourquoi, et `codeql-config.yml` pour le câblage (la requête standard est exclue
+# au profit de celle-ci — pas de double alerte, pas de perte de couverture).
+#
+# Les dépendances sont résolues depuis le bundle CodeQL de l'action (aucun
+# téléchargement depuis un registre : `codeql pack install` ne fait rien ici).
+name: itsm/codeql-python
+version: 0.0.1
+library: false
+dependencies:
+  codeql/python-all: "*"
+  codeql/python-queries: "*"

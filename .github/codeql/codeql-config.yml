@@ -1,0 +1,21 @@
+# Configuration CodeQL du dépôt (référencée par `.github/workflows/codeql.yml`).
+#
+# Objectif : garder l'intégralité des requêtes par défaut, et remplacer la SEULE requête
+# `py/full-ssrf` par la variante maison `itsm/full-ssrf`, qui reconnaît le validateur
+# anti-SSRF du projet (cf. `FullSsrf.ql` pour la justification détaillée).
+#
+# ⚠️ Ce n'est PAS une mise en sourdine : la variante utilise les mêmes sources, les mêmes
+# puits et la même sévérité que la requête standard. Un appel sortant dont l'URL n'est pas
+# validée reste signalé (test négatif effectué lors de l'écriture de la requête). Filtrer
+# la règle sans la remplacer aurait supprimé la détection SSRF sur les clients GLPI et
+# LLM, où elle est utile.
+
+name: "ITSM Modern AI — configuration CodeQL"
+
+# Ajoute le pack local aux requêtes par défaut (il ne les remplace pas).
+queries:
+  - uses: ./.github/codeql
+
+query-filters:
+  - exclude:
+      id: py/full-ssrf

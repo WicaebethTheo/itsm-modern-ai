@@ -104,6 +104,12 @@ jobs:
           # y touche : les seules valeurs valides sont `default`, `security-extended`,
           # `security-and-quality` et `security-experimental` ; un simple `security`
           # fait échouer l'étape `init`.)
+          #
+          # La config ajoute le pack local `.github/codeql` et exclut `py/full-ssrf` au
+          # profit de la variante `itsm/full-ssrf`, qui connaît le validateur anti-SSRF
+          # du projet. Ce n'est pas une mise en sourdine : mêmes sources, mêmes puits,
+          # même sévérité — cf. `.github/codeql/FullSsrf.ql`.
+          config-file: ./.github/codeql/codeql-config.yml
 
       # Pas d'étape `autobuild` : elle n'a de sens que pour les langages compilés,
       # et `build-mode: none` la rend inutile (elle échouerait même, faute de cible).
