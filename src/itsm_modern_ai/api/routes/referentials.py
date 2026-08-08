@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from ...services import referentials
-from ..deps import get_session
+from ...services.runtime_config import RuntimeConfigService
+from ..deps import get_config_service, get_session
 from ..runtime import build_connector
 from ..security import require_auth
 
@@ -111,10 +112,42 @@ def set_scope(body: Scope, session: Session = Depends(get_session)) -> Scope:
 
 
 @router.put("/modes", response_model=list[RefItem])
-def save_modes(body: list[ModeItem], session: Session = Depends(get_session)) -> list[RefItem]:
+def save_modes(
+    body: list[ModeItem],
+    session: Session = Depends(get_session),
+    cfg: RuntimeConfigService = Depends(get_config_service),
+) -> list[RefItem]:
     """Règle le mode d'exécution (+ seuil semi-auto) PAR ENTITÉ (FR-17).
 
     ⚠️ semi_auto/full_auto autorisent la mutation des Tickets GLPI ; mode vide = défaut global.
+
+    AUDITÉ EXPLICITEMENT. Le mode par entité vit dans `referential_cache`, pas dans
+    `runtime_config` : il échappe donc au traçage automatique de `RuntimeConfigService.set`.
+    Or c'est l'action d'administration la plus lourde de conséquences du produit — elle
+    autorise l'IA à muter des Tickets et à répondre PUBLIQUEMENT aux demandeurs. Sans la
+    ligne ci-dessous, seul le défaut GLOBAL était imputable, et basculer une entité en
+    `full_auto` ne laissait aucune trace.
     """
+    entites = referentials.list_kind(session, referentials.KIND_ENTITY)
+    avant = {r.ext_id: (r.mode, r.auto_min_confidence) for r in entites}
     referentials.set_modes(session, [b.model_dump() for b in body])
-    return [_item(r) for r in referentials.list_kind(session, referentials.KIND_ENTITY)]
+    apres = [_item(r) for r in referentials.list_kind(session, referentials.KIND_ENTITY)]
+
+    # Une entrée par entité RÉELLEMENT modifiée : réécrire la liste entière sans rien
+    # changer ne doit pas noyer le journal (l'UI renvoie toujours toutes les entités).
+    for r in referentials.list_kind(session, referentials.KIND_ENTITY):
+        ancien = avant.get(r.ext_id)
+        nouveau = (r.mode, r.auto_min_confidence)
+        if ancien is not None and ancien != nouveau:
+            cfg.record_action(
+                "entity_mode",
+                f"entity:{r.ext_id}",
+                _mode_repr(*ancien),
+                _mode_repr(*nouveau),
+            )
+    return apres
+
+
+def _mode_repr(mode: str | None, seuil: float | None) -> str:
+    """Représentation lisible d'un mode d'entité pour le journal d'audit."""
+    return f"{mode or 'défaut global'}" + (f" (seuil auto {seuil})" if seuil is not None else "")

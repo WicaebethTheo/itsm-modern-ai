@@ -111,3 +111,57 @@ def test_referentials_protected_when_auth_configured(tmp_path):
     with TestClient(create_app(settings)) as c:
         assert c.get("/api/discovery/technician").status_code == 401
         assert c.get("/api/metrics").status_code == 401
+
+
+def test_entity_mode_change_is_audited(client):
+    """Basculer une ENTITÉ en `full_auto` doit être imputable.
+
+    C'est l'action d'administration la plus lourde du produit : elle autorise l'IA à
+    muter des Tickets GLPI et à répondre PUBLIQUEMENT aux demandeurs. Le mode par entité
+    vit dans `referential_cache`, donc hors du traçage automatique de
+    `RuntimeConfigService.set` — sans l'audit explicite de la route, seul le défaut
+    GLOBAL était imputable et cette bascule ne laissait aucune trace.
+    """
+    from sqlmodel import select
+
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import AuditLog, ReferentialCache
+
+    with db.session_scope() as session:
+        session.add(ReferentialCache(kind="entity", ext_id=77, name="Siège", selected=True))
+        session.commit()
+
+    assert client.put(
+        "/api/modes", json=[{"ext_id": 77, "mode": "full_auto", "auto_min_confidence": 0.95}]
+    ).status_code == 200
+
+    with db.session_scope() as session:
+        lignes = [a for a in session.exec(select(AuditLog)).all() if a.action == "entity_mode"]
+    assert len(lignes) == 1, "la bascule d'une entité en full_auto n'a pas été auditée"
+    assert lignes[0].key == "entity:77"
+    assert "full_auto" in lignes[0].new_value
+    assert "défaut global" in lignes[0].old_value
+
+
+def test_unchanged_entity_modes_do_not_flood_the_audit_log(client):
+    """Réécrire la liste sans rien changer ne doit pas produire d'entrée.
+
+    L'UI renvoie TOUTES les entités à chaque enregistrement : sans ce filtrage, une
+    simple visite de l'écran noierait le journal d'imputabilité sous du bruit.
+    """
+    from sqlmodel import select
+
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import AuditLog, ReferentialCache
+
+    with db.session_scope() as session:
+        session.add(ReferentialCache(kind="entity", ext_id=88, name="Agence", selected=True))
+        session.commit()
+
+    corps = [{"ext_id": 88, "mode": "semi_auto", "auto_min_confidence": None}]
+    client.put("/api/modes", json=corps)      # 1er appel : changement réel
+    client.put("/api/modes", json=corps)      # 2e appel : strictement identique
+
+    with db.session_scope() as session:
+        lignes = [a for a in session.exec(select(AuditLog)).all() if a.key == "entity:88"]
+    assert len(lignes) == 1, "une réécriture sans changement a produit une entrée d'audit"

@@ -66,7 +66,26 @@ nominatives peuvent donc apparaître en clair dans le contenu transmis au LLM. L
 
 ## Minimisation
 
-Le masquage intervient **avant** tout appel LLM (ordre du pipeline immuable). Seul le contenu masqué quitte l'infrastructure du client, à destination du seul fournisseur LLM configuré.
+Le masquage intervient **avant** tout appel LLM (ordre du pipeline immuable), à destination du seul fournisseur LLM configuré.
+
+> ⚠️ **Le contenu du ticket n'est pas la seule chose transmise.** Le prompt envoyé au LLM
+> contient aussi, à **chaque** appel, le **périmètre autorisé** : les **noms** des
+> techniciens et des groupes éligibles (`id: nom`), et leurs **fiches en prose libre**
+> rédigées par l'admin (compétences, disponibilités, consignes de routage). Ces éléments
+> **ne sont pas masqués** — ils sont la matière même du routage : sans eux, le LLM ne peut
+> pas proposer d'affectation.
+>
+> Ce sont des **données personnelles de salariés**, à déclarer au registre au même titre
+> que le contenu des tickets. Si le fournisseur configuré est OpenAI ou Anthropic, elles
+> **sortent de l'UE** comme le reste du prompt. Deux conséquences pratiques :
+> - les techniciens concernés doivent être **informés** de ce traitement ;
+> - les fiches ne devraient contenir **aucune donnée personnelle superflue** (pas de
+>   téléphone personnel, pas de motif d'absence, pas d'information de santé). Une fiche
+>   utile au routage tient en compétences et périmètre.
+>
+> **Limite de traçabilité à connaître** : le journal `llm_calls` n'enregistre que le
+> **contenu du ticket** masqué, pas ces blocs ni le prompt système. Le prompt réellement
+> transmis n'est donc pas reconstituable a posteriori à partir du seul journal.
 
 ## Console DPO (page dédiée)
 
@@ -91,7 +110,9 @@ permet de vérifier en réunion, **sans lire le code**, ce qui est réellement m
 
 ## Traçabilité
 
-- **Log exhaustif des appels LLM** (FR-19) : ticket, horodatage, modèle, contenu envoyé et reçu. Le contenu loggé **reflète toujours le masquage** — aucun secret en clair dans les logs.
+- **Log des appels LLM** (FR-19) : ticket, horodatage, modèle, contenu envoyé et reçu, coût. Le contenu loggé **reflète exactement le masquage réellement appliqué à l'envoi** — c'est-à-dire, sans licence Supporter, avec l'IBAN, les secrets et les IP **en clair**, puisque c'est ce qui est parti. Une preuve d'audit doit établir ce qui s'est passé, pas ce qu'on aurait souhaité.
+  ⚠️ **Portée du journal** : seul le **contenu du ticket** y figure. Le prompt réellement transmis contient en plus le périmètre autorisé (noms des techniciens, fiches en prose) et le prompt système — cf. l'encadré de la section « Minimisation ». Le prompt complet n'est donc **pas reconstituable** à partir du journal.
+- **Décisions automatisées (art. 22)** : l'export du Journal porte les colonnes **`mode`** et **`applied`**, qui distinguent une **suggestion** (le technicien garde la main) d'une **décision appliquée automatiquement** aux champs GLPI, avec réponse **publique** au demandeur en `full_auto`. C'est cette distinction qui détermine si le traitement relève de l'article 22 — le mode livré par défaut est `suggestion`, qui n'en relève pas.
 - **Journal de décision** (FR-20) : ticket, décision, catégorie, confiance, horodatage, lien GLPI, **titre du ticket**.
 - **Titre du ticket conservé en clair** : le Journal de décision stocke le **titre brut du ticket GLPI** (`subject`), **non masqué**, et l'affiche dans la console (page Journal, sous authentification) — il sert à relire une décision sans rouvrir GLPI. Si un titre de ticket contient une donnée personnelle, elle est donc conservée en clair dans la base locale pour la durée de rétention du Journal (`retention_decisions_days`, défaut 365 j). Ce champ est **exclu de l'export CSV DPO** (`GET /api/export/decisions.csv` n'a pas de colonne `subject`). Le masquage PII s'applique au **contenu envoyé au LLM**, pas à ce champ d'audit local.
 - **Export CSV** (FR-21) pour l'audit :
@@ -119,6 +140,22 @@ Une **purge RGPD automatique** est implémentée (`services/retention.py`). Elle
 - **Appels LLM** (masqués) : `retention_llm_calls_days` (défaut **90 jours**).
 
 Une fenêtre **`<= 0` désactive** la purge de la table concernée (défaut sûr : on ne supprime jamais sans réglage explicite).
+
+> ⚠️ **La purge ne couvre PAS tout — à consigner au registre.** Trois tables persistent
+> hors de ces fenêtres :
+>
+> | Table | Contenu | Pourquoi elle n'est pas purgée |
+> |---|---|---|
+> | `processed_tickets` | identifiant GLPI de chaque ticket traité + horodatage | c'est le **registre d'idempotence** : le purger ferait re-trier (et re-facturer) d'anciens tickets. Aucun contenu, mais un identifiant et une date. |
+> | `referential_cache` | **noms** des techniciens/groupes, profils GLPI, **fiches en prose** | c'est le périmètre autorisé, rafraîchi par scan GLPI ; le purger désarmerait le moteur. Ces fiches méritent une **revue périodique** par l'admin. |
+> | `audit_log` | actions d'administration, avec l'**IP** de l'auteur | donnée d'**imputabilité** (art. 5.1.f / 32). La purger sur la fenêtre « tickets » offrirait un effacement de traces trivial : régler la rétention à 0 est justement une action auditée. |
+>
+> `audit_log` porte une IP, donc une donnée personnelle : une fenêtre de conservation
+> dédiée (12 mois est l'usage courant) devra être décidée **explicitement**, et jamais
+> recollée sur celle des tickets.
+>
+> **Le titre du ticket** (`subject`) est par ailleurs conservé en clair dans le Journal de
+> décision — cf. section Traçabilité. Il suit, lui, la fenêtre `retention_decisions_days`.
 
 **Job planifié.** Lorsque `automation_purge_enabled` est actif (défaut `true`), un job quotidien s'exécute à `automation_purge_hour_utc` (défaut **03:00 UTC**), planifié par le scheduler de l'application. La durée et l'heure peuvent être modifiées à chaud via l'UI (le job est re-planifié sans redémarrage).
 

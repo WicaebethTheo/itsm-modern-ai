@@ -37,6 +37,11 @@ Collez le contenu de **`docker-compose.portainer.yml`** dans un nouveau *stack* 
 orchestrateur), définissez **`ITSM_ADMIN_PASSWORD`** (≥ 8 caractères) dans les variables
 d'environnement du stack, puis déployez. L'image est **tirée** depuis GHCR (aucun build).
 
+Le stack utilise `${ITSM_IMAGE_TAG:-latest}`. Pour **épingler une version** — recommandé en
+production, afin qu'un redéploiement ne tire pas silencieusement une version plus récente —
+définissez `ITSM_IMAGE_TAG=0.9.48` dans les variables du stack. Sans cette variable, le
+comportement reste `latest`.
+
 ### (c) `docker run` durci
 
 ```bash
@@ -87,10 +92,20 @@ Les **secrets** (clé LLM, tokens GLPI ; pas de clé pour Ollama) sont stockés 
 ## 4. Vérifier
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8000/health        # état complet : moteur + GLPI (+ LLM avec ?probe=true)
+curl http://localhost:8000/health/live   # VIVACITÉ seule : processus + base, aucun appel sortant
 ```
 
-Le healthcheck est en **échec** si GLPI ou le LLM est injoignable au démarrage (FR-27, FR-1) — pas de démarrage silencieux dégradé.
+`/health` est en **échec** si GLPI est injoignable (FR-27, FR-1) — pas de démarrage
+silencieux dégradé. Il répond **503** si les secrets sont illisibles (master key
+incohérente), avec un message qui nomme la cause.
+
+> **`/health/live` est ce que sondent les conteneurs**, et c'est délibéré : `/health`
+> ouvre une session GLPI à chaque appel — toutes les 30 s, cela fait environ 2 880
+> sessions par jour dans les journaux du client — et un GLPI momentanément injoignable
+> marquait `unhealthy` un moteur parfaitement sain (redémarrages en boucle sous Swarm,
+> Kubernetes ou autoheal). `?probe=true` ajoute un appel **facturé** au fournisseur LLM et
+> exige désormais une session administrateur : à réserver au diagnostic humain.
 
 **Diagnostic GLPI dédié** (recommandé à l'install — valide auth, référentiels, lecture
 des tickets, et optionnellement l'écriture d'un Suivi privé) — identifiants via
@@ -180,7 +195,45 @@ docker run --rm -v itsm_data:/data -v "$PWD":/backup alpine \
   tar czf /backup/itsm_data-$(date +%F).tar.gz -C /data .
 ```
 
-> ⚠️ Sans la master key, **les secrets chiffrés sont irrécupérables**.
+> ⚠️ Sans la master key, **les secrets chiffrés sont irrécupérables** : tokens GLPI, clés
+> LLM et **hash du mot de passe admin**. Depuis la 0.9.48, le moteur **refuse de démarrer**
+> plutôt que de générer une nouvelle clé par-dessus des secrets existants — il vaut mieux
+> un arrêt explicite qu'une instance qui démarre « verte » avec des secrets illisibles et
+> un login qui répond « mot de passe incorrect ». Pour repartir de zéro en connaissance de
+> cause : `ITSM_ALLOW_NEW_MASTER_KEY=true` (les secrets devront être re-saisis).
+
+### Depuis les sources : `make backup`
+
+Si vous disposez du dépôt, préférez la cible dédiée — elle produit une sauvegarde
+**cohérente** :
+
+```bash
+make backup        # → backups/<horodatage>/{itsm.db,master.key}
+```
+
+> ⚠️ **Ne copiez jamais `itsm.db` seul à chaud.** La base est en mode **WAL** : les
+> écritures récentes vivent dans `itsm.db-wal`, et un `cp` du seul `.db` peut produire un
+> fichier **vide ou corrompu**, sans le moindre message d'erreur. `make backup` utilise
+> `VACUUM INTO`, cohérent en ligne, et vérifie le résultat (`PRAGMA integrity_check`,
+> nombre de tables et de lignes affichés). Un échec est **bruyant** et le dossier
+> incomplet est supprimé.
+
+### Restauration et retour arrière
+
+```bash
+./install.sh --list-backups              # sauvegardes disponibles
+./install.sh --rollback                  # la plus récente
+./install.sh --rollback 20260808-201310  # une sauvegarde précise
+```
+
+Le rollback restaure **ensemble** la base et la master key (l'une sans l'autre est
+inutile), écarte les fichiers `-wal`/`-shm` périmés — les laisser corromprait la base
+restaurée — remet le code ou l'image de l'époque, et **préserve le port publié**. L'état
+courant n'est pas écrasé : il est déplacé dans `data/pre-rollback-<horodatage>`.
+
+> PostgreSQL : la restauration n'est **pas** automatisée (opération destructive). Le
+> script restaure la clé, le code et l'image, et **affiche** les commandes `psql` à
+> exécuter pour le dump.
 
 ## Depuis les sources / hors-ligne (airgap, build local)
 
@@ -246,9 +299,11 @@ Les **données sont préservées** (le volume de données n'est jamais touché �
 `docker compose down -v`**).
 
 - `./install.sh --update` : mise à jour directe, non-interactive (CI, scripts).
-- En cas d'échec (ex. migration KO), le script affiche la procédure de **rollback** : restaurer
-  la sauvegarde `backups/<horodatage>/` dans `data/`, revenir à la version précédente
-  (`git checkout <tag>`), puis `docker compose up -d --build`.
+- **En cas d'échec** (build KO, migration KO), le script **relance automatiquement
+  l'instance précédente** au lieu de la laisser à l'arrêt, et affiche la commande de
+  retour arrière. Le rollback complet — base, master key, code/image, port publié — se
+  fait en une commande : `./install.sh --rollback [horodatage]` (cf. section
+  « Restauration et retour arrière »).
 
 ## Note — pilote, pas production
 

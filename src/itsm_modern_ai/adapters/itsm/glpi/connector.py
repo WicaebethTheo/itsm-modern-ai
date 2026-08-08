@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 import httpx
@@ -38,6 +39,11 @@ def _build_user_profiles(profiles_raw: list[dict], profile_user_raw: list[dict])
     return {uid: ", ".join(sorted(names)) for uid, names in by_user.items()}
 
 
+
+_REFERENTIALS_PAGE = 1000  # taille de page des lectures de référentiels (range 0-999)
+
+logger = logging.getLogger("itsm.glpi")
+
 class GlpiConnector:
     def __init__(
         self,
@@ -71,6 +77,22 @@ class GlpiConnector:
         )
 
     async def get_new_tickets(self) -> list[Ticket]:
+        """Tickets « Nouveau », lus dans une FENÊTRE des N plus récents.
+
+        ⚠️ LIMITE CONNUE, à ne pas découvrir en production. La lecture porte sur les
+        `polling_max_tickets` tickets aux ID les plus GRANDS (tous statuts confondus), et
+        le filtrage « Nouveau » se fait ensuite CÔTÉ CLIENT. Conséquence : sur une
+        instance qui compte plus de tickets récents que la fenêtre, un arriéré de tickets
+        « Nouveau » ANCIENS (ID faibles) sort de la fenêtre et n'est jamais trié — c'est
+        précisément le stock que le client attend de voir traiter le jour de la mise en
+        service.
+
+        Le correctif propre est un filtre de statut CÔTÉ GLPI (`criteria[…]` sur l'API de
+        recherche) plus une pagination réelle sur `Content-Range` ; il demande d'être
+        validé contre une instance GLPI réelle, les deux API (legacy/V2) n'exposant pas
+        la même syntaxe. En attendant, on refuse au moins que la troncature soit
+        SILENCIEUSE : une page pleine signifie « il y a probablement plus », et on le dit.
+        """
         async with self._client() as gc:
             resp = await gc.get(
                 "Ticket", params={"range": f"0-{self._max_tickets - 1}", "sort": "id", "order": "DESC"}
@@ -78,6 +100,15 @@ class GlpiConnector:
             data = resp.json()
         if isinstance(data, dict):  # GLPI peut renvoyer un objet unique
             data = [data]
+        if len(data) >= self._max_tickets:
+            logger.warning(
+                "lecture GLPI TRONQUÉE : %d tickets lus = plafond POLLING_MAX_TICKETS. "
+                "Les tickets « Nouveau » plus anciens que cette fenêtre ne sont PAS vus "
+                "et ne le seront jamais tant que des tickets plus récents la remplissent. "
+                "Si un arriéré doit être trié, relever POLLING_MAX_TICKETS le temps de le "
+                "résorber.",
+                len(data),
+            )
         return [mapper.ticket_from_glpi(t) for t in data if mapper.is_new(t)]
 
     async def get_recent_tickets(self, since: datetime) -> list[TicketStat]:
@@ -99,18 +130,33 @@ class GlpiConnector:
         Récupère aussi le(s) profil(s) GLPI de chaque utilisateur (best-effort) pour le
         tri/filtre par profil côté UI.
         """
+        page = {"range": f"0-{_REFERENTIALS_PAGE - 1}"}
         async with self._client() as gc:
-            categories_raw = _as_list((await gc.get("ITILCategory", params={"range": "0-999"})).json())
-            users_raw = _as_list((await gc.get("User", params={"range": "0-999"})).json())
-            groups_raw = _as_list((await gc.get("Group", params={"range": "0-999"})).json())
-            entities_raw = _as_list((await gc.get("Entity", params={"range": "0-999"})).json())
+            categories_raw = _as_list((await gc.get("ITILCategory", params=page)).json())
+            users_raw = _as_list((await gc.get("User", params=page)).json())
+            groups_raw = _as_list((await gc.get("Group", params=page)).json())
+            entities_raw = _as_list((await gc.get("Entity", params=page)).json())
             try:  # profils : non bloquant si le token n'y a pas accès
-                profiles_raw = _as_list((await gc.get("Profile", params={"range": "0-999"})).json())
+                profiles_raw = _as_list((await gc.get("Profile", params=page)).json())
                 profile_user_raw = _as_list(
-                    (await gc.get("Profile_User", params={"range": "0-999"})).json()
+                    (await gc.get("Profile_User", params=page)).json()
                 )
             except ItsmError:
                 profiles_raw, profile_user_raw = [], []
+        # ⚠️ Même limite que `get_new_tickets`, mais aux conséquences plus sournoises :
+        # une liste de techniciens TRONQUÉE ne provoque aucune erreur — elle rétrécit
+        # simplement la whitelist, et le moteur se met à rejeter des routages parfaitement
+        # légitimes en « à trier », sans que rien n'explique pourquoi. Une organisation de
+        # 10 000 tickets dépasse souvent 1 000 comptes GLPI.
+        for nom, brut in (("catégories", categories_raw), ("utilisateurs", users_raw),
+                          ("groupes", groups_raw), ("entités", entities_raw)):
+            if len(brut) >= _REFERENTIALS_PAGE:
+                logger.warning(
+                    "référentiels GLPI TRONQUÉS : %d %s lus = plafond de lecture. Le "
+                    "périmètre autorisé est donc INCOMPLET, et des routages valides seront "
+                    "rejetés en « à trier » sans explication.",
+                    len(brut), nom,
+                )
         categories = {
             int(c["id"]): str(c.get("completename") or c.get("name") or f"cat_{c['id']}")
             for c in categories_raw

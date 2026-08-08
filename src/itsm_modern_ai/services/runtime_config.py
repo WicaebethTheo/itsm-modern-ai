@@ -281,6 +281,22 @@ class RuntimeConfigService:
         self._session.commit()
 
     # ── journal d'audit ─────────────────────────────────────────────────────────
+    def record_action(
+        self, action: str, key: str, old: str = "", new: str = "", *, by: str | None = None
+    ) -> None:
+        """Consigne une action d'administration qui ne passe PAS par `set`/`set_secret`.
+
+        `set`/`set_secret` couvrent tout ce qui vit dans `runtime_config`, mais certaines
+        décisions d'admin sont stockées ailleurs — au premier rang desquelles le **mode
+        d'exécution PAR ENTITÉ** (`referential_cache`), qui autorise l'IA à muter les
+        Tickets et à répondre PUBLIQUEMENT au demandeur. C'est précisément le genre de
+        bascule qu'un RSSI veut pouvoir imputer, et elle n'aurait laissé aucune trace.
+
+        Réservé aux écritures hors `runtime_config` : pour tout le reste, passer par
+        `set`/`set_secret`, qui tracent automatiquement et ne peuvent pas être oubliés.
+        """
+        self._audit(action, key, old, new, by)
+
     def _audit(self, action: str, key: str, old: str, new: str, by: str | None) -> None:
         """Consigne une écriture de configuration (imputabilité — cf. `tables.AuditLog`).
 

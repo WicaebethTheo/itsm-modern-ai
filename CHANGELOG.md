@@ -122,9 +122,49 @@ protégés. Les défauts corrigés ici ne sont pas dans la logique de triage : i
   à une limite conteneur de 512 Mo. Désormais **1,2 Mo**, sans troncature — un export
   d'audit tronqué vaut moins qu'un export lent.
 
+### Suites de l'audit — imputabilité, troncatures visibles, documentation
+
+- **Le passage d'une ENTITÉ en `full_auto` est désormais audité.** Il transitait par
+  `referential_cache`, donc hors du traçage automatique de `RuntimeConfigService` : seul
+  le défaut **global** était imputable. C'est pourtant l'action la plus lourde du produit
+  — elle autorise l'IA à muter des Tickets et à **répondre publiquement** aux demandeurs.
+  Une entrée par entité réellement modifiée (réécrire la liste sans rien changer ne noie
+  pas le journal).
+- **Les troncatures de lecture GLPI ne sont plus silencieuses.** Deux plafonds existent :
+  la fenêtre des `POLLING_MAX_TICKETS` tickets les plus récents, et les 1 000 lignes de
+  référentiels. Le premier fait qu'un **arriéré ancien n'est jamais trié** ; le second
+  **rétrécit la whitelist**, et le moteur rejette alors des routages parfaitement
+  légitimes en « à trier », sans que rien ne l'explique. Les deux journalisent désormais
+  un avertissement nommant la cause et l'action à mener.
+  *Le correctif de fond — filtre de statut côté GLPI et pagination réelle sur
+  `Content-Range` — demande d'être validé contre une instance GLPI réelle (les API legacy
+  et V2 n'exposant pas la même syntaxe) : il reste à faire, et la limite est documentée
+  dans le code plutôt que découverte en production.*
+- **Journalisation de la longueur d'un mot de passe refusé supprimée** (alerte CodeQL
+  `py/clear-text-logging-sensitive-data`). Ce n'était pas la valeur, mais la longueur
+  réduit l'espace de recherche d'une force brute — et un log part souvent vers un
+  agrégateur au périmètre d'accès bien plus large que celui du `.env`.
+
+### Documentation — les écarts relevés par l'audit sont refermés
+
+- **`docs/dpo.md`** : les **noms des techniciens et leurs fiches en prose** partent au LLM
+  à chaque appel, non masqués (ce sont des données personnelles de salariés, hors UE si
+  OpenAI/Anthropic est activé) ; le journal `llm_calls` ne contient que le contenu du
+  ticket, donc le prompt réel **n'est pas reconstituable** ; **trois tables échappent à la
+  purge** (`processed_tickets`, `referential_cache`, `audit_log`), chacune avec sa raison ;
+  et les colonnes `mode`/`applied` de l'export sont rattachées à l'**article 22**.
+- **`SECURITY.md`** : « aucun secret en clair dans `.env` » était faux — `.env` porte par
+  conception la `MASTER_KEY` et le mot de passe d'amorçage ; la garde anti-SSRF est
+  **désactivée pour GLPI dans la configuration livrée** (`GLPI_ALLOW_PRIVATE=true`, sans
+  quoi un GLPI on-premise serait injoignable) ; ajout de la révocation de session et du
+  journal d'audit.
+- **`docs/install.md`** : `--rollback`, `--list-backups`, `ITSM_ALLOW_NEW_MASTER_KEY`,
+  `ITSM_IMAGE_TAG`, `/health/live`, et surtout **pourquoi il ne faut jamais copier
+  `itsm.db` seul à chaud** (mode WAL : le fichier peut être vide ou corrompu, sans erreur).
+
 ### Tests
 
-**389 → 483 pytest** (verts sur 3.13 **et** 3.14) et **89 → 111 Vitest**. Chaque
+**389 → 485 pytest** (verts sur 3.13 **et** 3.14) et **89 → 111 Vitest**. Chaque
 correction a un test vérifié **rouge avant, vert après**. Aucun test existant affaibli.
 
 ## 2026-08-08 — 0.9.47 — Honnêteté des claims, bornes mémoire et remise à niveau complète

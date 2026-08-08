@@ -69,12 +69,19 @@ def _ensure_bootstrapped(cfg: RuntimeConfigService) -> str | None:
     bootstrap = cfg.settings.admin_password
     if bootstrap:
         if len(bootstrap) < MIN_PASSWORD_LEN:
+            # ⚠️ NE JAMAIS journaliser la longueur du mot de passe refusé (CodeQL
+            # `py/clear-text-logging-sensitive-data`). Ce n'était pas la valeur, mais la
+            # longueur est déjà un renseignement : elle réduit l'espace de recherche d'une
+            # force brute, et un log part souvent vers un agrégateur dont le périmètre
+            # d'accès est bien plus large que celui du `.env`. Elle n'a en outre aucune
+            # valeur opérationnelle : l'administrateur connaît son propre mot de passe ;
+            # ce qu'il lui faut, c'est le minimum exigé et la marche à suivre.
             logger.error(
-                "ADMIN_PASSWORD REFUSÉ : %d caractère(s) pour un minimum de %d. "
+                "ADMIN_PASSWORD REFUSÉ : trop court (minimum %d caractères). "
                 "Le compte administrateur reste NON configuré (accès refusé, fail-closed). "
                 "Définissez un mot de passe d'au moins %d caractères "
                 "(ITSM_ADMIN_PASSWORD / `python -m itsm_modern_ai.admin_setup`).",
-                len(bootstrap), MIN_PASSWORD_LEN, MIN_PASSWORD_LEN,
+                MIN_PASSWORD_LEN, MIN_PASSWORD_LEN,
             )
             return None
         h = hash_password(bootstrap)
