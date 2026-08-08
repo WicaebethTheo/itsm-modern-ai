@@ -8,6 +8,7 @@ ressources namespacées (`/Assistance/Ticket`, `/Dropdowns/ITILCategory`,
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 import httpx
@@ -30,6 +31,29 @@ PRIORITY_LABELS_FR = {
 }
 
 _REF_HARD_CAP = 2000  # garde-fou de pagination des référentiels
+
+logger = logging.getLogger("itsm.glpi.v2")
+
+
+class ItsmPartialApplyError(ItsmError):
+    """`apply_decision` s'est arrêtée APRÈS avoir muté le Ticket (mutation partielle).
+
+    L'API V2 n'est pas transactionnelle : appliquer une Décision demande DEUX appels
+    réseau (PATCH des champs, puis POST `TeamMember` pour l'acteur). Si le second
+    échoue, le Ticket est DÉJÀ modifié dans GLPI — l'hypothèse « si apply échoue,
+    rien n'a été muté » (vraie en legacy, un seul PATCH) ne tient plus.
+
+    On ne peut pas rendre GLPI transactionnel ; on rend l'état **reconnaissable** :
+    l'attribut `partial_mutation` permet au moteur de triage de distinguer « rien
+    n'a bougé, on peut rejouer » de « GLPI a bougé, il faut journaliser et NE PAS
+    rejouer » (sinon le Ticket serait re-muté et re-facturé à chaque cycle, sans
+    la moindre ligne au Journal).
+
+    Le marqueur est un ATTRIBUT (et non un type importé par le service) pour que
+    `services/triage.py` n'ait pas à dépendre d'un adaptateur concret.
+    """
+
+    partial_mutation = True
 
 
 class GlpiV2Connector:
@@ -146,13 +170,35 @@ class GlpiV2Connector:
         technician_id: int | None = None,
         group_id: int | None = None,
     ) -> None:
-        """Mute le Ticket (PATCH catégorie/urgence/priorité) puis assigne un acteur (TeamMember)."""
+        """Mute le Ticket (PATCH catégorie/urgence/priorité) puis assigne un acteur (TeamMember).
+
+        DEUX appels réseau, donc DEUX issues d'échec très différentes :
+        - le PATCH échoue → rien n'a été muté, l'erreur remonte telle quelle et le
+          Ticket est rejouable au cycle suivant sans état partiel ;
+        - le PATCH passe mais le POST `TeamMember` échoue → le Ticket est **déjà**
+          catégorisé/priorisé dans GLPI sans acteur assigné. On lève alors une
+          `ItsmPartialApplyError` qui NOMME l'état atteint : le moteur la journalise
+          au lieu de laisser le Ticket boucler (re-mutation + re-facturation à chaque
+          cycle, sans aucune trace d'audit).
+        """
         fields = mapper.ticket_update_payload(category=category, priority=priority)
         member = mapper.teammember_payload(technician_id=technician_id, group_id=group_id)
         async with self._client() as gc:
             await gc.patch(f"Assistance/Ticket/{ticket_id}", json=fields)
-            if member is not None:
+            if member is None:
+                return
+            try:
                 await gc.post(f"Assistance/Ticket/{ticket_id}/TeamMember", json=member)
+            except Exception as exc:
+                logger.error(
+                    "apply_decision V2: mutation PARTIELLE du ticket %s — catégorie=%s "
+                    "priorité=%s appliquées, acteur %s NON assigné (%s)",
+                    ticket_id, category, priority, member, exc,
+                )
+                raise ItsmPartialApplyError(
+                    f"Ticket {ticket_id} muté (catégorie={category}, priorité={priority}) "
+                    f"mais assignation de l'acteur échouée: {exc}"
+                ) from exc
 
     async def healthcheck(self) -> bool:
         if not self._creds.is_configured:

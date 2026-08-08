@@ -64,3 +64,43 @@ def test_purge_requires_confirmation(enabled):
     assert enabled.post("/api/debug/purge-users", json={"confirm": "oui"}).status_code == 400
     # Bonne confirmation mais pas de GLPI → 409 (toujours pas de purge réelle).
     assert enabled.post("/api/debug/purge-users", json={"confirm": "SUPPRIMER"}).status_code == 409
+
+
+# ── Fuite de détail d'exception (durcissement audit 2026-08) ──────────────────
+# `/api/debug/seed` et `/api/debug/purge-users` renvoyaient `str(exc)` BRUT, qui embarque
+# `resp.text[:200]` du GLPI — alors que `detail_sur` avait précisément été créé pour ça
+# quelques lignes plus haut dans le même fichier (incohérence de durcissement).
+def _configure_glpi(client) -> None:
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.services.runtime_config import RuntimeConfigService
+
+    with db.session_scope() as s:
+        cfg = RuntimeConfigService(s, client.app.state.secrets_box, client.app.state.settings)
+        cfg.set("glpi_base_url", "https://glpi.local/apirest.php")
+        cfg.set_secret("glpi_user_token", "user-token")
+        cfg.set_secret("glpi_app_token", "app-token")
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [("/api/debug/seed", {"technicians": 1, "groups": 1}),
+     ("/api/debug/purge-users", {"confirm": "SUPPRIMER"})],
+)
+def test_glpi_error_detail_is_masked_and_bounded(enabled, monkeypatch, path, body):
+    from itsm_modern_ai.adapters.itsm.glpi.debug import GlpiDebugOps
+    from itsm_modern_ai.domain.errors import ItsmError
+
+    _configure_glpi(enabled)
+
+    async def _boom(*_a, **_k):
+        # Reproduit un corps d'erreur GLPI recraché tel quel dans l'exception.
+        raise ItsmError("GLPI 500: contact admin@exemple.fr — " + "x" * 600)
+
+    monkeypatch.setattr(GlpiDebugOps, "seed", _boom)
+    monkeypatch.setattr(GlpiDebugOps, "purge_users", _boom)
+
+    r = enabled.post(path, json=body)
+    assert r.status_code == 502
+    message = r.json()["detail"]["message"]
+    assert "admin@exemple.fr" not in message and "[EMAIL]" in message  # masquage PII
+    assert len(message) <= 301  # borné (_DETAIL_MAX_CHARS + « … »)

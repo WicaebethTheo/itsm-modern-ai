@@ -11,6 +11,27 @@ from enum import IntEnum, StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# Nombre moyen de caractères par token, servant d'ESTIMATION quand le fournisseur ne
+# renvoie pas de bloc `usage` (passerelle minimaliste) ou quand l'appel a échoué avant
+# toute comptabilisation. Ordre de grandeur pour du français en tokenizer BPE ; c'est
+# volontairement une approximation ASSUMÉE : mieux vaut un coût approché qui fait
+# avancer le plafond (FR-10) qu'un 0,00 € silencieux qui le rend aveugle.
+# Vit dans le domaine (et non dans un adaptateur) car adaptateurs LLM ET moteur de
+# triage partagent la même unité de mesure — le domaine ne dépend de personne.
+TOKEN_CHARS_RATIO = 3.6
+
+
+def estimate_tokens(text: str) -> int:
+    """Estimation grossière du nombre de tokens d'un texte (jamais 0 pour un texte non vide).
+
+    Utilisée UNIQUEMENT en repli : `usage` absent côté fournisseur, ou appel facturé
+    dont on ne connaîtra jamais la comptabilité exacte (échec après émission). Le
+    plancher à 1 évite qu'un texte court soit compté gratuit.
+    """
+    if not text:
+        return 0
+    return max(1, int(len(text) / TOKEN_CHARS_RATIO))
+
 
 class Priority(IntEnum):
     """Encodage GLPI des priorités (addendum §A, stable toutes versions)."""
@@ -85,7 +106,18 @@ class Decision(BaseModel):
     évolution = nouveau champ optionnel (jamais de breaking silencieux).
     """
 
-    model_config = ConfigDict(extra="forbid")
+    # `strict=True` en plus de `extra="forbid"` (durcissement audit 2026-08) : sans lui,
+    # Pydantic COERCE silencieusement la sortie du LLM et la frontière n'en est plus une.
+    # Vérifié : `{"category": true}` donnait `category=1` → une Décision était ACCEPTÉE
+    # sur la catégorie #1 alors que le modèle n'avait proposé aucune catégorie ; `"3"`
+    # donnait `3`. Un type faux est le SYMPTÔME d'une sortie non maîtrisée : il doit
+    # partir en `invalid_output` (seule échappatoire), pas être rattrapé en douce.
+    # NB : Pydantic strict tolère un `int` pour un champ `float` (`confidence: 1` reste
+    # valide) — c'est la seule coercition conservée, et elle est sans ambiguïté.
+    # Les fournisseurs qui sérialisent leurs nombres en chaîne (`"3"`) sont pris en
+    # charge par une coercition EXPLICITE et bornée dans l'adaptateur
+    # (`adapters/llm/_decision.py`), jamais implicitement ici.
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     # `None` autorisé : certains LLM (Sonnet 4.6+) expriment leur doute par null ici
     # malgré le prompt. Le garde-fou (whitelist) considère alors la Décision « à trier »
@@ -158,3 +190,29 @@ class TriageOutcome(BaseModel):
     @property
     def is_a_trier(self) -> bool:
         return not self.accepted
+
+
+class HandlerOutcome(BaseModel):
+    """Ce que le handler de triage rapporte au poller — contrat élargi (audit 2026-08).
+
+    Le handler ne renvoyait qu'un `bool` (« un Suivi a-t-il été écrit ? »). Le poller ne
+    pouvait donc PAS distinguer « le Ticket a été arbitré » de « le triage N'A PAS EU
+    LIEU » (plafond atteint, panne LLM, sortie invalide) : dans les deux cas il posait le
+    marqueur « traité » et le Ticket était brûlé DÉFINITIVEMENT, sans reprise ni écran
+    pour le rejouer. Quatre informations suffisent à refermer ça :
+
+    - `followup_written` : équivalent de l'ancien `bool` (Suivi réellement déposé) ;
+    - `retryable` : le triage n'a pas abouti → NE PAS consommer le Ticket ;
+    - `costly` : la tentative a (ou a pu) coûter des tokens → elle consomme un essai du
+      compteur borné du poller, garde-fou contre un Ticket éternellement invalide ;
+    - `db_error` : une écriture en base a échoué → alimente le circuit-breaker du poller
+      (une base en panne ne doit pas produire une boucle d'appels LLM facturés).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    followup_written: bool = False
+    retryable: bool = False
+    costly: bool = False
+    db_error: bool = False
+    reason: TriageReason | None = None

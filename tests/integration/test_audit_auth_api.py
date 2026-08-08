@@ -133,10 +133,44 @@ def test_export_csv_open(open_client):
     assert "ticket_id" in r.text
 
 
+@pytest.mark.parametrize(
+    ("chemin", "fichier", "entete_attendu"),
+    [
+        ("/api/export/decisions.csv", "decisions.csv", "mode"),
+        ("/api/export/llm-calls.csv", "llm-calls.csv", "prompt_sent"),
+    ],
+)
+def test_exports_servis_en_flux_avec_piece_jointe(open_client, chemin, fichier, entete_attendu):
+    """Les exports passent en `StreamingResponse` (pic mémoire borné) SANS rien perdre.
+
+    Le passage au flux ne doit changer ni le téléchargement (`Content-Disposition`), ni le
+    type MIME, ni le contenu. L'absence de `Content-Length` atteste que le corps n'est plus
+    assemblé en mémoire avant l'envoi — c'est là tout l'intérêt : l'export des appels LLM
+    coûtait 270 Mo de pic pour 71 Mo de fichier, sous une limite conteneur de 512 Mo.
+    """
+    from itsm_modern_ai.persistence import db, journal
+
+    _seed_decision()
+    with db.session_scope() as s:
+        journal.record_llm_call(
+            s, ticket_id=100, model="m", prompt_sent="masqué", response_received="{}",
+            prompt_tokens=1, completion_tokens=1, cost_eur=0.0,
+        )
+
+    r = open_client.get(chemin)
+    assert r.status_code == 200
+    assert "text/csv" in r.headers["content-type"]
+    assert r.headers["content-disposition"] == f'attachment; filename="{fichier}"'
+    assert "content-length" not in {k.lower() for k in r.headers}  # corps rendu en flux
+    lignes = r.text.splitlines()
+    assert entete_attendu in lignes[0]
+    assert len(lignes) >= 2  # en-tête + la ligne semée
+
+
 # ── Auth configurée ───────────────────────────────────────────────────────────
 @pytest.fixture
 def secured_client(tmp_path):
-    with TestClient(create_app(_settings(tmp_path, admin_password="s3cret"))) as c:
+    with TestClient(create_app(_settings(tmp_path, admin_password="s3cret-pilote"))) as c:
         yield c
 
 
@@ -148,7 +182,7 @@ def test_protected_without_login_is_401(secured_client):
 
 def test_login_then_access(secured_client):
     assert secured_client.post("/api/auth/login", json={"password": "wrong"}).status_code == 401
-    ok = secured_client.post("/api/auth/login", json={"password": "s3cret"})
+    ok = secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
     assert ok.status_code == 200 and ok.json()["authenticated"] is True
     # session active → accès autorisé
     _seed_decision()
@@ -181,30 +215,30 @@ def test_auth_status_fail_closed_not_authenticated(tmp_path):
 # ── Rate-limiting du login (FR-24 durci) ─────────────────────────────────────
 def test_login_rate_limited_after_repeated_failures(tmp_path):
     # Seuil bas pour déclencher vite ; fenêtre/blocage longs pour rester bloqué.
-    settings = _settings(tmp_path, admin_password="s3cret", login_max_attempts=3)
+    settings = _settings(tmp_path, admin_password="s3cret-pilote", login_max_attempts=3)
     with TestClient(create_app(settings)) as c:
         # 3 échecs → le 3e franchit le seuil (toujours 401, mais arme le blocage).
         for _ in range(3):
             assert c.post("/api/auth/login", json={"password": "nope"}).status_code == 401
         # 4e tentative : bloquée même avec le bon mot de passe.
-        blocked = c.post("/api/auth/login", json={"password": "s3cret"})
+        blocked = c.post("/api/auth/login", json={"password": "s3cret-pilote"})
         assert blocked.status_code == 429
         assert "Retry-After" in blocked.headers
         assert blocked.json()["detail"]["code"] == "too_many_attempts"
 
 
 def test_login_success_resets_counter(tmp_path):
-    settings = _settings(tmp_path, admin_password="s3cret", login_max_attempts=3)
+    settings = _settings(tmp_path, admin_password="s3cret-pilote", login_max_attempts=3)
     with TestClient(create_app(settings)) as c:
         # 2 échecs (sous le seuil), puis un succès qui réinitialise le compteur.
         c.post("/api/auth/login", json={"password": "nope"})
         c.post("/api/auth/login", json={"password": "nope"})
-        assert c.post("/api/auth/login", json={"password": "s3cret"}).status_code == 200
+        assert c.post("/api/auth/login", json={"password": "s3cret-pilote"}).status_code == 200
         c.post("/api/auth/logout")
         # Le compteur est reparti de zéro : 2 nouveaux échecs ne bloquent pas.
         c.post("/api/auth/login", json={"password": "nope"})
         c.post("/api/auth/login", json={"password": "nope"})
-        assert c.post("/api/auth/login", json={"password": "s3cret"}).status_code == 200
+        assert c.post("/api/auth/login", json={"password": "s3cret-pilote"}).status_code == 200
 
 
 # ── Fail-closed : aucun mot de passe + dev_open_admin=False → refus (durcissement) ──

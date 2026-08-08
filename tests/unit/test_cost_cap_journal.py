@@ -87,6 +87,68 @@ def test_csv_injection_neutralized(temp_db):
     assert "'@SUM(1+1)" in llm_csv
 
 
+def test_decision_stats_agregats_sql(temp_db):
+    """Les compteurs du dashboard passent par COUNT/GROUP BY (plus de `SELECT *` du Journal).
+
+    On verrouille les VALEURS (le refactor ne doit rien changer aux nombres affichés) et
+    l'ORDRE de `by_reason` : décroissant par volume, puis alphabétique pour que deux
+    raisons à égalité ne permutent pas d'un rafraîchissement à l'autre (le SGBD ne
+    garantit aucun ordre sur un GROUP BY).
+    """
+    accepte = TriageOutcome(
+        accepted=True,
+        reason=TriageReason.ACCEPTED,
+        decision=Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.9),
+    )
+    with db.session_scope() as s:
+        for i in range(3):
+            journal.record_decision(s, i, accepte)
+        journal.record_decision(s, 10, TriageOutcome(accepted=False, reason=TriageReason.LOW_CONFIDENCE))
+        journal.record_decision(s, 11, TriageOutcome(accepted=False, reason=TriageReason.LLM_ERROR))
+    with db.session_scope() as s:
+        stats = journal.decision_stats(s)
+
+    assert stats["total"] == 5 and stats["accepted"] == 3 and stats["a_trier"] == 2
+    assert stats["useful_coverage"] == 0.6
+    assert stats["by_reason"] == {"accepted": 3, "llm_error": 1, "low_confidence": 1}
+    # Ordre stable : volume décroissant, puis alphabétique à égalité.
+    assert list(stats["by_reason"]) == ["accepted", "llm_error", "low_confidence"]
+
+
+def test_decision_stats_journal_vide(temp_db):
+    with db.session_scope() as s:
+        assert journal.decision_stats(s) == {
+            "total": 0, "accepted": 0, "a_trier": 0, "useful_coverage": 0.0, "by_reason": {},
+        }
+
+
+# ── L'export « pour l'audit » doit qualifier la décision (art. 22 RGPD) ──────
+def test_decisions_csv_expose_mode_et_applied(temp_db):
+    """Sans `mode` ni `applied`, la DPO ne peut pas distinguer, dans le CSV, une simple
+    suggestion soumise à un technicien d'une décision individuelle AUTOMATISÉE ayant
+    répondu publiquement au demandeur (`applied=True` en `full_auto`) — soit exactement
+    ce que l'article 22 lui demande d'identifier.
+    """
+    import csv as _csv
+
+    accepte = TriageOutcome(
+        accepted=True,
+        reason=TriageReason.ACCEPTED,
+        decision=Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.9),
+    )
+    with db.session_scope() as s:
+        journal.record_decision(s, 1, accepte, mode="full_auto", applied=True)
+        journal.record_decision(s, 2, accepte, mode="suggestion", applied=False)
+    with db.session_scope() as s:
+        lignes = list(_csv.DictReader(journal.decisions_csv(s).splitlines()))
+
+    par_ticket = {int(r["ticket_id"]): r for r in lignes}
+    assert par_ticket[1]["mode"] == "full_auto" and par_ticket[1]["applied"] == "True"
+    assert par_ticket[2]["mode"] == "suggestion" and par_ticket[2]["applied"] == "False"
+    # Décision assumée : le titre du Ticket (PII) reste HORS export.
+    assert "subject" not in lignes[0]
+
+
 def test_avg_confidence_and_daily_series(temp_db):
     from itsm_modern_ai.domain.models import Decision
 
@@ -106,6 +168,70 @@ def test_avg_confidence_and_daily_series(temp_db):
         assert len(series) == 14
         today = series[-1]
         assert today["accepted"] == 2 and today["a_trier"] == 1
+
+
+# ── L'export des appels LLM ne doit pas tenir tout le fichier en mémoire ─────
+def test_llm_calls_csv_stream_borne_la_memoire(temp_db):
+    """L'export chargeait TOUTES les lignes puis assemblait un `StringIO` complet :
+    mesuré sur 20 000 appels, 71 Mo de sortie pour 270 Mo de pic — face au `memory: 512M`
+    du compose, c'est l'OOM kill du conteneur (qui, vu de l'extérieur, « redémarre tout
+    seul »). On exige donc un pic mémoire NETTEMENT inférieur à la taille du fichier
+    produit : c'est la signature d'un vrai flux, et c'est faux par construction pour
+    n'importe quelle implémentation qui accumule.
+    """
+    import tracemalloc
+
+    charge = "x" * 4_000  # prompt masqué réaliste (ticket issu d'un collecteur de mails)
+
+    def semer(nb: int) -> None:
+        with db.session_scope() as s:
+            for i in range(nb):
+                journal.record_llm_call(
+                    s, ticket_id=i, model="m", prompt_sent=charge, response_received=charge,
+                    prompt_tokens=1, completion_tokens=1, cost_eur=0.0,
+                )
+
+    def exporter() -> tuple[int, int, str]:
+        """Consomme le flux SANS l'accumuler (comme l'envoi ASGI) → (octets, pic, entête)."""
+        with db.session_scope() as s:
+            tracemalloc.start()
+            octets, entete = 0, ""
+            for i, tranche in enumerate(journal.llm_calls_csv_stream(s)):
+                if i == 0:
+                    entete = tranche.splitlines()[0]
+                octets += len(tranche)
+            pic = tracemalloc.get_traced_memory()[1]
+            tracemalloc.stop()
+        return octets, pic, entete
+
+    semer(500)
+    petit_octets, petit_pic, entete = exporter()
+    semer(1_500)  # 4× plus de lignes au total
+    gros_octets, gros_pic, _ = exporter()
+
+    assert entete.startswith("id,ticket_id,ts,model,prompt_sent")
+    # La PROPRIÉTÉ à tenir : le fichier quadruple, le pic mémoire ne bouge pas. C'est faux
+    # par construction pour toute implémentation qui accumule (l'ancienne : ×4 aussi).
+    assert gros_octets > 3.5 * petit_octets  # ~4 Mo → ~16 Mo réellement produits
+    assert gros_pic < 1.5 * petit_pic, (
+        f"pic {gros_pic / 1e6:.1f} Mo pour {gros_octets / 1e6:.1f} Mo de CSV, contre "
+        f"{petit_pic / 1e6:.1f} Mo pour {petit_octets / 1e6:.1f} Mo — la mémoire suit le volume"
+    )
+    # Garde-fou absolu : le pic reste une petite fraction du fichier produit.
+    assert gros_pic < gros_octets / 4
+
+
+def test_llm_calls_csv_stream_identique_au_monolithique(temp_db):
+    """Le flux ne doit RIEN changer au contenu : mêmes lignes, même échappement CSV."""
+    with db.session_scope() as s:
+        for i in range(3):
+            journal.record_llm_call(
+                s, ticket_id=i, model="m", prompt_sent='du "texte", et\nune ligne',
+                response_received="@SUM(1+1)", prompt_tokens=1, completion_tokens=1, cost_eur=0.5,
+            )
+    with db.session_scope() as s:
+        assert "".join(journal.llm_calls_csv_stream(s)) == journal.llm_calls_csv(s)
+        assert "'@SUM(1+1)" in journal.llm_calls_csv(s)  # anti-injection préservé
 
 
 def test_llm_calls_csv_and_count(temp_db):

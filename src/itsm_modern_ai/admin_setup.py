@@ -24,12 +24,16 @@ import os
 import sys
 
 from .adapters.secrets.encrypted import FernetSecretsBox
-from .api.security import HASH_KEY, hash_password
+from .api.security import HASH_KEY, MIN_PASSWORD_LEN, hash_password, revoke_sessions
 from .config.settings import get_settings
 from .persistence import db
 from .services.runtime_config import RuntimeConfigService
 
-MIN_LEN = 8
+# Source de vérité UNIQUE de la politique de mot de passe : `api.security`. Le minimum vivait
+# ici et n'était donc appliqué QUE par cette CLI — l'amorçage paresseux côté HTTP hashait
+# `ADMIN_PASSWORD` sans contrôle (mot de passe d'un caractère accepté). Alias conservé pour
+# ne pas casser les appelants/tests existants.
+MIN_LEN = MIN_PASSWORD_LEN
 
 
 class AdminSetupError(Exception):
@@ -46,6 +50,10 @@ def set_admin_password(cfg: RuntimeConfigService, plaintext: str, *, force: bool
             "Utilisez --force pour le remplacer."
         )
     cfg.set_secret(HASH_KEY, hash_password(plaintext))
+    # Un changement de mot de passe DOIT invalider les sessions en cours : sinon un cookie
+    # déjà volé survit à la rotation, et le seul recours resterait de changer MASTER_KEY
+    # (tous les secrets chiffrés deviennent illisibles, console verrouillée).
+    revoke_sessions(cfg)
 
 
 def _read_password() -> str:

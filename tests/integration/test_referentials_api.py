@@ -105,7 +105,9 @@ def test_root_reports_ui_not_built_when_no_dist(tmp_path):
 
 
 def test_referentials_protected_when_auth_configured(tmp_path):
-    settings = _settings(tmp_path, admin_password="pw")
+    # ≥ MIN_PASSWORD_LEN : l'amorçage paresseux applique désormais la même politique de
+    # longueur que `admin_setup` — un "pw" de 2 caractères laisserait l'admin NON configuré.
+    settings = _settings(tmp_path, admin_password="pw-assez-long")
     with TestClient(create_app(settings)) as c:
         assert c.get("/api/discovery/technician").status_code == 401
         assert c.get("/api/metrics").status_code == 401

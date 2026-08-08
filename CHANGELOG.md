@@ -5,6 +5,128 @@ pas SemVer strictement (version d'app dans `pyproject.toml`).
 
 Les entrées les plus récentes sont en haut.
 
+## 2026-08-08 — 0.9.48 — Garde-fous qui tiennent vraiment (audit de bout en bout)
+
+Trois audits indépendants (moteur, sécurité/RGPD, exploitation) et une campagne de
+mutation. **Bonne nouvelle d'abord** : sur 20 régressions injectées dans les invariants
+critiques, 19 ont été attrapées par la suite de tests — la whitelist, le seuil de
+confiance, le masquage, le mode d'exécution et le fail-closed de l'auth sont réellement
+protégés. Les défauts corrigés ici ne sont pas dans la logique de triage : ils sont dans
+**ce que le produit affirme** et dans **ce qu'il devient quand quelque chose se passe mal**.
+
+### 🔴 Perte de données — la sauvegarde ne sauvegardait rien
+
+- **`make backup` produisait une archive inutilisable.** La cible copiait `data/itsm.db`
+  à chaud **sans le `-wal`**, où résident les écritures récentes (5 à 16 Mo en régime).
+  Reproduit : la copie ne contenait **même pas la table**. Et le `2>/dev/null || true`
+  affichait « Sauvegarde → backups/… » quoi qu'il arrive. Le problème ne se découvrait
+  qu'au moment de restaurer. Remplacée par un `VACUUM INTO` (repli sur l'API `.backup`),
+  cohérent en ligne, avec `PRAGMA integrity_check`, taille et nombre de lignes affichés,
+  échec **bruyant** et suppression du dossier incomplet. Vérifié : 5 000 lignes sur
+  5 000 restaurées, `integrity ok`.
+- **Tickets brûlés définitivement en cas de panne.** Le poller marquait `processed` quel
+  que soit le résultat : une clé LLM expirée deux heures, un plafond atteint à 14 h, et
+  tous les tickets de la fenêtre étaient perdus **sans reprise possible**. Le code
+  appliquait pourtant déjà le bon raisonnement au périmètre vide. Désormais
+  `COST_CAP_REACHED` / `LLM_ERROR` / `INVALID_OUTPUT` ne consomment plus le ticket, avec
+  un compteur d'essais borné (5) comme seconde ceinture — un plafond atteint ne coûte
+  aucun essai, puisqu'il ne facture rien.
+- **`master.key` perdue : verrouillage silencieux.** Une nouvelle clé était générée sans
+  broncher, le login répondait « Mot de passe incorrect », et `/api/status` restait **au
+  vert** pour la supervision. Le démarrage échoue désormais explicitement si des secrets
+  chiffrés existent déjà, sans écrire de fichier — la restauration reste possible.
+  Échappatoire assumée : `ITSM_ALLOW_NEW_MASTER_KEY=true`.
+
+### 🔴 Le plafond de coût n'en était pas un
+
+- **Les appels LLM en échec n'étaient jamais comptés** — alors qu'ils sont facturés
+  (tokens générés puis rejetés au parsing). Mesuré : 50 tickets, **150 appels réels,
+  0 ligne en base**, plafond jamais déclenché. Chaque tentative émise est désormais
+  journalisée, échecs compris.
+- **`usage` absent ⇒ coût 0.** Une passerelle qui n'émet pas ce bloc faisait avancer le
+  compteur de 0,00 € indéfiniment — le même fail-open que faire confiance à `confidence`.
+  L'absence devient une anomalie : estimation + avertissement.
+- **Base en échec ⇒ boucle facturée sans garde-fou.** Disque plein : l'insertion échouait
+  aussi, donc le plafond restait aveugle pendant que les appels se répétaient (~85 €/jour
+  sans rien produire). Circuit-breaker après 3 échecs d'écriture, et une base illisible
+  vaut désormais « plafond atteint » (défaut sûr).
+
+### 🔴 Les artefacts de preuve mentaient
+
+- **Le journal de la sandbox attestait un masquage non appliqué.** Il journalisait avec
+  *tous* les motifs actifs alors que l'envoi réel utilise les flags gatés Supporter : en
+  Community, la preuve destinée à la DPO affichait `[IBAN]`, `[SECRET]`, `[IP]` pour des
+  données parties **en clair**. Le test de non-régression verrouille la propriété forte :
+  le prompt journalisé est un **extrait littéral** du corps HTTP envoyé.
+- **`+33 (0)6 12 34 56 78` n'était pas masqué** — la notation d'annuaire et de signature
+  la plus courante en France, alors que `06 12 34 56 78` l'était. Corrigé, linéarité du
+  motif vérifiée à la mesure (×4 pour une entrée ×4).
+- **L'export CSV omettait `mode` et `applied`**, soit exactement ce qui distingue une
+  suggestion d'une décision automatisée avec réponse publique — l'objet de l'article 22.
+  Ajoutés en fin de ligne (les colonnes existantes gardent leur position).
+- **`{"category": true}` devenait la catégorie #1, décision acceptée.** La frontière
+  Pydantic n'était pas stricte. Elle l'est ; les chaînes numériques de certaines
+  passerelles sont désormais coercées **explicitement dans l'adaptateur**, jamais un `bool`.
+
+### 🟠 Sécurité — trois trous refermés
+
+- **Aucune révocation de session** : le cookie survivait au logout **et** au changement de
+  mot de passe. Seule parade en cas d'incident : changer `MASTER_KEY`, ce qui verrouillait
+  toute la console. Ajout d'une génération de session vérifiée à chaque requête. Le logout
+  ne révoque que si l'appelant portait une session — sinon l'endpoint public devenait un
+  déni de service trivial.
+- **Aucun journal d'audit des actions d'administration.** Nouvelle table `audit_log`
+  alimentée depuis le point de passage unique, secrets masqués, **exclue de la purge
+  RGPD** : la purger sur la fenêtre « tickets » aurait offert un effacement de traces
+  trivial. *Limite connue : le passage d'une **entité** en `full_auto` transite par une
+  autre couche et n'est pas encore audité.*
+- **Politique de mot de passe contournable** : le minimum de 8 caractères n'était appliqué
+  qu'au script, pas à l'amorçage paresseux — un mot de passe d'un caractère ouvrait la
+  console.
+- **`/health` était un amplificateur** : 5 requêtes vers le GLPI du client, sans
+  authentification, et `?probe=true` ajoutait un appel LLM facturable. Cache de 15 s,
+  `probe` réservé aux sessions admin, nouvel endpoint `/health/live` (process + base,
+  zéro appel sortant) vers lequel pointent maintenant les healthchecks. Un `MASTER_KEY`
+  incohérent donne un **503 explicite** au lieu d'un 500 opaque.
+- **`/metrics` anonyme** révélait les connexions admin réussies et l'efficacité d'une
+  force brute. Sans jeton configuré, il exige désormais une session ; avec jeton, le
+  scrape machine reste anonyme (mode nominal Prometheus).
+
+### 🟠 Exploitation
+
+- **Aucun retour arrière praticable** : les `downgrade()` existaient mais rien ne les
+  appelait, et `docs/install.md` promettait une procédure absente du script. Ajout de
+  `--rollback [horodatage]` et `--list-backups`, avec déplacement de l'état courant,
+  restauration conjointe base + clé, préservation du port publié. Un `trap` relance
+  l'instance précédente si une mise à jour échoue — auparavant elle restait **à l'arrêt**.
+- **Bug masqué depuis longtemps** : le test du port faisait `2>/dev/null` sur le shell
+  courant, donc **toute** mise à jour perdait sa stderr — erreurs de `docker build` et
+  messages de `die` compris.
+- **Composes alignés** : rotation des logs et bornage CPU/mémoire manquaient sur la voie
+  Portainer, pourtant recommandée — porte d'entrée du scénario « disque plein ».
+
+### 🟡 Observabilité — le produit devient diagnosticable
+
+- `PollStats` était **jeté après un log** : impossible de répondre à « pourquoi aucun
+  ticket n'est trié ? » sans accéder aux logs du conteneur. Le dernier cycle est
+  désormais persisté et exposé dans `/api/status` (bloc `last_poll`, **réservé à la
+  réponse authentifiée**, message d'erreur masqué et borné).
+- La console affiche « Dernier cycle : il y a 42 s — 12 vus, 3 triés, 9 déjà traités… »,
+  signale un cycle trop ancien, et donne des indices couvrant les cinq causes réelles.
+- **La tuile « Base de données : Saine » ne mentait plus** : c'était un affichage
+  cosmétique sans aucune sonde. Elle rapporte ce qui est réellement mesurable.
+- **Le fournisseur IA n'était jamais sondé** : « Configuré » signifiait « une clé
+  existe ». La tuile indique maintenant « validité NON vérifiée » avec un test explicite
+  à la demande — pas automatique, car c'est un appel facturé.
+- **Export CSV en flux** : 20 000 appels journalisés faisaient un pic de **270 Mo** face
+  à une limite conteneur de 512 Mo. Désormais **1,2 Mo**, sans troncature — un export
+  d'audit tronqué vaut moins qu'un export lent.
+
+### Tests
+
+**389 → 483 pytest** (verts sur 3.13 **et** 3.14) et **89 → 111 Vitest**. Chaque
+correction a un test vérifié **rouge avant, vert après**. Aucun test existant affaibli.
+
 ## 2026-08-08 — 0.9.47 — Honnêteté des claims, bornes mémoire et remise à niveau complète
 
 Revue complète du dépôt (architecture, sécurité, doc, CI) **et remise à niveau de toute

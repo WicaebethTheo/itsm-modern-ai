@@ -268,3 +268,40 @@ async def test_avatar_none_when_absent():
 def test_connector_requires_configured_creds():
     with pytest.raises(ItsmUnavailableError):
         GlpiV2Connector(_creds(base_url="", client_id=""))._client()
+
+
+@respx.mock
+async def test_apply_decision_partial_mutation_is_named():
+    """Deux appels réseau : PATCH OK + TeamMember KO = Ticket DÉJÀ muté dans GLPI.
+
+    L'erreur doit NOMMER cet état (`partial_mutation`), sinon le moteur croit que « rien
+    n'a été muté » : il ne journalise rien, ne marque pas le Ticket, et le re-mute + le
+    re-facture à chaque cycle, en boucle permanente.
+    """
+    from itsm_modern_ai.adapters.itsm.glpi.v2.connector import ItsmPartialApplyError
+
+    _token_route()
+    patch = respx.patch(f"{BASE}/Assistance/Ticket/9").mock(
+        return_value=httpx.Response(200, json={"id": 9})
+    )
+    respx.post(f"{BASE}/Assistance/Ticket/9/TeamMember").mock(
+        return_value=httpx.Response(500, json={"error": "boom"})
+    )
+    with pytest.raises(ItsmPartialApplyError) as exc:
+        await _connector().apply_decision(9, category=3, priority=4, technician_id=11)
+    assert patch.called  # la mutation a bien eu lieu
+    assert getattr(exc.value, "partial_mutation", False) is True
+
+
+@respx.mock
+async def test_apply_decision_failing_patch_is_not_partial():
+    """Si le PATCH lui-même échoue, RIEN n'a bougé : le Ticket reste rejouable tel quel."""
+    _token_route()
+    patch = respx.patch(f"{BASE}/Assistance/Ticket/10").mock(
+        return_value=httpx.Response(500, json={"error": "boom"})
+    )
+    team = respx.post(f"{BASE}/Assistance/Ticket/10/TeamMember")
+    with pytest.raises(Exception) as exc:
+        await _connector().apply_decision(10, category=3, priority=4, technician_id=11)
+    assert patch.called and not team.called
+    assert getattr(exc.value, "partial_mutation", False) is False

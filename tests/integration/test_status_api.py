@@ -40,7 +40,7 @@ def _settings(tmp_path, **kw) -> Settings:
 
 @pytest.fixture
 def secured_client(tmp_path):
-    with TestClient(create_app(_settings(tmp_path, admin_password="s3cret"))) as c:
+    with TestClient(create_app(_settings(tmp_path, admin_password="s3cret-pilote"))) as c:
         yield c
 
 
@@ -56,7 +56,7 @@ def test_public_status_is_minimal_no_cost_nor_volumetry(secured_client):
 
 
 def test_authenticated_status_is_enriched(secured_client):
-    secured_client.post("/api/auth/login", json={"password": "s3cret"})
+    secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
     body = secured_client.get("/api/status").json()
     assert body["ok"] is True and body["version"] == __version__
     assert ENRICHED_FIELDS <= body.keys()
@@ -85,7 +85,7 @@ def test_status_reflects_runtime_polling_overrides(secured_client):
         cfg.set("polling_enabled", "true")
         cfg.set("polling_interval_seconds", "120")
 
-    secured_client.post("/api/auth/login", json={"password": "s3cret"})
+    secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
     body = secured_client.get("/api/status").json()
     assert body["polling_enabled"] is True
     assert body["polling_interval_seconds"] == 120
@@ -104,3 +104,64 @@ def test_status_and_metrics_reflect_runtime_cost_cap(tmp_path):
             )
         assert c.get("/api/status").json()["cost_cap_eur_per_day"] == 9.5
         assert c.get("/api/metrics").json()["cost_cap_eur_per_day"] == 9.5
+
+
+# ── Bloc `last_poll` : diagnostic du dernier cycle (audit fiabilité 2026-08) ──
+
+
+def test_last_poll_is_never_exposed_to_anonymous(secured_client):
+    """Volumétrie et message d'erreur = reconnaissance offerte : le bloc reste réservé
+    à la session admin, comme le reste de la réponse enrichie."""
+    assert "last_poll" not in secured_client.get("/api/status").json()
+
+
+def test_last_poll_says_explicitly_that_no_cycle_ever_ran(secured_client):
+    """« Aucun cycle n'a jamais tourné » doit être un état EXPLICITE : c'est le symptôme
+    n°1 (worker « En marche » alors que rien ne s'exécute)."""
+    secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
+    block = secured_client.get("/api/status").json()["last_poll"]
+    assert block["has_run"] is False
+    assert block["run_at"] is None and block["error_message"] is None
+    assert block["fetched"] == 0 and block["processed"] == 0
+
+
+def test_last_poll_reflects_the_persisted_cycle(secured_client):
+    """`PollStats` était jeté après un log : ces compteurs répondent enfin à
+    « pourquoi aucun ticket n'est trié ? » sans ouvrir `docker logs`."""
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.services.runtime_config import RuntimeConfigService
+
+    app = secured_client.app
+    with db.session_scope() as s:
+        cfg = RuntimeConfigService(s, app.state.secrets_box, app.state.settings)
+        cfg.set("poll_last_run_at", "2026-08-08T19:42:03+00:00")
+        cfg.set("poll_last_fetched", "12")
+        cfg.set("poll_last_processed", "3")
+        cfg.set("poll_last_skipped_done", "9")
+        cfg.set("poll_last_skipped_scope", "0")
+        cfg.set("poll_last_errors", "1")
+        cfg.set("poll_last_error_message", "Référentiels GLPI indisponibles: timeout")
+
+    secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
+    block = secured_client.get("/api/status").json()["last_poll"]
+    assert block["has_run"] is True and block["run_at"].startswith("2026-08-08")
+    assert block["fetched"] == 12 and block["processed"] == 3
+    assert block["skipped_done"] == 9 and block["skipped_scope"] == 0
+    assert block["errors"] == 1
+    assert "Référentiels GLPI indisponibles" in block["error_message"]
+
+
+def test_last_poll_error_message_is_bounded(secured_client):
+    """Un champ de diagnostic ne doit jamais devenir un canal de fuite : borné à 300."""
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.services.runtime_config import RuntimeConfigService
+
+    app = secured_client.app
+    with db.session_scope() as s:
+        cfg = RuntimeConfigService(s, app.state.secrets_box, app.state.settings)
+        cfg.set("poll_last_run_at", "2026-08-08T19:42:03+00:00")
+        cfg.set("poll_last_error_message", "A" * 5000)
+
+    secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
+    block = secured_client.get("/api/status").json()["last_poll"]
+    assert len(block["error_message"]) <= 301  # +1 pour l'ellipse

@@ -74,8 +74,11 @@ def info(request: Request) -> dict:
 _DETAIL_MAX_CHARS = 300
 
 
-def _detail_sur(exc: Exception) -> str:
+def detail_sur(exc: Exception) -> str:
     """Message d'erreur exploitable pour l'admin, sans exposer plus que nécessaire.
+
+    Nom PUBLIC (ex-`_detail_sur`) : `routes/insights.py` réutilise LA MÊME implémentation
+    plutôt que d'en dupliquer une seconde, qui dériverait au prochain durcissement.
 
     Durcissement audit CodeQL 2026-08 (« information exposure through an exception ») :
     ce point de sortie renvoyait `str(exc)` tel quel. La surface reste étroite —
@@ -118,7 +121,7 @@ async def diagnostics(request: Request) -> dict:
             since = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=14)
             out["glpi"]["recent_tickets_14d"] = len(await connector.get_recent_tickets(since))
         except ItsmError as exc:
-            out["glpi"]["error"] = _detail_sur(exc)
+            out["glpi"]["error"] = detail_sur(exc)
 
     llm = build_llm(settings, secrets)
     out["llm"]["configured"] = llm is not None
@@ -126,7 +129,7 @@ async def diagnostics(request: Request) -> dict:
         try:
             out["llm"]["reachable"] = await llm.healthcheck()
         except Exception as exc:  # noqa: BLE001
-            out["llm"]["error"] = _detail_sur(exc)
+            out["llm"]["error"] = detail_sur(exc)
     return out
 
 
@@ -143,7 +146,10 @@ async def seed(body: SeedRequest, request: Request) -> dict:
     try:
         return await GlpiDebugOps(creds).seed(body.technicians, body.groups)
     except ItsmError as exc:
-        raise HTTPException(502, {"code": "glpi_error", "message": str(exc)}) from exc
+        # `str(exc)` embarquait `resp.text[:200]` renvoyé par GLPI (corps d'erreur brut,
+        # susceptible de contenir des données du serveur) — incohérent avec `detail_sur`,
+        # créé précisément pour ce risque quelques lignes plus haut.
+        raise HTTPException(502, {"code": "glpi_error", "message": detail_sur(exc)}) from exc
 
 
 class PurgeRequest(BaseModel):
@@ -162,4 +168,5 @@ async def purge_users(body: PurgeRequest, request: Request) -> dict:
     try:
         return await GlpiDebugOps(creds).purge_users()
     except ItsmError as exc:
-        raise HTTPException(502, {"code": "glpi_error", "message": str(exc)}) from exc
+        # Idem `seed` : détail masqué + borné, jamais le corps d'erreur GLPI brut.
+        raise HTTPException(502, {"code": "glpi_error", "message": detail_sur(exc)}) from exc

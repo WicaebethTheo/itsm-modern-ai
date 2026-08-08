@@ -17,12 +17,12 @@ import json
 import logging
 
 import httpx
-from pydantic import ValidationError
 
 from ...domain.errors import LlmResponseError
-from ...domain.models import Decision
 from ...ports.llm import LlmResult
+from ._decision import parse_decision
 from ._http import arequest, healthcheck_get, make_guarded_event_hooks
+from ._usage import tokens_or_estimate
 
 logger = logging.getLogger("itsm.llm.anthropic")
 
@@ -86,6 +86,12 @@ class AnthropicLlm:
         self._timeout = timeout
         self._event_hooks = make_guarded_event_hooks(guard=ssrf_guard, allow_local=allow_local)
         self._client = client
+
+    @property
+    def model(self) -> str:
+        """Modèle configuré — exposé pour que le moteur puisse journaliser un appel
+        ÉCHOUÉ (aucune `LlmResult` n'existe alors pour porter le nom du modèle)."""
+        return self._model
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -158,18 +164,27 @@ class AnthropicLlm:
         except json.JSONDecodeError as exc:
             raise LlmResponseError(f"JSON non parsable: {exc}") from exc
 
+        # Validation STRICTE après coercition explicite des nombres (cf. `_decision.py`).
         try:
-            decision = Decision.model_validate(data)
-        except ValidationError as exc:
+            decision = parse_decision(data)
+        except LlmResponseError:
             # Trace l'extrait brut pour diagnostiquer un schéma mal respecté (typique :
             # `category: null` quand le LLM hésite au lieu de baisser `confidence`).
             logger.warning("réponse non-conforme: raw=%s", raw[:400])
-            raise LlmResponseError(f"Décision non conforme au schéma: {exc}") from exc
+            raise
 
+        # Comptabilité : jamais de 0 silencieux (cf. `_usage.py`). Le prompt facturé est
+        # la somme system + tour utilisateur réellement envoyé.
         return LlmResult(
             decision=decision,
             model=self._model,
-            prompt_tokens=usage.get("input_tokens", 0),
-            completion_tokens=usage.get("output_tokens", 0),
+            prompt_tokens=tokens_or_estimate(
+                usage, "input_tokens", f"{system_prompt}\n{user_with_format}",
+                logger=logger, model=self._model, label="prompt",
+            ),
+            completion_tokens=tokens_or_estimate(
+                usage, "output_tokens", text,
+                logger=logger, model=self._model, label="complétion",
+            ),
             raw_response=raw,
         )

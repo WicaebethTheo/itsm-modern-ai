@@ -61,9 +61,23 @@ _MAC_RE = re.compile(r"(?<![\w:-])(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}(?![\w:
 
 # Téléphone : FR (+33/0033/0 + 9 chiffres) OU E.164 international (+CC suivi de 8 à 14 chiffres,
 # séparateurs espace/point/tiret tolérés). On ancre pour éviter de grignoter d'autres nombres.
+#
+# ⚠️ Le `(0)` de courtoisie — `+33 (0)6 12 34 56 78` — est la notation D'ANNUAIRE et de
+# SIGNATURE D'E-MAIL en France : c'est le format le plus fréquent dans un ticket créé par
+# recopie d'une signature ou d'une fiche contact. Sans le groupe optionnel ci-dessous, le
+# préfixe international matchait `+33` puis butait sur `(` : AUCUN masquage (l'ancrage
+# `(?!\w)`/`(?<!\w)` n'autorise pas de reprise sur le reste du numéro), donc le numéro
+# partait EN CLAIR au LLM alors que les mêmes chiffres sans `(0)` étaient masqués.
+# Le séparateur après l'indicatif et après le `(0)` est généralisé à `[\s.\-]?` (on voit
+# `+33.6…`, `+33-6…`, `+33 (0) 6…` aussi souvent que l'espace simple).
+#
+# COÛT : tous les quantificateurs restent BORNÉS et le groupe ajouté est un optionnel NON
+# ambigu (il ne peut consommer que la sous-chaîne littérale `(0)`), donc le travail par
+# position de départ reste plafonné → coût global LINÉAIRE (cf. le test de budget absolu
+# `test_masquage_reste_lineaire_sur_entree_pathologique`, charges téléphone incluses).
 _PHONE_RE = re.compile(
     r"(?<!\w)(?:"
-    r"(?:\+33|0033)\s?[1-9](?:[\s.\-]?\d{2}){4}"  # FR international
+    r"(?:\+33|0033)[\s.\-]?(?:\(0\)[\s.\-]?)?[1-9](?:[\s.\-]?\d{2}){4}"  # FR international (+ `(0)`)
     r"|0[1-9](?:[\s.\-]?\d{2}){4}"  # FR national
     r"|\+[1-9]\d{0,2}(?:[\s.\-]?\d){8,14}"  # E.164 international générique
     r")(?!\w)"

@@ -124,6 +124,43 @@ def test_masks_mac_address():
     assert masking.MAC_PLACEHOLDER in masking.mask("MAC AA-BB-CC-DD-EE-FF").text
 
 
+# ── Téléphone FR avec `(0)` de courtoisie ────────────────────────────────────
+# `+33 (0)6 12 34 56 78` est LE format des signatures d'e-mail et des annuaires FR, donc
+# massivement recopié dans les tickets. Il partait EN CLAIR au LLM : le préfixe matchait
+# `+33` puis butait sur `(`, et l'ancrage interdisait toute reprise sur la suite du numéro
+# — alors que les MÊMES chiffres sans `(0)` étaient masqués. Fuite d'autant plus trompeuse
+# qu'un test « téléphone masqué » passait au vert sur le format sans `(0)`.
+@pytest.mark.parametrize(
+    "numero",
+    [
+        pytest.param("+33 (0)6 12 34 56 78", id="plus33-parenthese-zero"),
+        pytest.param("0033 (0)6 12 34 56 78", id="0033-parenthese-zero"),
+        pytest.param("+33 (0) 6 12 34 56 78", id="espace-apres-parenthese"),
+        pytest.param("+33(0)612345678", id="colle"),
+        pytest.param("+33.(0)6.12.34.56.78", id="points"),
+        pytest.param("+33-(0)1-23-45-67-89", id="tirets"),
+    ],
+)
+def test_masks_french_phone_with_courtesy_zero(numero):
+    r = masking.mask(f"Cordialement, tel {numero} — service info")
+    assert numero not in r.text
+    assert masking.PHONE_PLACEHOLDER in r.text
+    assert r.counts.get("phone") == 1
+
+
+def test_courtesy_zero_phone_follows_toggle_and_stays_idempotent():
+    texte = "tel +33 (0)6 12 34 56 78"
+    assert masking.mask(texte, phone=False).text == texte  # toggle respecté
+    once = masking.mask(texte).text
+    assert masking.mask(once).text == once  # idempotent
+
+
+def test_parenthese_zero_isolee_nest_pas_un_telephone():
+    """Anti faux positif : `(0)` sans numéro derrière ne doit rien déclencher."""
+    texte = "reste (0) article en stock, commande 2024"
+    assert masking.mask(texte).text == texte
+
+
 def test_masks_e164_international_phone():
     r = masking.mask("appelle le +14155552671 stp")
     assert "+14155552671" not in r.text
@@ -178,6 +215,13 @@ def test_card_and_ip_follow_toggles():
         pytest.param(lambda n: "password" + " " * n + "abc", id="secret-espaces"),
         pytest.param(lambda n: "1." * n + "!", id="longue-suite-sans-arobase"),
         pytest.param(lambda n: "a" * n + "!", id="longue-suite-de-mots"),
+        # Charges TÉLÉPHONE : le motif a gagné un groupe optionnel `(0)`. Un optionnel mal
+        # placé rouvrirait la porte au coût polynomial — ces deux charges le verrouillent.
+        # `+33 (0)` répété = un préfixe qui amorce le motif à CHAQUE position mais n'aboutit
+        # jamais ; la variante tronquée d'un chiffre force en plus le parcours des 4 groupes
+        # de 2 chiffres avant l'échec (pire cas de la branche FR internationale).
+        pytest.param(lambda n: "+33 (0)" * n, id="phone-prefixe-repete"),
+        pytest.param(lambda n: "+33 (0)6 12 34 56 7 " * n, id="phone-tronque-repete"),
     ],
 )
 def test_masquage_reste_lineaire_sur_entree_pathologique(charge):

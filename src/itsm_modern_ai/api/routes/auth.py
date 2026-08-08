@@ -53,13 +53,27 @@ def login(
             detail={"code": "bad_credentials", "message": "Mot de passe incorrect."},
         )
     limiter.reset(key)  # succès : on efface le compteur d'échecs de cette IP
-    request.session["authenticated"] = True
+    # La session porte la GÉNÉRATION courante (et non un simple booléen) : c'est ce qui
+    # permet de la révoquer plus tard (logout, rotation du mot de passe).
+    security.start_session(request, cfg)
     return AuthStatus(authenticated=True, auth_configured=True)
 
 
 @router.post("/logout", response_model=AuthStatus)
 def logout(request: Request, cfg: RuntimeConfigService = Depends(get_config_service)) -> AuthStatus:
+    # Vider le cookie côté client ne suffisait pas : un cookie signé déjà exfiltré restait
+    # accepté indéfiniment (rejeu post-logout mesuré → 200). On incrémente donc la génération
+    # de session, ce qui invalide côté SERVEUR tous les cookies émis — la seule parade
+    # restante était de changer MASTER_KEY, au prix de tous les secrets chiffrés.
+    #
+    # ⚠️ UNIQUEMENT si l'appelant portait bien une session : `/api/auth/logout` est un
+    # endpoint PUBLIC (pas de `require_auth`). Révoquer inconditionnellement offrirait à
+    # n'importe qui sur le réseau un déni de service trivial — marteler ce POST déconnecterait
+    # l'admin en boucle. Un porteur de cookie périmé ne révoque donc rien.
+    if request.session.get("authenticated"):
+        security.revoke_sessions(cfg)
     request.session.pop("authenticated", None)
+    request.session.pop(security.SESSION_VERSION_FIELD, None)
     return AuthStatus(authenticated=False, auth_configured=security.auth_is_configured(cfg))
 
 

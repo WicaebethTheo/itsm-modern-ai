@@ -50,6 +50,11 @@ class MockLlm:
         self._model = model
         self._refs = refs
 
+    @property
+    def model(self) -> str:
+        """Parité avec les adaptateurs réels (journalisation d'un appel échoué)."""
+        return self._model
+
     async def complete(self, system_prompt: str, user_prompt: str) -> LlmResult:
         # Ne scorer QUE le contenu du ticket, pas les référentiels/fiches du prompt.
         ticket_text = user_prompt.rsplit("TICKET À TRIER", 1)[-1]

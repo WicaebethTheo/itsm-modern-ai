@@ -154,6 +154,57 @@ class ReferentialCache(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow)
 
 
+class AuditLog(SQLModel, table=True):
+    """Journal d'AUDIT des actions d'administration (imputabilité — audit 2026-08).
+
+    Pourquoi : jusqu'ici, changer un réglage de gouvernance ne laissait AUCUNE trace.
+    Basculer une entité en `full_auto` (l'IA répond publiquement au demandeur), couper le
+    masquage PII, mettre la rétention RGPD à 0 ou retirer la licence Supporter étaient des
+    actions invisibles — et la purge RGPD effaçait justement la seule table (`decisions`)
+    qui aurait pu en témoigner a posteriori. C'est la première pièce demandée par un RSSI :
+    « qui a changé quoi, quand, depuis où ? ».
+
+    Alimentée depuis le point de passage UNIQUE des écritures de configuration
+    (`RuntimeConfigService.set` / `set_secret`), pour qu'aucun appelant ne puisse écrire
+    « en douce » : la trace est produite par le service, pas par les routes.
+
+    ⚠️ Aucune VALEUR SECRÈTE n'est stockée : les secrets (tokens GLPI, clés LLM, hash admin)
+    et les clés jugées sensibles (`license_key`) sont consignés comme `***`. On garde
+    seulement le fait qu'ils ont été posés ou effacés — ce qui suffit à l'imputabilité
+    sans recréer un second entrepôt de secrets en clair.
+
+    RÉTENTION — choix ASSUMÉ : cette table est EXCLUE de la purge RGPD
+    (`services/retention.py`, qui ne vise que `decisions` et `llm_calls`). Justification :
+    1. ce n'est pas une donnée de TICKET (aucun contenu de demandeur, aucun texte GLPI,
+       aucune donnée métier) mais une donnée d'IMPUTABILITÉ, produite pour la sécurité du
+       traitement (RGPD art. 5.1.f + art. 32) et l'obligation de rendre des comptes
+       (art. 5.2) — la purger avec les tickets détruirait la preuve censée survivre à
+       l'incident qu'elle documente ;
+    2. la purger sur la même fenêtre que les tickets offrirait un effacement de traces
+       trivial : il suffirait de mettre `retention_decisions_days=1` — action justement
+       auditée ici — pour faire disparaître l'audit de cette action ;
+    3. son volume est négligeable (une ligne par changement d'un réglage d'admin, pas par
+       ticket), donc aucune fenêtre n'est nécessaire pour des raisons de place.
+    Réserve honnête : `actor` porte une adresse IP, qui EST une donnée à caractère personnel.
+    Sa conservation est bornée par la durée de vie de l'instance et doit être déclarée au
+    registre des traitements ; si un exploitant veut une fenêtre dédiée (typiquement 12 mois,
+    usage courant pour des journaux de sécurité), elle devra être ajoutée EXPLICITEMENT et
+    séparément — jamais recollée sur la fenêtre « tickets ».
+    """
+
+    __tablename__ = "audit_log"
+
+    id: int | None = Field(default=None, primary_key=True)
+    ts: datetime = Field(default_factory=_utcnow, sa_column=_ts_column(index=True))
+    # Initiateur : IP du client admin, ou "scheduler"/"cli"/"system" pour les écritures
+    # machine. Pas de nom d'utilisateur : le produit n'a qu'un compte admin (FR-24).
+    actor: str = Field(default="", index=True)
+    action: str = Field(default="", index=True)  # "config.set" | "config.set_secret"
+    key: str = Field(default="", index=True)  # clé de configuration touchée
+    old_value: str = ""  # "***" si secret/sensible, "" si non défini
+    new_value: str = ""  # "***" si secret/sensible, "" si effacé
+
+
 class RuntimeConfig(SQLModel, table=True):
     """Configuration poussée au runtime via l'API/UI (pas via .env).
 

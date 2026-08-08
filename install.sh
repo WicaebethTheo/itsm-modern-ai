@@ -17,6 +17,8 @@
 #   ./install.sh --port 8080              # publish on a different host port
 #   ./install.sh --yes                    # non-interactive (accept proposed installs)
 #   ./install.sh --reset-password         # change the admin password of an instance
+#   ./install.sh --rollback [horodatage]  # RETOUR ARRIERE : restaure backups/<ts> (base + cle + image)
+#   ./install.sh --list-backups           # liste les sauvegardes disponibles
 #
 # The admin password is entered interactively (hidden) and stored ONLY as an encrypted
 # Argon2 hash (never in clear text). In non-interactive mode, set ITSM_ADMIN_PASSWORD.
@@ -25,6 +27,7 @@ cd "$(dirname "$0")"
 
 # ── Options ─────────────────────────────────────────────────────────────────
 RESET=false; ASSUME_YES=false; DO_BUILD=auto; BUNDLE=""; PORT="${ITSM_PORT:-8000}"; SELF_UPDATE=false; MODE_GIVEN=false
+ROLLBACK=false; ROLLBACK_TS=""; LIST_BACKUPS=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --reset-password) RESET=true ;;
@@ -34,7 +37,12 @@ while [ $# -gt 0 ]; do
     --no-build) DO_BUILD=false ;;
     --bundle) BUNDLE="${2:-}"; MODE_GIVEN=true; shift ;;
     --port) PORT="${2:-8000}"; shift ;;
-    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    # Retour arriere. L'horodatage est OPTIONNEL : sans argument on prend la sauvegarde
+    # la plus recente (le cas d'usage reel : « la maj de tout a l'heure a casse »).
+    --rollback) ROLLBACK=true; MODE_GIVEN=true
+                case "${2:-}" in ""|-*) : ;; *) ROLLBACK_TS="$2"; shift ;; esac ;;
+    --list-backups) LIST_BACKUPS=true; MODE_GIVEN=true ;;
+    -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac; shift
 done
@@ -60,6 +68,117 @@ ask()  { # 0 = oui. --yes => oui ; TTY (stdin OU /dev/tty, ex. curl|sh) => deman
 
 CHECKS=()
 check_add() { CHECKS+=("$1"$'\t'"$2"); }
+
+# Image UNIQUE : un seul tag, fixé par docker-compose.yml. Les features Supporter sont
+# livrées dedans et déverrouillées par licence (pas de swap d'image). Défini TÔT :
+# le retour arrière (--rollback) en a besoin avant la section « image ».
+IMAGE="itsm-modern-ai:latest"
+
+# ── Sauvegardes & RETOUR ARRIÈRE ──────────────────────────────────────────────
+# Sans chemin de retour, une mise à jour ratée laisse un DSI seul devant un
+# `docker logs` à 2 h du matin : revenir à l'image précédente SANS restaurer la base
+# fait échouer Alembic (« Can't locate revision identified by … ») → l'entrypoint est
+# en `set -e` → crash-loop, sans UI. `--rollback` restaure les DEUX ensemble.
+backups_list() { ls -1 backups 2>/dev/null | sort; }
+latest_backup() { backups_list | tail -1; }
+
+show_backups() {
+  local ts n
+  n=0
+  printf '%s▶ Sauvegardes disponibles (dossier ./backups)%s\n' "$c_cyan" "$c_off"
+  for ts in $(backups_list); do
+    [ -d "backups/$ts" ] || continue
+    n=$((n+1))
+    printf '   %s' "$ts"
+    [ -f "backups/$ts/itsm.db" ] && printf '  base SQLite (%s)' "$(du -h "backups/$ts/itsm.db" | cut -f1)"
+    [ -f "backups/$ts/dump.sql" ] && printf '  dump PostgreSQL'
+    [ -f "backups/$ts/master.key" ] && printf '  + master.key'
+    [ -f "backups/$ts/VERSION" ] && printf '  v%s' "$(cat "backups/$ts/VERSION")"
+    printf '\n'
+  done
+  [ "$n" -gt 0 ] || echo "   (aucune — une sauvegarde est créée à chaque ./install.sh --update)"
+  echo
+  echo "   Restaurer : ./install.sh --rollback <horodatage>"
+}
+
+# Restaure une sauvegarde : base + master.key + code/image de l'époque, puis redémarre.
+do_rollback() {
+  local ts="$1" bk safe f img rev
+  [ -n "$ts" ] || ts="$(latest_backup)"
+  [ -n "$ts" ] || { show_backups; die "Aucune sauvegarde à restaurer."; }
+  bk="backups/$ts"
+  [ -d "$bk" ] || { show_backups; die "Sauvegarde introuvable : $bk"; }
+  if [ ! -f "$bk/itsm.db" ] && [ ! -f "$bk/dump.sql" ]; then
+    die "$bk ne contient aucune base ($bk/itsm.db ou $bk/dump.sql) — restauration impossible."
+  fi
+  say "Retour arrière vers la sauvegarde $ts"
+  ask "Confirmer : l'état actuel sera MIS DE CÔTÉ (jamais supprimé) et remplacé par $ts" \
+    || { say "Annulé — aucune modification."; exit 0; }
+
+  # Port publié CONSERVÉ : sans cela, une instance installée avec --port 8080
+  # ressusciterait sur 8000 après un rollback (console « disparue » pour les clients).
+  local hp; hp="$(docker inspect --format \
+    '{{range $c := .HostConfig.PortBindings}}{{(index $c 0).HostPort}}{{end}}' \
+    itsm-modern-ai 2>/dev/null | head -1)"
+  [ -n "$hp" ] && PORT="$hp"
+  export ITSM_HOST_PORT="$PORT"
+  say "Port publié conservé : $PORT"
+
+  # 1) Arrêt du service (JAMAIS `down -v` : cela détruirait le volume de données).
+  docker compose stop >/dev/null 2>&1 || true
+
+  # 2) L'état courant est DÉPLACÉ, pas écrasé : un rollback raté reste réversible.
+  safe="data/pre-rollback-$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$safe"
+  for f in data/itsm.db data/itsm.db-wal data/itsm.db-shm; do
+    [ -e "$f" ] && mv "$f" "$safe/"
+  done
+  if [ -f "$bk/master.key" ] && [ -f data/master.key ]; then mv data/master.key "$safe/"; fi
+  say "État précédent conservé dans $safe (à supprimer une fois le rollback validé)"
+
+  # 3) Base + clé de chiffrement restaurées ENSEMBLE (une base sans sa clé est illisible).
+  if [ -f "$bk/itsm.db" ]; then
+    cp -a "$bk/itsm.db" data/itsm.db
+    for f in itsm.db-wal itsm.db-shm; do [ -f "$bk/$f" ] && cp -a "$bk/$f" "data/$f"; done
+    echo "  base SQLite restaurée depuis $bk/itsm.db"
+  else
+    warn "Sauvegarde PostgreSQL : la base N'EST PAS restaurée automatiquement (destructif)."
+    warn "  docker compose --profile postgres up -d postgres"
+    warn "  docker compose exec -T postgres psql -U itsm -d itsm < $bk/dump.sql"
+  fi
+  if [ -f "$bk/master.key" ]; then
+    cp -a "$bk/master.key" data/master.key; chmod 600 data/master.key
+    echo "  master.key restaurée"
+  else
+    warn "Pas de master.key dans $bk : MASTER_KEY doit venir de .env (valeur d'origine !)."
+  fi
+
+  # 4) Code + image de l'époque. L'image locale d'alors est réutilisée telle quelle si
+  # elle est encore présente (instantané, hors-ligne) ; sinon on rebâtit depuis le
+  # commit sauvegardé — indispensable pour que le schéma corresponde à la base restaurée.
+  img=""; [ -f "$bk/IMAGE_ID" ] && img="$(cat "$bk/IMAGE_ID")"
+  if [ -n "$img" ] && docker image inspect "$img" >/dev/null 2>&1; then
+    docker tag "$img" "$IMAGE" && say "Image d'origine ré-étiquetée $IMAGE (aucun rebuild)"
+  else
+    rev=""; [ -f "$bk/GIT_REV" ] && rev="$(cat "$bk/GIT_REV")"
+    if [ -n "$rev" ] && [ -d .git ] && command -v git >/dev/null 2>&1; then
+      say "Image d'origine absente — retour du code au commit $rev puis rebuild"
+      git checkout --force "$rev" >/dev/null 2>&1 || warn "git checkout $rev impossible (commit absent ?)."
+      docker build -t "$IMAGE" . || die "Rebuild de l'image d'origine échoué — instance NON redémarrée, données restaurées dans ./data."
+    else
+      warn "Ni image ni commit d'origine connus : on redémarre avec l'image ACTUELLE."
+      warn "Si le schéma est plus récent que la base restaurée, le moteur refusera de démarrer."
+    fi
+  fi
+
+  # 5) Redémarrage — une instance ne doit JAMAIS rester à l'arrêt à la fin d'un rollback.
+  docker compose up -d --force-recreate || die "Redémarrage échoué (voir : docker compose logs)."
+  say "Retour arrière terminé — instance redémarrée."
+  echo "   Vérifiez la console, puis supprimez $safe si tout est correct."
+  exit 0
+}
+
+if $LIST_BACKUPS; then show_backups; exit 0; fi
 
 # ── Sélecteur Installer / Mettre à jour ───────────────────────────────────────
 # Une seule commande à connaître. Si une instance existe déjà dans ce dossier, on
@@ -181,6 +300,10 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 check_add "docker compose v2" ok
 
+# Retour arrière : dès que Docker + compose répondent, on n'a besoin de rien d'autre
+# (ni port libre, ni .env, ni build) — do_rollback se termine par `exit`.
+if $ROLLBACK; then do_rollback "$ROLLBACK_TS"; fi
+
 # Disk space (>= 2 GB recommended for build + images)
 free_kb="$(df -Pk . | awk 'NR==2{print $4}')"
 if [ "${free_kb:-0}" -ge 2000000 ]; then check_add "Disk space (>=2 GB)" ok
@@ -188,7 +311,11 @@ else check_add "Disk space (>=2 GB)" "warn:$(( free_kb/1024 )) MB free"; warn "L
 
 # Host port free?
 if (exec 3<>"/dev/tcp/127.0.0.1/${PORT}") 2>/dev/null; then
-  exec 3>&- 3<&- 2>/dev/null || true
+  # ⚠️ Les accolades sont INDISPENSABLES : `exec 3>&- 3<&- 2>/dev/null` sans commande
+  # applique ses redirections au shell COURANT — la stderr du script partait alors
+  # définitivement dans /dev/null dès que le port était occupé (cas de TOUTE mise à
+  # jour !), masquant les erreurs de `docker build` et jusqu'aux messages de `die`.
+  { exec 3>&- 3<&-; } 2>/dev/null || true
   warn "Port ${PORT} deja utilise (probablement une instance existante)."
   if ! instance_exists; then
     warn "Aucune instance dans CE dossier, mais le port ${PORT} est pris : une instance tourne ailleurs."
@@ -215,26 +342,106 @@ export ITSM_HOST_PORT="$PORT"
 # La mise à jour (sélecteur ou --update) sauvegarde ./data AVANT toute migration, puis
 # récupère le code (git) et reconstruit l'image ; ./data (config + DB + master.key) est
 # préservé. En mode offline/bundle (pas de checkout git) le pull est ignoré.
+LAST_BACKUP_TS=""      # horodatage de la sauvegarde de cette exécution (pour --rollback)
+SERVICE_STOPPED=false  # vrai entre `docker compose stop` et le redémarrage effectif
+
+# Repères de l'instance AVANT mise à jour : sans eux, revenir à « la version d'avant »
+# est une devinette. IMAGE_ID permet un retour arrière instantané et hors-ligne
+# (ré-étiquetage de l'image locale), GIT_REV le rebuild exact si elle a été élaguée.
+record_backup_metadata() {
+  local bk="$1" f
+  git rev-parse HEAD > "$bk/GIT_REV" 2>/dev/null || true
+  docker image inspect -f '{{.Id}}' "$IMAGE" > "$bk/IMAGE_ID" 2>/dev/null || true
+  grep -E '^version' pyproject.toml 2>/dev/null | head -1 | cut -d'"' -f2 > "$bk/VERSION" 2>/dev/null || true
+  # Un repère VIDE est pire qu'absent (il fait croire à une info connue) → on le retire.
+  for f in GIT_REV IMAGE_ID VERSION; do [ -s "$bk/$f" ] || rm -f "$bk/$f"; done
+}
+
 backup_data() {
   [ -d data ] || return 0
   local ts bk; ts="$(date +%Y%m%d-%H%M%S)"; bk="backups/$ts"; mkdir -p "$bk"
   say "Sauvegarde de ./data avant mise à jour → $bk"
-  cp -a data/master.key "$bk/" 2>/dev/null || true
+  cp -a data/master.key "$bk/" 2>/dev/null && chmod 600 "$bk/master.key" 2>/dev/null || true
+  record_backup_metadata "$bk"
   if [ -n "$(docker compose ps -q postgres 2>/dev/null || true)" ] || grep -qiE '^ITSM_DATABASE_URL=.*postgres' .env 2>/dev/null; then
     local pu pd; pu="$(grep -E '^POSTGRES_USER=' .env 2>/dev/null | head -1 | cut -d= -f2-)"; pu="${pu:-itsm}"
     pd="$(grep -E '^POSTGRES_DB=' .env 2>/dev/null | head -1 | cut -d= -f2-)"; pd="${pd:-itsm}"
-    if docker compose exec -T postgres pg_dump -U "$pu" "$pd" > "$bk/dump.sql" 2>/dev/null; then
-      echo "  dump PostgreSQL OK → $bk/dump.sql"; check_add "Sauvegarde ./data" "ok:$bk"
+    if docker compose exec -T postgres pg_dump -U "$pu" "$pd" > "$bk/dump.sql" 2>/dev/null && [ -s "$bk/dump.sql" ]; then
+      echo "  dump PostgreSQL OK → $bk/dump.sql"; check_add "Sauvegarde ./data" "ok:$bk"; LAST_BACKUP_TS="$ts"
     else
-      warn "pg_dump indisponible — sauvegarde DB ignorée (instance arrêtée ?)."; check_add "Sauvegarde ./data" "warn:DB non dumpée"
+      rm -f "$bk/dump.sql"
+      warn "pg_dump indisponible — AUCUNE sauvegarde de la base (instance arrêtée ?)."
+      warn "  Aucun retour arrière ne sera possible sur la base. Interrompez (Ctrl-C) si ce n'est pas voulu."
+      check_add "Sauvegarde ./data" "warn:DB NON sauvegardée"
     fi
   else
-    docker compose stop >/dev/null 2>&1 || true   # copie SQLite à froid = cohérente
-    cp -a data/itsm.db* "$bk/" 2>/dev/null || true
-    echo "  sauvegarde SQLite OK"; check_add "Sauvegarde ./data" "ok:$bk"
+    # Copie SQLite À FROID : le moteur est arrêté, donc `itsm.db` + `-wal` forment un
+    # ensemble cohérent (le `-wal` seul contient parfois des SEMAINES d'écritures non
+    # checkpointées : le copier est OBLIGATOIRE). Si un Python est disponible on
+    # préfère `VACUUM INTO`, qui produit UN fichier déjà consolidé et vérifiable.
+    docker compose stop >/dev/null 2>&1 || true; SERVICE_STOPPED=true
+    if [ ! -f data/itsm.db ]; then
+      warn "Aucune base data/itsm.db à sauvegarder."; check_add "Sauvegarde ./data" "warn:pas de base"
+      return 0
+    fi
+    local py=""; for c in .venv/bin/python python3 python; do command -v "$c" >/dev/null 2>&1 && { py="$c"; break; }; done
+    local done_ok=false
+    if [ -n "$py" ]; then
+      if "$py" -c "
+import sqlite3, sys
+src, dst = sys.argv[1], sys.argv[2]
+con = sqlite3.connect(src, timeout=30)
+try:
+    con.execute('VACUUM INTO ?', (dst,))
+finally:
+    con.close()
+chk = sqlite3.connect(dst)
+try:
+    if chk.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+        sys.exit('integrity_check KO')
+finally:
+    chk.close()
+" data/itsm.db "$bk/itsm.db" 2>&1; then done_ok=true; fi
+    fi
+    if ! $done_ok; then
+      cp -a data/itsm.db* "$bk/" 2>/dev/null && [ -f "$bk/itsm.db" ] && done_ok=true
+    fi
+    if $done_ok; then
+      echo "  sauvegarde SQLite OK ($(du -h "$bk/itsm.db" | cut -f1))"
+      check_add "Sauvegarde ./data" "ok:$bk"; LAST_BACKUP_TS="$ts"
+    else
+      warn "SAUVEGARDE SQLITE ÉCHOUÉE — mise à jour interrompue (aucun retour arrière possible)."
+      check_add "Sauvegarde ./data" "fail:copie impossible"
+      die "Impossible de sauvegarder data/itsm.db — rien n'a été modifié."
+    fi
   fi
 }
+
+# Filet de sécurité de la mise à jour : `backup_data` ARRÊTE le conteneur, et tout ce qui
+# suit (git, docker build) peut échouer. Sans ce trap, le script mourait en laissant
+# l'instance À L'ARRÊT — panne totale, pour une mise à jour qui n'a même pas eu lieu.
+# On redémarre alors l'ANCIENNE image (le build raté n'a rien retagué) et on rappelle
+# la commande de retour arrière complet.
+restore_service_on_failure() {
+  local code=$?
+  trap - EXIT
+  [ "$code" -eq 0 ] && exit 0
+  if [ "$SERVICE_STOPPED" = true ]; then
+    warn "Mise à jour interrompue (code $code) — redémarrage de l'instance précédente…"
+    if docker compose up -d >/dev/null 2>&1; then
+      warn "Instance redémarrée sur la version PRÉCÉDENTE (aucune donnée perdue)."
+    else
+      warn "Redémarrage automatique impossible : lancez « docker compose up -d »."
+    fi
+  fi
+  # Vaut aussi quand le moteur a démarré puis planté (migration incompatible…) :
+  # revenir à l'image précédente SANS restaurer la base ne fait que déplacer la panne.
+  [ -n "$LAST_BACKUP_TS" ] && warn "Retour arrière complet (base + clé + image) : ./install.sh --rollback $LAST_BACKUP_TS"
+  exit "$code"
+}
+
 if [ "$SELF_UPDATE" = true ]; then
+  trap restore_service_on_failure EXIT
   backup_data
   if [ -d .git ] && command -v git >/dev/null 2>&1; then
     branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
@@ -252,9 +459,7 @@ if [ "$SELF_UPDATE" = true ]; then
 fi
 
 # ── 3) Image: offline bundle OR build from source ─────────────────────────────
-# Image UNIQUE : un seul tag, fixé par docker-compose.yml. Les features Supporter sont
-# livrées dedans et déverrouillées par licence (pas de swap d'image).
-IMAGE="itsm-modern-ai:latest"
+# (IMAGE est défini plus haut : --rollback en a besoin avant cette section.)
 if [ -n "$BUNDLE" ]; then
   [ -f "$BUNDLE" ] || die "Bundle not found: $BUNDLE"
   say "Loading image from $BUNDLE (offline)"
@@ -275,16 +480,21 @@ if [ "$DO_BUILD" = true ]; then
   # delegates to buildx >= 0.17, which is often absent (e.g. distro 'docker.io'). A plain
   # `docker build` uses buildx if present, else the engine's classic builder — works on
   # far more setups. If BuildKit/buildx IS installed it's used transparently.
+  # Un build raté ne retague RIEN : l'ancienne image reste utilisable, et le trap
+  # `restore_service_on_failure` relance donc l'instance précédente au lieu de la
+  # laisser à l'arrêt (c'était le trou : stop → build KO → die → service mort).
   docker build -t "$IMAGE" . || die "Image build failed (see output above)."
   say "Starting"
   # --force-recreate : remplace un conteneur perime/casse (p.ex. dont le dossier ./data
   # monte a ete supprime). Sans danger : les donnees vivent dans le volume ./data de l'hote.
   docker compose up -d --force-recreate || die "Start failed (see: docker compose logs)."
+  SERVICE_STOPPED=false
   check_add "Image built" ok
 else
   docker image inspect "$IMAGE" >/dev/null 2>&1 || die "Image $IMAGE absent. Provide --bundle or drop --no-build."
   say "Starting with image $IMAGE (no build)"
   docker compose up -d --force-recreate || die "Start failed (see: docker compose logs)."
+  SERVICE_STOPPED=false
   check_add "Image present ($IMAGE)" ok
 fi
 
@@ -422,6 +632,16 @@ if $allgood; then
   fi
   echo "   Configurez GLPI, le fournisseur LLM et le perimetre depuis la console web."
   echo "   Devenir Supporter : collez votre cle de licence dans la page Supporter."
+  # Procedure de retour arriere annoncee AVANT d'en avoir besoin : a 2 h du matin, on ne
+  # cherche pas la commande, on la relit dans le journal de la mise a jour.
+  if [ -n "$LAST_BACKUP_TS" ]; then
+    echo
+    printf '%s== Retour arriere (si cette version pose probleme) ==%s\n' "$c_yel" "$c_off"
+    printf '   ./install.sh --rollback %s\n' "$LAST_BACKUP_TS"
+    echo "   (restaure la base + master.key + l'image d'avant, puis redemarre ;"
+    echo "    l'etat actuel est conserve dans data/pre-rollback-<horodatage>)"
+    echo "   Lister les sauvegardes : ./install.sh --list-backups"
+  fi
 else
   die "Certains controles ont echoue (voir ci-dessus)."
 fi

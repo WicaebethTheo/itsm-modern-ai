@@ -90,7 +90,15 @@ async def operational_metrics(request: Request) -> OperationalView:
     try:
         stats = await connector.get_recent_tickets(since)
     except ItsmError as exc:
-        return OperationalView(available=False, detail=f"Lecture GLPI impossible : {exc}")
+        # `{exc}` recopiait tel quel `resp.text[:200]` renvoyé par GLPI — un corps d'erreur
+        # de serveur tiers, servi ici dans un endpoint de tableau de bord. On passe par le
+        # MÊME masquage/bornage que les diagnostics de debug (`detail_sur`), au lieu de
+        # laisser deux régimes de durcissement incohérents dans la même API.
+        from .debug import detail_sur
+
+        return OperationalView(
+            available=False, detail=f"Lecture GLPI impossible : {detail_sur(exc)}"
+        )
 
     # Restreint au périmètre d'entités sélectionné (cohérent avec le polling, Story 5.4).
     if scope:

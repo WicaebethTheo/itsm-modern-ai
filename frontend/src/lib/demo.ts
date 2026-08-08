@@ -53,6 +53,7 @@ const DEMO_GROUP: Record<number, string> = { 5: "Support N1", 6: "Sys / Sécu" }
 export const demo: {
   authStatus: AuthStatus;
   health: Health;
+  healthProbed: Health;
   status: EngineStatus;
   metrics: Metrics;
   operational: OperationalView;
@@ -74,7 +75,7 @@ export const demo: {
 } = {
   authStatus: { authenticated: true, auth_configured: false },
   info: {
-    version: "0.9.47",
+    version: "0.9.48",
     title: "ITSM Modern AI — moteur de triage (headless)",
     endpoints: [
       { path: "/health", methods: ["GET"] },
@@ -108,14 +109,23 @@ export const demo: {
     },
     llm: { configured: true, reachable: true },
   },
+  // `/health` SANS sonde : `llm.reachable` vaut null côté moteur (aucun appel sortant
+  // n'est fait au chargement). La démo doit refléter ça, sinon elle promet une validation
+  // de clé que l'instance réelle ne fait pas.
   health: {
+    status: "ok",
+    glpi: { configured: true, reachable: true, version: "10.0.18" },
+    llm: { configured: true, reachable: null },
+  },
+  // `/health?probe=true` : réponse au clic sur « Tester la connexion ».
+  healthProbed: {
     status: "ok",
     glpi: { configured: true, reachable: true, version: "10.0.18" },
     llm: { configured: true, reachable: true },
   },
   status: {
     ok: true,
-    version: "0.9.47", // même valeur que APP_VERSION — règle de release
+    version: "0.9.48", // même valeur que APP_VERSION — règle de release
     polling_enabled: true,
     polling_interval_seconds: 60,
     whitelist_loaded: true,
@@ -124,6 +134,19 @@ export const demo: {
     llm_calls_total: 1284,
     cost_eur_last_24h: 1.83,
     cost_cap_eur_per_day: 5,
+    last_poll: {
+      // Getter : la démo tourne longtemps dans un onglet ; un horodatage figé à l'import
+      // finirait par être signalé « cycle trop ancien » alors que tout va bien.
+      get run_at() {
+        return new Date(Date.now() - 42_000).toISOString();
+      },
+      fetched: 12,
+      processed: 3,
+      skipped_done: 9,
+      skipped_scope: 0,
+      errors: 0,
+      error_message: null,
+    },
   },
   metrics: {
     total: 1284,
@@ -298,7 +321,7 @@ export const demo: {
     last_run_by: "scheduler",
   },
   version: {
-    current: "0.9.47",
+    current: "0.9.48",
     latest: null,
     update_available: false,
     check_enabled: false,

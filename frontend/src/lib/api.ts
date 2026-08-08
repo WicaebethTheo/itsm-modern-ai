@@ -110,7 +110,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.47";
+export const APP_VERSION = "0.9.48";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -141,6 +141,23 @@ export interface Health {
   llm: { configured: boolean; reachable: boolean | null };
 }
 
+/** Le corps d'un `/health` dégradé (HTTP 503) est un Health exploitable — pas une erreur. */
+function isHealth(payload: unknown): payload is Health {
+  if (!payload || typeof payload !== "object") return false;
+  const p = payload as Record<string, unknown>;
+  const glpi = p.glpi as Record<string, unknown> | undefined;
+  const llm = p.llm as Record<string, unknown> | undefined;
+  return (
+    typeof p.status === "string" &&
+    !!glpi &&
+    typeof glpi === "object" &&
+    typeof glpi.configured === "boolean" &&
+    !!llm &&
+    typeof llm === "object" &&
+    typeof llm.configured === "boolean"
+  );
+}
+
 export interface EngineStatus {
   // Partie publique (toujours renvoyée — l'installeur sonde cet endpoint sans auth).
   ok: boolean;
@@ -155,6 +172,129 @@ export interface EngineStatus {
   llm_calls_total?: number;
   cost_eur_last_24h?: number;
   cost_cap_eur_per_day?: number;
+  // État du DERNIER cycle de polling (observabilité) — cf. `readPollCycle`.
+  // Contrat : `last_poll` est OMIS si le moteur ne l'expose pas encore, `null` si aucun
+  // cycle n'a jamais tourné (état de première classe, symptôme n°1), sinon l'objet.
+  // Les clés à plat `poll_last_*` (miroir des clés runtime) restent tolérées à la lecture.
+  last_poll?: PollCycle | null;
+  poll_last_run_at?: string | null;
+  poll_last_fetched?: number | null;
+  poll_last_processed?: number | null;
+  poll_last_skipped_done?: number | null;
+  poll_last_skipped_scope?: number | null;
+  poll_last_errors?: number | null;
+  poll_last_error_message?: string | null;
+}
+
+/**
+ * Résumé du dernier cycle de polling, normalisé pour l'UI.
+ *
+ * Répond à la seule question qui compte en exploitation : « le moteur a-t-il tourné, et
+ * qu'a-t-il vu ? ». `fetched` = tickets lus dans GLPI, `processed` = tickets triés,
+ * `skipped_done` = déjà traités, `skipped_scope` = hors périmètre, `errors` = échecs du
+ * cycle. Tous les champs sont nullables : un moteur qui n'a jamais tourné n'a rien à dire.
+ */
+export interface PollCycle {
+  run_at: string | null; // ISO 8601
+  fetched: number | null;
+  processed: number | null;
+  skipped_done: number | null;
+  skipped_scope: number | null;
+  errors: number | null;
+  error_message: string | null;
+}
+
+// Noms acceptés pour chaque champ du cycle. Le bloc est en cours de déploiement côté
+// moteur : plutôt que de casser la page au moindre renommage, on lit le premier alias
+// présent. Le 1er de chaque liste est le nom des clés runtime (`poll_last_*`).
+const POLL_CYCLE_ALIASES: Record<keyof PollCycle, string[]> = {
+  run_at: ["poll_last_run_at", "run_at", "ran_at", "last_run_at", "started_at", "at", "timestamp"],
+  fetched: ["poll_last_fetched", "fetched", "tickets_fetched", "seen"],
+  processed: ["poll_last_processed", "processed", "triaged"],
+  skipped_done: ["poll_last_skipped_done", "skipped_done", "already_done"],
+  skipped_scope: ["poll_last_skipped_scope", "skipped_scope", "out_of_scope"],
+  errors: ["poll_last_errors", "errors", "error_count"],
+  error_message: ["poll_last_error_message", "error_message", "last_error", "error"],
+};
+
+// Sous-objets où le bloc peut être imbriqué (sinon les clés sont à la racine du statut).
+const POLL_CYCLE_CONTAINERS = ["last_poll", "last_cycle", "last_run", "poll_last", "poll"];
+
+/** Nombre tolérant : le backend peut renvoyer les compteurs runtime en texte (« 12 »). */
+function asNumber(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function asText(v: unknown): string | null {
+  return typeof v === "string" && v.trim() !== "" ? v : null;
+}
+
+/**
+ * Trois états DISTINCTS du dernier cycle — les confondre est précisément ce qui rendait la
+ * page Status non diagnostique :
+ * - `unavailable` : le moteur n'expose pas le bloc (version antérieure, ou réponse publique
+ *   non authentifiée) → l'UI ne sait rien, elle doit le dire plutôt qu'afficher du vert ;
+ * - `never` : `last_poll` vaut `null` → le worker n'a JAMAIS bouclé, même affiché « En
+ *   marche » (symptôme n°1) ;
+ * - `ran` : un cycle a tourné, avec ses compteurs.
+ */
+export type PollCycleState =
+  | { kind: "unavailable" }
+  | { kind: "never" }
+  | { kind: "ran"; cycle: PollCycle };
+
+/**
+ * Extrait le bloc « dernier cycle » d'un statut, quelle que soit la forme retenue par le
+ * moteur (objet `last_poll` — contrat courant — ou clés à plat `poll_last_*`).
+ */
+export function readPollCycle(status: EngineStatus | null | undefined): PollCycleState {
+  if (!status) return { kind: "unavailable" };
+  const root = status as unknown as Record<string, unknown>;
+  const areas: Record<string, unknown>[] = [];
+  let containerSeen = false;
+  for (const key of POLL_CYCLE_CONTAINERS) {
+    const nested = root[key];
+    if (nested === undefined) continue; // clé absente = le moteur n'expose pas le bloc
+    containerSeen = true; // clé présente à `null` = aucun cycle n'a jamais tourné
+    if (nested !== null && typeof nested === "object" && !Array.isArray(nested)) {
+      areas.push(nested as Record<string, unknown>);
+    }
+  }
+  areas.push(root); // le bloc imbriqué prime sur d'éventuelles clés à plat
+  const find = (aliases: string[]): unknown => {
+    for (const area of areas) {
+      for (const alias of aliases) {
+        if (area[alias] != null) return area[alias];
+      }
+    }
+    return null;
+  };
+  const cycle: PollCycle = {
+    run_at: asText(find(POLL_CYCLE_ALIASES.run_at)),
+    fetched: asNumber(find(POLL_CYCLE_ALIASES.fetched)),
+    processed: asNumber(find(POLL_CYCLE_ALIASES.processed)),
+    skipped_done: asNumber(find(POLL_CYCLE_ALIASES.skipped_done)),
+    skipped_scope: asNumber(find(POLL_CYCLE_ALIASES.skipped_scope)),
+    errors: asNumber(find(POLL_CYCLE_ALIASES.errors)),
+    error_message: asText(find(POLL_CYCLE_ALIASES.error_message)),
+  };
+  if (Object.values(cycle).some((v) => v !== null)) return { kind: "ran", cycle };
+  if (containerSeen) return { kind: "never" };
+  // `/api/status` est sérialisé avec `response_model_exclude_none=True` : le moteur OMET
+  // `last_poll` au lieu de l'écrire à `null`. « Aucun cycle exécuté » arriverait donc sur
+  // le fil comme une simple absence de champ — or c'est le symptôme n°1 à rendre visible.
+  // On lève l'ambiguïté quand c'est sûr : réponse ENRICHIE (session admin, sinon le bloc
+  // est de toute façon filtré) ET moteur de la même version que cette UI — l'édition est
+  // unique, une seule image, front et back bumpés ensemble : le bloc EST donc implémenté.
+  // Version différente (dev, proxy vers un moteur plus ancien) → on n'affirme rien.
+  const enriched = status.polling_interval_seconds != null || status.llm_calls_total != null;
+  if (enriched && status.version === APP_VERSION) return { kind: "never" };
+  return { kind: "unavailable" };
 }
 
 export interface DayPoint {
@@ -543,7 +683,21 @@ export const Api = {
     DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/login", { password }),
   logout: () => (DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/logout")),
 
-  health: () => (DEMO ? ok(demo.health) : api.get<Health>("/health")),
+  // `probe` déclenche une VRAIE requête sortante vers le fournisseur LLM (facturée, et
+  // réservée aux sessions authentifiées côté moteur) : jamais au chargement d'une page,
+  // uniquement sur action explicite de l'admin (bouton « Tester la connexion »).
+  health: async (probe = false): Promise<Health> => {
+    if (DEMO) return probe ? demo.healthProbed : demo.health;
+    try {
+      return await api.get<Health>(probe ? "/health?probe=true" : "/health");
+    } catch (e) {
+      // `/health` répond 503 quand GLPI (ou la sonde LLM) échoue, MAIS le corps est un
+      // Health complet : c'est le diagnostic lui-même. Le remonter en exception effaçait
+      // l'information utile derrière un « API 503 » — on renvoie le corps tel quel.
+      if (e instanceof ApiError && isHealth(e.payload)) return e.payload;
+      throw e;
+    }
+  },
   status: () => (DEMO ? ok(demo.status) : api.get<EngineStatus>("/api/status")),
   metrics: () => (DEMO ? ok(demo.metrics) : api.get<Metrics>("/api/metrics")),
   operationalMetrics: () =>

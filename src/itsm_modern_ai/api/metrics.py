@@ -10,7 +10,20 @@ labels (et borne la cardinalité). Les chemins inconnus sont agrégés en `<othe
 
 Exposition contrôlable (durcissement audit 2026-05) : si `settings.metrics_token` est
 défini, `/metrics` exige `Authorization: Bearer <token>` (ou en-tête `X-Metrics-Token`),
-sinon 401. Vide (défaut) → non authentifié (scrape Prometheus classique, rétrocompatible).
+sinon 401.
+
+Durcissement audit 2026-08 — le défaut `metrics_token=""` rendait `/metrics` ANONYME, et
+les séries exposent `itsm_http_requests_total{path="/api/auth/login",status="200"}` :
+n'importe qui sur le réseau savait QUAND un administrateur se connecte, et un attaquant
+pouvait lire en direct si sa force brute était détectée (comptage des 401 puis des 429).
+Ce n'est pas de la volumétrie anodine, c'est du renseignement sur l'authentification.
+Désormais, EN L'ABSENCE de jeton configuré, `/metrics` exige une session admin
+(`require_auth`, mêmes règles que le reste de la console, `dev_open_admin` compris).
+COMPROMIS assumé : quand un jeton EST configuré, le scrape reste anonyme — exactement
+comme aujourd'hui. C'est le mode nominal Prometheus (un scraper n'a pas de cookie), et
+casser ce cas ferait tomber toutes les supervisions existantes. Autrement dit, on ne
+supprime pas le scrape non-humain : on exige simplement qu'il soit DÉCLARÉ (jeton) au
+lieu d'être ouvert par défaut à quiconque atteint le port publié.
 """
 
 from __future__ import annotations
@@ -107,22 +120,42 @@ def _scrape_token_ok(request: Request, expected: str) -> bool:
     )
 
 
+def _unauthorized(message: str) -> Response:
+    return Response(
+        f'{{"code":"unauthorized","message":"{message}"}}',
+        status_code=401,
+        media_type="application/json",
+    )
+
+
 async def metrics_endpoint(request: Request) -> Response:
     expected = getattr(request.app.state.settings, "metrics_token", "") or ""
-    if expected and not _scrape_token_ok(request, expected):
-        return Response(
-            '{"code":"unauthorized","message":"Jeton de scrape /metrics requis."}',
-            status_code=401,
-            media_type="application/json",
-        )
+    if expected:
+        # Jeton configuré → scrape machine autorisé sans session (rétrocompatible).
+        if not _scrape_token_ok(request, expected):
+            return _unauthorized("Jeton de scrape /metrics requis.")
+    else:
+        # Aucun jeton → l'endpoint n'est plus ouvert : il retombe sur l'auth de la console.
+        # `require_auth` est réutilisé tel quel pour ne pas dupliquer la règle d'accès
+        # (fail-closed, dev_open_admin, révocation de session).
+        from fastapi import HTTPException
+
+        from .security import require_auth
+
+        try:
+            require_auth(request)
+        except HTTPException:
+            return _unauthorized(
+                "Session administrateur ou METRICS_TOKEN requis pour lire /metrics."
+            )
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 def install_metrics(app: FastAPI) -> None:
     """Branche le middleware d'instrumentation + la route /metrics.
 
-    Authentification optionnelle : si `settings.metrics_token` est défini, l'endpoint exige
-    le jeton de scrape ; sinon il reste non authentifié (rétrocompatible, scrape interne).
+    Accès : jeton de scrape si `settings.metrics_token` est défini, session admin sinon.
+    Plus JAMAIS d'exposition anonyme par défaut (cf. en-tête de module).
     """
     app.middleware("http")(metrics_middleware)
     app.add_route("/metrics", metrics_endpoint, methods=["GET"])

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlmodel import select
 
 from itsm_modern_ai.config.settings import Settings
 from itsm_modern_ai.domain.errors import LlmResponseError, LlmTransportError
@@ -86,9 +87,9 @@ def _accepted_decision() -> Decision:
 async def test_accepted_writes_private_followup_and_journals(temp_db):
     itsm = FakeItsm()
     svc = _service(FakeLlm(_accepted_decision()), itsm)
-    wrote = await svc.handle(
+    wrote = (await svc.handle(
         Ticket(id=10, title="Connexion impossible", content="je n'arrive plus à me connecter"), REFS
-    )
+    )).followup_written
     assert wrote is True
     assert itsm.followups and itsm.followups[0][2] is True  # privé
     assert "Suggestion de triage" in itsm.followups[0][1]
@@ -102,7 +103,7 @@ async def test_low_confidence_goes_a_trier_no_write(temp_db):
     itsm = FakeItsm()
     d = Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.4)
     svc = _service(FakeLlm(d), itsm)
-    wrote = await svc.handle(Ticket(id=11, content="flou"), REFS)
+    wrote = (await svc.handle(Ticket(id=11, content="flou"), REFS)).followup_written
     assert wrote is False and itsm.followups == []
     with db.session_scope() as s:
         assert journal.list_decisions(s)[0].reason == "low_confidence"
@@ -114,7 +115,7 @@ async def test_runtime_confidence_threshold_is_honored(temp_db):
     Décision à 0.9 : acceptée au seuil par défaut, mais doit partir « à trier » si l'admin
     relève le seuil à 0.95 depuis la console (régression : le moteur lisait le .env figé)."""
     svc = _service(FakeLlm(_accepted_decision()), confidence_threshold=0.95)
-    wrote = await svc.handle(Ticket(id=77, content="x"), REFS)
+    wrote = (await svc.handle(Ticket(id=77, content="x"), REFS)).followup_written
     assert wrote is False
     with db.session_scope() as s:
         assert journal.list_decisions(s)[0].reason == "low_confidence"
@@ -124,7 +125,7 @@ async def test_out_of_whitelist_technician_no_write(temp_db):
     itsm = FakeItsm()
     d = Decision(category=1, priority=3, technician_id=999, draft="x", confidence=0.95)
     svc = _service(FakeLlm(d), itsm)
-    wrote = await svc.handle(Ticket(id=12, content="x"), REFS)
+    wrote = (await svc.handle(Ticket(id=12, content="x"), REFS)).followup_written
     assert wrote is False and itsm.followups == []
     with db.session_scope() as s:
         assert journal.list_decisions(s)[0].reason == "technician_not_in_whitelist"
@@ -132,7 +133,7 @@ async def test_out_of_whitelist_technician_no_write(temp_db):
 
 async def test_invalid_llm_output_goes_a_trier(temp_db):
     svc = _service(FakeLlm(error=LlmResponseError("bad json")))
-    wrote = await svc.handle(Ticket(id=13, content="x"), REFS)
+    wrote = (await svc.handle(Ticket(id=13, content="x"), REFS)).followup_written
     assert wrote is False
     with db.session_scope() as s:
         assert journal.list_decisions(s)[0].reason == "invalid_output"
@@ -141,7 +142,7 @@ async def test_invalid_llm_output_goes_a_trier(temp_db):
 async def test_transport_error_retried_then_a_trier(temp_db):
     llm = FakeLlm(error=LlmTransportError("net"))
     svc = _service(llm, llm_retries=1)
-    wrote = await svc.handle(Ticket(id=14, content="x"), REFS)
+    wrote = (await svc.handle(Ticket(id=14, content="x"), REFS)).followup_written
     assert wrote is False
     assert llm.calls == 2  # 1 essai + 1 retry (FR-9)
     with db.session_scope() as s:
@@ -171,7 +172,7 @@ async def test_two_stage_skips_llm_when_rules_handled(temp_db):
     svc = _service(llm)
     ticket = Ticket(id=15, content="x", category_id=3, assignee_present=True)
     assert rules_fully_handled(ticket) is True
-    wrote = await svc.handle(ticket, REFS)
+    wrote = (await svc.handle(ticket, REFS)).followup_written
     assert wrote is False and llm.calls == 0  # aucun appel LLM (FR-5)
 
 
@@ -191,7 +192,7 @@ async def test_cost_cap_blocks_llm_call(temp_db):
         s.commit()
     llm = FakeLlm(_accepted_decision())
     svc = _service(llm, cost_cap_eur_per_day=5.0)
-    wrote = await svc.handle(Ticket(id=17, content="x"), REFS)
+    wrote = (await svc.handle(Ticket(id=17, content="x"), REFS)).followup_written
     assert wrote is False and llm.calls == 0  # plus aucun appel facturant (FR-10)
     with db.session_scope() as s:
         assert journal.list_decisions(s)[0].reason == "cost_cap_reached"
@@ -371,7 +372,7 @@ async def test_followup_failure_after_apply_still_journals(temp_db):
 
     itsm = FailingFollowupItsm()
     svc = _service(FakeLlm(_accepted_decision()), itsm, default_mode=ExecutionMode.FULL_AUTO)
-    wrote = await svc.handle(Ticket(id=31, content="x"), REFS)
+    wrote = (await svc.handle(Ticket(id=31, content="x"), REFS)).followup_written
     assert wrote is False  # aucun Suivi écrit
     assert itsm.applied  # mais la mutation a bien eu lieu
     with db.session_scope() as s:
@@ -388,10 +389,10 @@ async def test_cost_cap_blocks_subsequent_tickets_same_day(temp_db):
     llm = FakeLlm(_accepted_decision())
     svc = _service(llm, cost_cap_eur_per_day=5.0)
 
-    wrote1 = await svc.handle(Ticket(id=100, content="x"), REFS)
+    wrote1 = (await svc.handle(Ticket(id=100, content="x"), REFS)).followup_written
     assert wrote1 is False and llm.calls == 0
 
-    wrote2 = await svc.handle(Ticket(id=101, content="y"), REFS)
+    wrote2 = (await svc.handle(Ticket(id=101, content="y"), REFS)).followup_written
     assert wrote2 is False and llm.calls == 0  # 2e ticket bloqué aussi
 
     with db.session_scope() as s:
@@ -453,3 +454,140 @@ def test_render_followup_escapes_untrusted_llm_draft():
     for content in (public, private):
         assert "<script>" not in content and "<img" not in content
         assert "&lt;script&gt;" in content  # le markup est neutralisé, pas perdu
+
+
+# ── Audit fiabilité 2026-08 : comptabilité des appels ÉCHOUÉS (FR-10/FR-19) ───
+
+
+async def test_failed_llm_calls_are_journaled_and_cost_something(temp_db):
+    """Un appel rejeté au parsing a QUAND MÊME été facturé (tokens générés puis jetés).
+
+    Avant : `_journal_llm_call` n'était appelé que si une `LlmResult` revenait → 0 ligne
+    en base malgré N appels réels, donc `is_over_cap` éternellement False. On exige une
+    ligne PAR TENTATIVE, marquée en échec, et un coût strictement positif.
+    """
+    from itsm_modern_ai.services.triage import LLM_FAILURE_PREFIX
+
+    llm = FakeLlm(error=LlmResponseError("bad json"))
+    svc = _service(llm, llm_retries=2)
+    res = await svc.handle(Ticket(id=200, content="un ticket bien réel à trier"), REFS)
+    assert llm.calls == 3  # 1 essai + 2 retries, tous partis chez le fournisseur
+    with db.session_scope() as s:
+        calls = list(s.exec(select(LlmCall)).all())
+    assert len(calls) == 3  # une ligne par tentative facturée
+    assert all(c.response_received.startswith(LLM_FAILURE_PREFIX) for c in calls)
+    assert all(c.prompt_tokens > 0 and c.completion_tokens == 0 for c in calls)
+    assert sum(c.cost_eur for c in calls) > 0  # le plafond peut enfin avancer
+    assert res.retryable is True and res.costly is True
+
+
+async def test_cost_cap_becomes_effective_after_repeated_llm_failures(temp_db):
+    """Bout en bout : des échecs LLM à répétition finissent par DÉCLENCHER le plafond.
+
+    C'est le défaut mesuré (150 appels réels, plafond jamais atteint) : le coût des
+    tentatives échouées doit s'accumuler jusqu'à couper les appels suivants.
+    """
+    llm = FakeLlm(error=LlmTransportError("net"))
+    svc = _service(
+        llm, llm_retries=0, cost_cap_eur_per_day=0.0001,
+        llm_price_input_per_mtok=1000.0, llm_price_output_per_mtok=1000.0,
+    )
+    await svc.handle(Ticket(id=201, content="x" * 500), REFS)
+    assert llm.calls == 1
+    res = await svc.handle(Ticket(id=202, content="x" * 500), REFS)
+    assert llm.calls == 1  # 2e ticket : plus aucun appel, le plafond a mordu
+    assert res.reason.value == "cost_cap_reached"
+
+
+async def test_successful_call_after_a_failed_retry_journals_both(temp_db):
+    """Une tentative échouée SUIVIE d'un succès reste facturée : elle doit apparaître."""
+    class FlakyLlm(FakeLlm):
+        async def complete(self, system, user):
+            self.calls += 1
+            self.last_user = user
+            if self.calls == 1:
+                raise LlmTransportError("429")
+            from itsm_modern_ai.ports.llm import LlmResult
+
+            return LlmResult(decision=_accepted_decision(), model="fake",
+                             prompt_tokens=100, completion_tokens=20, raw_response="{}")
+
+    svc = _service(FlakyLlm(_accepted_decision()), llm_retries=1)
+    await svc.handle(Ticket(id=203, content="x"), REFS)
+    with db.session_scope() as s:
+        calls = list(s.exec(select(LlmCall)).all())
+    assert len(calls) == 2  # l'échec ET le succès
+
+
+async def test_cost_cap_unreadable_blocks_llm_calls(temp_db):
+    """Base en échec → plafond non vérifiable → défaut SÛR : aucun appel facturant.
+
+    Sans ça, une base en lecture seule rendait le cap aveugle et le moteur facturait
+    en boucle à chaque cycle.
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def broken_session():
+        raise RuntimeError("database is locked")
+        yield  # pragma: no cover
+
+    llm = FakeLlm(_accepted_decision())
+    svc = TriageService(
+        itsm=FakeItsm(), llm=llm,
+        settings=Settings(glpi_base_url="https://glpi.local/apirest.php"),
+        tech_profiles_prose="", session_factory=broken_session,
+    )
+    res = await svc.handle(Ticket(id=204, content="x"), REFS)
+    assert llm.calls == 0
+    assert res.retryable is True and res.db_error is True and res.costly is False
+
+
+# ── Audit fiabilité 2026-08 : Journal protégé + mutation partielle ────────────
+
+
+async def test_decision_journal_failure_does_not_crash_the_handler(temp_db):
+    """L'échec de `journal.record_decision` était le seul point non protégé : il rouvrait
+    la fenêtre de crash (Ticket non marqué → suggestion dupliquée + appel LLM re-facturé).
+    """
+    itsm = FakeItsm()
+    svc = _service(FakeLlm(_accepted_decision()), itsm)
+
+    real_record = journal.record_decision
+
+    def boom(*a, **kw):
+        raise RuntimeError("disk full")
+
+    journal.record_decision = boom
+    try:
+        res = await svc.handle(Ticket(id=210, content="x"), REFS)
+    finally:
+        journal.record_decision = real_record
+    assert itsm.followups  # le Suivi a bien été déposé
+    assert res.db_error is True and res.retryable is False  # marqué traité, pas de doublon
+
+
+async def test_partial_glpi_mutation_is_journaled_and_not_replayed(temp_db):
+    """GLPI V2 fait DEUX appels : si le second échoue, le Ticket est DÉJÀ muté.
+
+    Avant : exception brute → zéro ligne au Journal, Ticket non marqué → re-muté et
+    re-facturé à chaque cycle. Après : Décision journalisée + annotée, Ticket consommé.
+    """
+    class PartialError(RuntimeError):
+        partial_mutation = True
+
+    class PartialItsm(FakeItsm):
+        async def apply_decision(self, ticket_id, *, category, priority,
+                                 technician_id=None, group_id=None):
+            self.applied.append((ticket_id, category, priority, technician_id, group_id))
+            raise PartialError("TeamMember 500")
+
+    itsm = PartialItsm()
+    svc = _service(FakeLlm(_accepted_decision()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    res = await svc.handle(Ticket(id=211, content="x"), REFS)
+    assert itsm.followups == []  # aucun Suivi public sur un état incohérent
+    assert res.retryable is False  # NON-BOUCLANT : le ticket est consommé
+    with db.session_scope() as s:
+        row = journal.list_decisions(s)[0]
+    assert row.applied is True  # OBSERVABLE : GLPI a bougé, le Journal le dit
+    assert "PARTIELLE" in row.annotation

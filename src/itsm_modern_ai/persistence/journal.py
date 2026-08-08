@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime, timedelta
 
-from sqlmodel import Session, delete, func, select
+from sqlmodel import Session, and_, delete, func, or_, select
 
 from ..domain.models import TriageOutcome
 from .tables import DecisionLog, LlmCall, _utcnow
@@ -168,53 +169,160 @@ def decision_stats(session: Session) -> dict:
 
     Volontairement orienté santé opérationnelle (taux « à trier », répartition des
     raisons), pas une vanity-metric « X tickets traités par l'IA » (contre-métrique SM-C1).
+
+    ⚠️ Agrégats calculés PAR LA BASE (COUNT + GROUP BY), pas en Python. La version
+    précédente faisait un `SELECT *` de tout le Journal — donc hydratait un objet ORM par
+    Décision, colonnes `subject`/`annotation`/`glpi_link` comprises — à CHAQUE affichage du
+    dashboard, pour n'en tirer que trois compteurs. Sur un journal d'un an de production
+    c'est des centaines de Mo transférés et instanciés pour rien, en concurrence avec le
+    poller sur la même base. Le GROUP BY donne exactement les mêmes nombres à coût constant
+    en mémoire (une ligne par `reason`, soit une dizaine).
     """
-    rows = list(session.exec(select(DecisionLog)).all())
-    total = len(rows)
-    accepted = sum(1 for r in rows if r.accepted)
-    by_reason: dict[str, int] = {}
-    for r in rows:
-        by_reason[r.reason] = by_reason.get(r.reason, 0) + 1
-    a_trier = total - accepted
+    total = int(session.exec(select(func.count()).select_from(DecisionLog)).one())
+    accepted = int(
+        session.exec(
+            select(func.count()).select_from(DecisionLog).where(DecisionLog.accepted.is_(True))
+        ).one()
+    )
+    reason_rows = session.exec(
+        select(DecisionLog.reason, func.count()).group_by(DecisionLog.reason)
+    ).all()
+    # Tri décroissant par volume ; `reason` en second critère pour un ORDRE STABLE (le SGBD
+    # ne garantit aucun ordre sur un GROUP BY, et un dashboard qui permute ses lignes à
+    # chaque rafraîchissement passe pour instable).
+    by_reason = {r: int(n) for r, n in sorted(reason_rows, key=lambda kv: (-kv[1], kv[0]))}
     return {
         "total": total,
         "accepted": accepted,
-        "a_trier": a_trier,
+        "a_trier": total - accepted,
         "useful_coverage": round(accepted / total, 3) if total else 0.0,
-        "by_reason": dict(sorted(by_reason.items(), key=lambda kv: -kv[1])),
+        "by_reason": by_reason,
     }
 
 
-def decisions_csv(session: Session) -> str:
-    """Export CSV du Journal pour la DPO (FR-21). Aucune métrique nominative."""
+# Taille de lot de l'export en flux : le journal est parcouru par pages de `_CSV_BATCH`
+# lignes, jamais d'un seul bloc. 100 lignes × quelques ko de prompt ≈ moins d'1 Mo vivant
+# à un instant donné → pic mémoire CONSTANT quel que soit le volume total du journal.
+_CSV_BATCH = 100
+
+
+def _csv_stream(header: list[str], rows: Iterable[Iterable[object]]) -> Iterator[str]:
+    """Rend un CSV par TRANCHES (générateur) au lieu de le construire en un seul str.
+
+    Même neutralisation d'injection de formule (`_csv_safe`) et même quoting que la
+    version monolithique — seule la façon de restituer change.
+    """
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(
-        ["id", "ticket_id", "ts", "accepted", "reason", "category", "priority",
-         "technician_id", "group_id", "confidence", "glpi_link", "annotation"]
+
+    def _vider() -> str:
+        chunk = buf.getvalue()
+        buf.seek(0)
+        buf.truncate(0)
+        return chunk
+
+    writer.writerow(header)
+    for row in rows:
+        writer.writerow([_csv_safe(v) for v in row])
+        if buf.tell() >= 64 * 1024:  # regroupe les lignes : moins d'aller-retours ASGI
+            yield _vider()
+    reste = _vider()
+    if reste:
+        yield reste
+
+
+_DECISIONS_CSV_HEADER = [
+    "id", "ticket_id", "ts", "accepted", "reason", "category", "priority",
+    "technician_id", "group_id", "confidence", "glpi_link", "annotation",
+    # `mode` + `applied` : sans eux, le CSV ne permet PAS de distinguer une suggestion
+    # (proposition soumise à un technicien) d'une décision individuelle AUTOMATISÉE avec
+    # réponse publique au demandeur (`applied=True` en `full_auto`) — c'est-à-dire l'objet
+    # même de l'art. 22 RGPD, donc la première chose qu'une DPO doit pouvoir isoler dans un
+    # export « pour l'audit ». Ajoutés EN FIN de ligne : les colonnes existantes gardent
+    # leur position, un tableur/script d'audit déjà en place ne casse pas.
+    # `subject` reste volontairement HORS export (décision assumée : titre de ticket = PII).
+    "mode", "applied",
+]
+
+_LLM_CALLS_CSV_HEADER = [
+    "id", "ticket_id", "ts", "model", "prompt_sent", "response_received",
+    "prompt_tokens", "completion_tokens", "cost_eur",
+]
+
+
+def _pages_antechronologiques(session: Session, modele) -> Iterator:
+    """Parcourt une table de journal (ts décroissant) PAR PAGES, sans jamais tout charger.
+
+    Pagination par CURSEUR (keyset) sur `(ts, id)` plutôt que `yield_per` : sur SQLite —
+    la base du pilote — le driver n'a pas de curseur serveur, donc `yield_per` retombe sur
+    un fetch intégral et NE borne rien (vérifié à la mesure : 10 Mo de pic pour 8 Mo de
+    données, soit exactement le comportement qu'on veut supprimer). Un `LIMIT` explicite,
+    lui, borne la mémoire sur tous les moteurs. `id` départage les `ts` égaux : sans ce
+    second critère, deux lignes à la même microseconde feraient boucler la pagination (ou
+    en sauteraient). `expunge_all()` vide l'identity map entre deux pages : sinon la
+    session garderait une référence par ligne déjà lue et la borne serait fictive.
+    """
+    dernier: tuple[datetime, int] | None = None
+    while True:
+        stmt = select(modele).order_by(modele.ts.desc(), modele.id.desc()).limit(_CSV_BATCH)
+        if dernier is not None:
+            ts, ident = dernier
+            stmt = stmt.where(or_(modele.ts < ts, and_(modele.ts == ts, modele.id < ident)))
+        page = list(session.exec(stmt))
+        if not page:
+            return
+        yield from page
+        dernier = (page[-1].ts, page[-1].id)
+        del page
+        session.expunge_all()
+
+
+def decisions_csv_stream(session: Session) -> Iterator[str]:
+    """Export CSV du Journal pour la DPO (FR-21), en flux. Aucune métrique nominative.
+
+    Paginé lui aussi : les lignes sont légères, mais l'export était plafonné à 100 000
+    Décisions SANS le dire — un journal plus fourni produisait un export d'audit amputé en
+    silence, ce qu'aucune DPO ne peut détecter en relisant le fichier. Plus de plafond.
+    """
+    rows = (
+        (d.id, d.ticket_id, d.ts.isoformat(), d.accepted, d.reason, d.category,
+         d.priority, d.technician_id, d.group_id, d.confidence, d.glpi_link, d.annotation,
+         d.mode, d.applied)
+        for d in _pages_antechronologiques(session, DecisionLog)
     )
-    for d in list_decisions(session, limit=100_000):
-        writer.writerow(
-            [_csv_safe(c) for c in
-             (d.id, d.ticket_id, d.ts.isoformat(), d.accepted, d.reason, d.category,
-              d.priority, d.technician_id, d.group_id, d.confidence, d.glpi_link, d.annotation)]
-        )
-    return buf.getvalue()
+    return _csv_stream(_DECISIONS_CSV_HEADER, rows)
+
+
+def decisions_csv(session: Session) -> str:
+    """Version monolithique (tests / petits volumes) — préfère `decisions_csv_stream`."""
+    return "".join(decisions_csv_stream(session))
+
+
+def llm_calls_csv_stream(session: Session) -> Iterator[str]:
+    """Export CSV des appels LLM (FR-19/21), en FLUX. Contenu déjà masqué.
+
+    ⚠️ C'est l'export le plus lourd du produit : chaque ligne porte le prompt masqué ET la
+    réponse brute du LLM (plusieurs ko pour un ticket issu d'un collecteur de mails).
+    L'ancienne version chargeait TOUTES les lignes ORM puis assemblait un `StringIO`
+    complet : mesuré sur 20 000 appels, 71 Mo de sortie pour 270 Mo de pic mémoire — face
+    au `memory: 512M` du compose, c'est l'OOM kill, donc un conteneur qui « redémarre tout
+    seul » à chaque clic sur Exporter, sans lien visible avec l'export.
+    Ici, la lecture est paginée et le CSV rendu par tranches → pic mémoire CONSTANT quel
+    que soit le volume. AUCUNE troncature n'est introduite : un export d'audit amputé —
+    même annoncé — vaudrait moins qu'un export lent, puisque la DPO doit pouvoir prouver
+    l'exhaustivité de la trace.
+    """
+    rows = (
+        (c.id, c.ticket_id, c.ts.isoformat(), c.model, c.prompt_sent, c.response_received,
+         c.prompt_tokens, c.completion_tokens, c.cost_eur)
+        for c in _pages_antechronologiques(session, LlmCall)
+    )
+    return _csv_stream(_LLM_CALLS_CSV_HEADER, rows)
 
 
 def llm_calls_csv(session: Session) -> str:
-    """Export CSV des appels LLM (FR-19/21). Contenu déjà masqué."""
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(
-        ["id", "ticket_id", "ts", "model", "prompt_sent", "response_received",
-         "prompt_tokens", "completion_tokens", "cost_eur"]
-    )
-    rows = session.exec(select(LlmCall).order_by(LlmCall.ts.desc())).all()
-    for c in rows:
-        writer.writerow(
-            [_csv_safe(v) for v in
-             (c.id, c.ticket_id, c.ts.isoformat(), c.model, c.prompt_sent, c.response_received,
-              c.prompt_tokens, c.completion_tokens, c.cost_eur)]
-        )
-    return buf.getvalue()
+    """Version monolithique (tests / petits volumes) — préfère `llm_calls_csv_stream`.
+
+    ⚠️ Reconstruit tout l'export en mémoire : ne pas l'utiliser pour servir une requête HTTP.
+    """
+    return "".join(llm_calls_csv_stream(session))

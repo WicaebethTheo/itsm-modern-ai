@@ -13,6 +13,7 @@ from ..adapters.itsm.glpi.v2.connector import GlpiV2Connector
 from ..adapters.llm.registry import build_llm as _build_llm_adapter
 from ..adapters.secrets.encrypted import FernetSecretsBox
 from ..config.settings import Settings
+from ..domain import masking
 from ..domain.modes import ExecutionMode
 from ..persistence import db
 from ..ports.itsm import ItsmPort
@@ -203,6 +204,24 @@ def build_triage_service(
         confidence_threshold=confidence_threshold,
         cost_cap_eur_per_day=cost_cap_eur_per_day,
     )
+
+
+def mask_for_journal(triage: TriageService, text: str) -> str:
+    """Masque `text` EXACTEMENT comme le service masque le prompt qu'il envoie au LLM.
+
+    À utiliser par tout appelant qui journalise lui-même un appel LLM (sandbox) au lieu de
+    passer par `TriageService.handle()`. Le journal est une PREUVE d'audit : s'il est produit
+    par un masquage différent de celui appliqué au prompt réellement envoyé, il atteste d'un
+    traitement qui n'a pas eu lieu — cas le plus grave en édition Community, où `iban`,
+    `secret` et `network` sont désactivés faute de licence : un masquage « par défaut »
+    (tous flags actifs) écrirait `[IBAN]`/`[SECRET]`/`[IP]` dans le journal alors que ces
+    données sont parties EN CLAIR chez le fournisseur.
+
+    On lit donc les réglages PORTÉS PAR L'INSTANCE utilisée pour l'appel — flags de masquage
+    ET passe avancée Supporter — plutôt que de les recalculer : recalculer autoriserait la
+    divergence que cette fonction existe pour interdire.
+    """
+    return triage._advanced(masking.mask(text, **triage._mask_flags).text)
 
 
 def _safe_mode(value: str) -> ExecutionMode:

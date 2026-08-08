@@ -93,3 +93,42 @@ def test_non_ascii_presented_token_returns_false_not_typeerror():
         "headers": [(b"authorization", b"Bearer cl\xe9")],
     }
     assert _scrape_token_ok(Request(scope), "scrape-secret") is False
+
+
+# ── Fermeture de l'exposition anonyme par défaut (durcissement audit 2026-08) ──
+# `metrics_token=""` (défaut) rendait /metrics lisible par n'importe qui : les séries
+# exposent `itsm_http_requests_total{path="/api/auth/login",status="200"}`, c'est-à-dire
+# QUAND un admin se connecte et si une force brute est détectée (401 puis 429).
+def _secured(tmp_path, **over):
+    (tmp_path / "dist").mkdir(parents=True, exist_ok=True)
+    return Settings(
+        _env_file=None,
+        database_url=f"sqlite:///{tmp_path / 'm.db'}",
+        master_key=Fernet.generate_key().decode(),
+        polling_enabled=False,
+        dev_open_admin=False,
+        session_https_only=False,
+        admin_password="s3cret-pilote",
+        frontend_dist=str(tmp_path / "dist"),
+        **over,
+    )
+
+
+def test_metrics_requires_session_when_no_token_configured(tmp_path):
+    with TestClient(create_app(_secured(tmp_path))) as c:
+        r = c.get("/metrics")
+        assert r.status_code == 401
+        # Le refus ne doit rien laisser filtrer des séries.
+        assert "itsm_http_requests_total" not in r.text
+        # Session admin → lecture autorisée (l'exploitant garde son endpoint).
+        assert c.post("/api/auth/login", json={"password": "s3cret-pilote"}).status_code == 200
+        r2 = c.get("/metrics")
+        assert r2.status_code == 200 and "itsm_http_requests_total" in r2.text
+
+
+def test_metrics_token_still_allows_anonymous_scrape(tmp_path):
+    """COMPATIBILITÉ : jeton configuré = scrape sans session, comme avant (Prometheus)."""
+    with TestClient(create_app(_secured(tmp_path, metrics_token="scrape-secret"))) as c:
+        r = c.get("/metrics", headers={"Authorization": "Bearer scrape-secret"})
+        assert r.status_code == 200 and "itsm_http_requests_total" in r.text
+        assert c.get("/metrics").status_code == 401  # sans jeton, toujours refusé

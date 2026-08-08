@@ -104,3 +104,39 @@ async def test_healthcheck_uses_models_endpoint():
 def test_registry_selects_anthropic():
     llm = build_llm(provider="anthropic", base_url=BASE, api_key="k", model="claude-sonnet-4-6")
     assert isinstance(llm, AnthropicLlm)
+
+
+# ── Comptabilité des tokens & frontière stricte (audit fiabilité 2026-08) ─────
+
+
+@respx.mock
+async def test_missing_usage_is_estimated_not_zero(caplog):
+    """Sans bloc `usage`, l'adaptateur comptait 0 token → plafond de coût (FR-10)
+    aveugle. On exige une estimation non nulle et un warning explicite."""
+    respx.post(MSG).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "content": [{"type": "text", "text": '{"category":1,"priority":3,'
+                             '"technician_id":11,"draft":"ok","confidence":0.9}'}],
+            },
+        )
+    )
+    with caplog.at_level("WARNING"):
+        result = await _adapter().complete("sys", "un prompt utilisateur réaliste")
+    assert result.prompt_tokens > 0 and result.completion_tokens > 0
+    assert "usage.input_tokens absent" in caplog.text
+    assert "usage.output_tokens absent" in caplog.text
+
+
+@respx.mock
+async def test_boolean_category_is_rejected():
+    """`{"category": true}` ne doit plus devenir `category=1` (validation stricte)."""
+    respx.post(MSG).mock(
+        return_value=_msg_response(
+            '{"category": true, "priority": 3, "technician_id": 11, '
+            '"draft": "x", "confidence": 0.9}'
+        )
+    )
+    with pytest.raises(LlmResponseError):
+        await _adapter().complete("sys", "user")

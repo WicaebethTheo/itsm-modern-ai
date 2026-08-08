@@ -3,7 +3,13 @@
 # L'admin est amorcé au 1er boot depuis cette variable. NE JAMAIS faire `down -v` (supprime itsm_data).
 services:
   itsm:
-    image: ghcr.io/wicaebeththeo/itsm-modern-ai:latest
+    # Tag PARAMÉTRABLE. Défaut `latest` — assumé pour la voie « coller le stack et
+    # déployer » : c'est le seul tag qui reste juste dans un YAML copié dans un wiki,
+    # un ticket ou une capture d'écran, et la mise à jour se fait explicitement
+    # (Portainer > Pull and redeploy). Épingler une version = définir ITSM_IMAGE_TAG
+    # (ex. 0.9.47) dans les variables du stack : recommandé dès qu'on veut des mises à
+    # jour maîtrisées. Les tags semver X.Y.Z et X.Y sont publiés par docker-publish.yml.
+    image: ghcr.io/wicaebeththeo/itsm-modern-ai:${ITSM_IMAGE_TAG:-latest}
     container_name: itsm-modern-ai
     restart: unless-stopped
     environment:
@@ -21,12 +27,35 @@ services:
     cap_add: ["CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID"]
     read_only: true
     tmpfs: ["/tmp"]
+    # Sonde de VIVACITÉ uniquement (processus + base) : /health/live ne fait AUCUN appel
+    # sortant. L'ancienne sonde `/health?probe=true` interrogeait GLPI ET le fournisseur
+    # LLM toutes les 30 s (~2 880 sessions GLPI + 2 880 appels sortants/jour) et rendait
+    # le conteneur `unhealthy` sur un incident FOURNISSEUR — inoffensif sous compose,
+    # destructeur sous Swarm/k8s/autoheal (redémarrages en boucle d'un moteur SAIN).
+    # L'état GLPI/LLM reste consultable dans la console (/health, /api/status).
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health?probe=true').status==200 else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health/live', timeout=4).status==200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+    # Bornage CPU/mémoire — aligné sur docker-compose.yml (anti-emballement sur hôte
+    # mutualisé). Compose v2 applique `deploy.resources.limits` hors Swarm.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M
+    # Rotation des logs OBLIGATOIRE : sans elle, le driver json-file par défaut est
+    # NON borné et remplit le disque en quelques mois. Disque plein = la base ne peut
+    # plus écrire → le plafond de coût LLM ne peut plus être comptabilisé.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   itsm_data:

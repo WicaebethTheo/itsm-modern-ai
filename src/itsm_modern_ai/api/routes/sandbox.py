@@ -9,11 +9,10 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...domain import masking
 from ...persistence import db, journal
 from ...services import cost_cap, referentials
 from ...services.runtime_config import RuntimeConfigService
-from ..runtime import build_triage_service
+from ..runtime import build_triage_service, mask_for_journal
 
 router = APIRouter(prefix="/api", tags=["sandbox"])
 
@@ -75,15 +74,22 @@ async def sandbox(body: SandboxRequest, request: Request) -> SandboxResponse:
         refs = referentials.effective_referentials(session)
     outcome, result = await triage.evaluate_text(0, raw, refs)
     # Journalise l'appel LLM (FR-19) même en sandbox → visible dans /api/cost et compté
-    # dans le cost cap. ticket_id=0 marque une décision hors-ticket (sandbox). Le prompt
-    # journalisé est masqué (jamais de PII au repos).
+    # dans le cost cap. ticket_id=0 marque une décision hors-ticket (sandbox).
+    #
+    # Le prompt journalisé est masqué avec EXACTEMENT les réglages du service (flags gatés
+    # Supporter + passe avancée), via `mask_for_journal`. Il reflète donc ce qui est SORTI :
+    # en Community, IBAN/secrets/IP y figurent en clair — c'est la réalité de l'envoi, et
+    # c'est ce que la trace doit prouver. Journaliser avec les flags PAR DÉFAUT (tous actifs)
+    # produisait l'inverse : un journal affichant `[IBAN]`/`[SECRET]`/`[IP]` pour des données
+    # parties en clair, soit une preuve d'audit qui ment à la DPO — précisément sur les
+    # catégories que `docs/dpo.md` signale comme NON masquées en Community.
     if result is not None:
         with db.session_scope() as session:
             journal.record_llm_call(
                 session,
                 ticket_id=0,
                 model=result.model,
-                prompt_sent=masking.mask(raw).text,
+                prompt_sent=mask_for_journal(triage, raw),
                 response_received=result.raw_response,
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,

@@ -137,3 +137,37 @@ def test_llm_prices_editable_via_config(client):
 
 def test_negative_price_rejected(client):
     assert client.post("/api/config", json={"llm_price_input_per_mtok": -1}).status_code == 422
+
+
+# ── Journal d'audit des actions d'administration (durcissement audit 2026-08) ──
+def test_config_write_is_audited_with_client_ip(tmp_path):
+    """Toute écriture passant par l'API doit être imputable à une adresse (RSSI)."""
+    from cryptography.fernet import Fernet
+    from fastapi.testclient import TestClient
+    from sqlmodel import select
+
+    from itsm_modern_ai.api.app import create_app
+    from itsm_modern_ai.config.settings import Settings
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import AuditLog
+
+    settings = Settings(
+        _env_file=None,
+        database_url=f"sqlite:///{tmp_path / 'audit-api.db'}",
+        master_key=Fernet.generate_key().decode(),
+        polling_enabled=False,
+        dev_open_admin=True,
+        frontend_dist=str(tmp_path / "dist"),
+    )
+    with TestClient(create_app(settings)) as c:
+        assert c.post("/api/config", json={"execution_mode_default": "full_auto"}).status_code == 200
+        assert c.post("/api/config", json={"llm_api_key": "sk-ne-doit-pas-fuiter"}).status_code == 200
+
+    with db.session_scope() as s:
+        rows = list(s.exec(select(AuditLog).order_by(AuditLog.id)))
+    assert [(r.action, r.key, r.new_value) for r in rows] == [
+        ("config.set", "execution_mode_default", "full_auto"),
+        ("config.set_secret", "llm_api_key", "***"),
+    ]
+    # L'acteur est l'IP vue par le serveur (TestClient s'annonce « testclient »).
+    assert all(r.actor == "testclient" for r in rows)

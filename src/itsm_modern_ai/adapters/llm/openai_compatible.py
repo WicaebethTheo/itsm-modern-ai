@@ -12,14 +12,17 @@ Validation Pydantic de la sortie à CETTE frontière (architecture : validation
 from __future__ import annotations
 
 import json
+import logging
 
 import httpx
-from pydantic import ValidationError
 
 from ...domain.errors import LlmResponseError
-from ...domain.models import Decision
 from ...ports.llm import LlmResult
+from ._decision import parse_decision
 from ._http import arequest, healthcheck_get, make_guarded_event_hooks
+from ._usage import tokens_or_estimate
+
+logger = logging.getLogger("itsm.llm.openai")
 
 # Borne de génération (LLM10 — Unbounded Consumption). La sortie attendue est un petit
 # objet JSON Décision ; 1024 tokens suffisent largement et plafonnent le coût/latence en
@@ -52,6 +55,12 @@ class OpenAiCompatibleLlm:
         # Garde anti-SSRF appliqué aux clients éphémères (cf. settings.ssrf_guard_enabled).
         self._event_hooks = make_guarded_event_hooks(guard=ssrf_guard, allow_local=allow_local)
         self._client = client
+
+    @property
+    def model(self) -> str:
+        """Modèle configuré — exposé pour que le moteur puisse journaliser un appel
+        ÉCHOUÉ (aucune `LlmResult` n'existe alors pour porter le nom du modèle)."""
+        return self._model
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._api_key}"}
@@ -111,15 +120,21 @@ class OpenAiCompatibleLlm:
         except json.JSONDecodeError as exc:
             raise LlmResponseError(f"JSON non parsable: {exc}") from exc
 
-        try:
-            decision = Decision.model_validate(data)
-        except ValidationError as exc:
-            raise LlmResponseError(f"Décision non conforme au schéma: {exc}") from exc
+        # Validation STRICTE après coercition explicite des nombres (cf. `_decision.py`).
+        decision = parse_decision(data)
 
+        # Comptabilité : jamais de 0 silencieux (cf. `_usage.py`). Le prompt facturé est
+        # la somme system + user (ce qui est réellement parti dans `messages`).
         return LlmResult(
             decision=decision,
             model=self._model,
-            prompt_tokens=usage.get("prompt_tokens", 0),
-            completion_tokens=usage.get("completion_tokens", 0),
+            prompt_tokens=tokens_or_estimate(
+                usage, "prompt_tokens", f"{system_prompt}\n{user_prompt}",
+                logger=logger, model=self._model, label="prompt",
+            ),
+            completion_tokens=tokens_or_estimate(
+                usage, "completion_tokens", content,
+                logger=logger, model=self._model, label="complétion",
+            ),
             raw_response=content,
         )

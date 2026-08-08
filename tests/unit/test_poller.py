@@ -126,3 +126,159 @@ async def test_no_entity_scope_processes_all(temp_db):
     itsm = FakeItsm([Ticket(id=1, content="x", entity_id=7)], refs=refs)
     stats = await TriagePoller(itsm, WhitelistCache()).poll_once()
     assert stats.processed_new == 1 and stats.skipped_out_of_scope == 0
+
+
+# ── Audit fiabilité 2026-08 : ne plus brûler un Ticket non trié ───────────────
+
+from itsm_modern_ai.domain.models import HandlerOutcome, TriageReason  # noqa: E402
+from itsm_modern_ai.scheduler import poller as poller_mod  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _clean_attempts():
+    """Le compteur d'essais vit au niveau module (le poller est recréé à chaque cycle)."""
+    poller_mod.reset_attempts()
+    yield
+    poller_mod.reset_attempts()
+
+
+async def test_cost_cap_does_not_consume_the_ticket(temp_db):
+    """Plafond atteint → le Ticket doit rester en file (il n'a jamais été trié).
+
+    Avant : `mark_processed` était appelé quel que soit le résultat → tous les Tickets
+    de la fenêtre étaient brûlés définitivement, sans écran pour les rejouer.
+    """
+    async def handler(ticket, refs):
+        return HandlerOutcome(retryable=True, reason=TriageReason.COST_CAP_REACHED)
+
+    itsm = FakeItsm([Ticket(id=1, content="x")])
+    poller = TriagePoller(itsm, WhitelistCache(), handler=handler)
+    stats = await poller.poll_once()
+    assert stats.processed_new == 0
+    # Cycle suivant : le Ticket est TOUJOURS là (jamais marqué traité).
+    stats2 = await poller.poll_once()
+    assert stats2.skipped_already_done == 0 and stats2.fetched == 1
+
+
+async def test_cost_cap_never_burns_an_attempt(temp_db):
+    """Un report GRATUIT (aucun appel émis) ne doit pas consommer d'essai : sinon un
+    plafond atteint quelques cycles d'affilée finirait par consommer l'arriéré."""
+    async def handler(ticket, refs):
+        return HandlerOutcome(retryable=True, reason=TriageReason.COST_CAP_REACHED)
+
+    itsm = FakeItsm([Ticket(id=1, content="x")])
+    poller = TriagePoller(itsm, WhitelistCache(), handler=handler)
+    for _ in range(poller_mod.MAX_TRIAGE_ATTEMPTS + 3):
+        await poller.poll_once()
+    stats = await poller.poll_once()
+    assert stats.skipped_already_done == 0  # jamais consommé
+
+
+async def test_llm_error_is_retried_then_abandoned_after_bounded_attempts(temp_db):
+    """Panne LLM / sortie invalide : le Ticket est rejoué… mais pas éternellement.
+
+    Un Ticket systématiquement invalide serait re-facturé sans fin : le compteur borné
+    (`MAX_TRIAGE_ATTEMPTS`) le consomme après N tentatives coûteuses, en laissant une
+    ligne « à trier » par tentative au Journal.
+    """
+    seen: list[int] = []
+
+    async def handler(ticket, refs):
+        seen.append(ticket.id)
+        return HandlerOutcome(retryable=True, costly=True, reason=TriageReason.INVALID_OUTPUT)
+
+    itsm = FakeItsm([Ticket(id=1, content="x")])
+    poller = TriagePoller(itsm, WhitelistCache(), handler=handler)
+    for _ in range(poller_mod.MAX_TRIAGE_ATTEMPTS):
+        await poller.poll_once()
+    assert len(seen) == poller_mod.MAX_TRIAGE_ATTEMPTS  # rejoué à chaque cycle
+    stats = await poller.poll_once()
+    assert stats.skipped_already_done == 1  # puis abandonné (plus aucun appel facturé)
+    assert len(seen) == poller_mod.MAX_TRIAGE_ATTEMPTS
+
+
+async def test_successful_triage_still_marks_processed(temp_db):
+    """Non-régression : un arbitrage rendu (même « à trier » pour faible confiance)
+    consomme bien le Ticket — seuls les triages NON EFFECTUÉS sont reportés."""
+    async def handler(ticket, refs):
+        return HandlerOutcome(followup_written=True, reason=TriageReason.ACCEPTED)
+
+    itsm = FakeItsm([Ticket(id=1, content="x")])
+    poller = TriagePoller(itsm, WhitelistCache(), handler=handler)
+    assert (await poller.poll_once()).processed_new == 1
+    assert (await poller.poll_once()).skipped_already_done == 1
+
+
+async def test_db_write_failures_trip_the_circuit_breaker(temp_db):
+    """Disque plein / volume RO : `mark_processed` échoue → le Ticket est repayé à chaque
+    cycle et le plafond reste aveugle (ses insertions échouent aussi). Au-delà de N échecs
+    consécutifs, le cycle DOIT s'interrompre au lieu de continuer à facturer."""
+    handled: list[int] = []
+
+    async def handler(ticket, refs):
+        handled.append(ticket.id)
+        return HandlerOutcome(followup_written=True)
+
+    def boom(session, ticket_id, **kw):
+        raise RuntimeError("attempt to write a readonly database")
+
+    from itsm_modern_ai.persistence import idempotency
+
+    real = idempotency.mark_processed
+    idempotency.mark_processed = boom
+    try:
+        tickets = [Ticket(id=i, content="x") for i in range(1, 11)]
+        stats = await TriagePoller(FakeItsm(tickets), WhitelistCache(), handler=handler).poll_once()
+    finally:
+        idempotency.mark_processed = real
+    # Le cycle est coupé : on n'a PAS appelé le handler pour les 10 tickets.
+    assert len(handled) == poller_mod.MAX_CONSECUTIVE_DB_FAILURES
+    assert "échecs d'écriture en base" in stats.error_message
+
+
+async def test_poll_stats_are_persisted_for_observability(temp_db):
+    """`PollStats` était jeté après un `logger.info` : la seule réponse à « pourquoi
+    aucun ticket n'est trié ? » n'était lisible que dans `docker logs`."""
+    from itsm_modern_ai.persistence import db as _db
+    from itsm_modern_ai.scheduler.poller import _plain_runtime_config
+
+    itsm = FakeItsm([Ticket(id=1, content="x"), Ticket(id=2, content="y")])
+    await TriagePoller(itsm, WhitelistCache()).poll_once()
+    with _db.session_scope() as s:
+        cfg = _plain_runtime_config(s)
+        assert cfg.get("poll_last_run_at")
+        assert cfg.get_int("poll_last_fetched", -1) == 2
+        assert cfg.get_int("poll_last_processed", -1) == 2
+        assert cfg.get_int("poll_last_errors", -1) == 0
+
+
+async def test_empty_scope_reason_is_persisted(temp_db):
+    """Le symptôme n°1 (« périmètre vide ») doit être lisible sans ouvrir les logs."""
+    from itsm_modern_ai.persistence import db as _db
+    from itsm_modern_ai.scheduler.poller import _plain_runtime_config
+
+    empty_refs = Referentials(categories={}, technicians={11: "Syl"})
+    itsm = FakeItsm([Ticket(id=1, content="x")], refs=empty_refs)
+    await TriagePoller(itsm, WhitelistCache()).poll_once()
+    with _db.session_scope() as s:
+        assert "Aucune catégorie" in (_plain_runtime_config(s).get("poll_last_error_message") or "")
+
+
+async def test_crashing_handler_is_also_bounded(temp_db):
+    """Une exception non gérée après l'appel LLM (mutation GLPI qui échoue en boucle)
+    est re-facturée à chaque cycle : elle doit consommer un essai, comme un triage non
+    abouti — sinon le Ticket reste éternellement dans la file."""
+    calls: list[int] = []
+
+    async def handler(ticket, refs):
+        calls.append(ticket.id)
+        raise RuntimeError("GLPI 500 permanent")
+
+    itsm = FakeItsm([Ticket(id=1, content="x")])
+    poller = TriagePoller(itsm, WhitelistCache(), handler=handler)
+    for _ in range(poller_mod.MAX_TRIAGE_ATTEMPTS):
+        await poller.poll_once()
+    assert len(calls) == poller_mod.MAX_TRIAGE_ATTEMPTS
+    stats = await poller.poll_once()
+    assert stats.skipped_already_done == 1  # abandonné, plus aucun appel facturé
+    assert len(calls) == poller_mod.MAX_TRIAGE_ATTEMPTS

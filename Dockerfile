@@ -81,10 +81,13 @@ COPY --from=ui --chown=app:app /ui/dist ./frontend/dist
 EXPOSE 8000
 
 # Healthcheck intégré : la voie `docker run` nue n'a aucun compose pour en fournir
-# un (les composes gardent le leur, qui override celui-ci). /health SANS ?probe=true :
-# la sonde profonde (DB, GLPI…) serait trop coûteuse répétée toutes les 30 s.
+# un (les composes gardent le leur, qui override celui-ci). On sonde /health/live —
+# VIVACITÉ seule (processus + base), zéro appel sortant. /health (même sans ?probe=true)
+# ouvre une session GLPI à chaque passage : toutes les 30 s cela fait ~2 880 sessions
+# par jour, et un GLPI momentanément injoignable marquait `unhealthy` un moteur SAIN
+# (redémarrages en boucle sous Swarm/k8s/autoheal).
 # urllib plutôt que curl : déjà dans l'image, zéro dépendance apt en plus.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=4)"
 
 ENTRYPOINT ["./docker/entrypoint.sh"]

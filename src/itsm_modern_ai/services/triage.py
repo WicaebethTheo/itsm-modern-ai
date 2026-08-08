@@ -16,6 +16,7 @@ import html as _html
 import logging
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from dataclasses import dataclass, field
 
 import anyio
 from sqlmodel import Session
@@ -24,11 +25,13 @@ from ..config.settings import Settings
 from ..domain import engine, masking, prompting, whitelist
 from ..domain.errors import LlmResponseError, LlmTransportError
 from ..domain.models import (
+    HandlerOutcome,
     Priority,
     Referentials,
     Ticket,
     TriageOutcome,
     TriageReason,
+    estimate_tokens,
 )
 from ..domain.modes import ExecutionMode, resolve_action
 from ..persistence import journal
@@ -51,6 +54,42 @@ PUBLIC_DRAFT_MAX_CHARS = 4000
 # loop (le poller continue). Alias module (`_sleep`) monkeypatchable en test.
 LLM_RETRY_BACKOFF_S: tuple[float, ...] = (0.5, 1.5)
 _sleep = anyio.sleep
+
+# Préfixe des lignes `llm_calls` correspondant à une tentative ÉCHOUÉE. On réutilise
+# `response_received` plutôt que d'ajouter une colonne : pas de migration, l'export CSV
+# DPO reste lisible tel quel, et surtout le COÛT atterrit dans la même colonne que celle
+# lue par le plafond (FR-10) — c'est tout l'objet du correctif. Le préfixe est explicite
+# et grep-able ; une ligne d'échec se reconnaît aussi à `completion_tokens = 0`.
+LLM_FAILURE_PREFIX = "[ÉCHEC LLM]"
+
+# Raisons pour lesquelles le triage N'A PAS EU LIEU : le Ticket ne doit pas être consommé.
+# `ACCEPTED`, `LOW_CONFIDENCE` et les rejets de whitelist sont au contraire des ARBITRAGES
+# rendus — le Ticket a été vu, la Décision est au Journal, il est légitimement traité.
+RETRYABLE_REASONS = frozenset(
+    {TriageReason.COST_CAP_REACHED, TriageReason.LLM_ERROR, TriageReason.INVALID_OUTPUT}
+)
+
+
+@dataclass(slots=True)
+class _LlmTrace:
+    """Ce qu'on sait des appels LLM RÉELLEMENT ÉMIS, y compris quand ils ont échoué.
+
+    Une tentative partie chez le fournisseur est FACTURÉE même si sa réponse est
+    rejetée au parsing (les tokens ont été générés) ou si le transport casse après
+    l'envoi. Sans cette trace, `handle()` n'avait rien à journaliser en cas d'échec.
+    """
+
+    prompt_sent: str = ""  # prompt masqué réellement envoyé (journalisable tel quel)
+    failures: list[str] = field(default_factory=list)  # une entrée par tentative échouée
+
+
+@dataclass(slots=True)
+class _PersistResult:
+    """Issue de la persistance d'un `TriageOutcome` (mutation + Suivi + Journal)."""
+
+    wrote: bool = False  # un Suivi a été déposé
+    db_error: bool = False  # une écriture en base a échoué (alimente le circuit-breaker)
+    partial_mutation: bool = False  # GLPI muté à moitié → surtout ne pas rejouer
 
 
 def rules_fully_handled(ticket: Ticket) -> bool:
@@ -163,13 +202,21 @@ class TriageService:
         """Passe de masquage Supporter après le masque de base (no-op sans licence)."""
         return self._advanced_masker.mask(text) if self._advanced_masker is not None else text
 
-    async def _call_llm(self, system: str, user: str) -> LlmResult:
+    @property
+    def _model_name(self) -> str:
+        """Nom du modèle courant, pour journaliser un appel ÉCHOUÉ (pas de `LlmResult`)."""
+        return getattr(self._llm, "model", "") or "inconnu"
+
+    async def _call_llm(self, system: str, user: str, trace: _LlmTrace) -> LlmResult:
         """Appel LLM avec retry borné (FR-9) + backoff court.
 
         On retente aussi bien les erreurs de transport (réseau/429) que les réponses
         invalides (`LlmResponseError` : JSON malformé, schéma KO, `content: null` d'un
         filtre de contenu) — la docstring de `LlmResponseError` promet « après retry »,
         et une sortie non conforme est souvent transitoire (bavardage, troncature).
+
+        Chaque tentative échouée est POUSSÉE dans `trace.failures` : elle est partie sur
+        le réseau, donc potentiellement facturée, et devra apparaître dans `llm_calls`.
         """
         last: Exception | None = None
         for attempt in range(self._retries + 1):
@@ -179,35 +226,50 @@ class TriageService:
                 return await self._llm.complete(system, user)
             except (LlmTransportError, LlmResponseError) as exc:
                 last = exc
+                trace.failures.append(f"{type(exc).__name__}: {exc}")
         raise last  # type: ignore[misc]
 
-    async def evaluate_text(
+    async def _evaluate(
         self, ticket_id: int, raw_text: str, refs: Referentials
-    ) -> tuple[TriageOutcome, LlmResult | None]:
-        """Masquage → LLM → Pydantic → Whitelist → seuil. N'écrit RIEN (sandbox-safe)."""
+    ) -> tuple[TriageOutcome, LlmResult | None, _LlmTrace]:
+        """Masquage → LLM → Pydantic → Whitelist → seuil. N'écrit RIEN (sandbox-safe).
+
+        Renvoie en plus la trace des tentatives : `handle()` en a besoin pour comptabiliser
+        les appels facturés même quand aucune `LlmResult` n'est revenue.
+        """
         masked = masking.mask(raw_text, **self._mask_flags)
         system = self._system_prompt
         user = prompting.build_user_prompt(
             self._advanced(masked.text), refs, self._profiles, self._guidance
         )
+        # Ce qui part au fournisseur EST déjà masqué : on le journalise tel quel plutôt
+        # que de re-masquer le texte brut une seconde fois (et de risquer un écart).
+        trace = _LlmTrace(prompt_sent=self._advanced(masked.text))
         try:
-            result = await self._call_llm(system, user)
+            result = await self._call_llm(system, user, trace)
         except LlmResponseError as exc:
             # Sortie LLM invalide après garde-fous (JSON malformé, schéma KO). Tracé pour
             # diagnostiquer côté admin sans exposer le détail au client.
             logger.warning("triage: réponse LLM invalide (ticket=%s): %s", ticket_id, exc)
-            return TriageOutcome(accepted=False, reason=TriageReason.INVALID_OUTPUT), None
+            return TriageOutcome(accepted=False, reason=TriageReason.INVALID_OUTPUT), None, trace
         except LlmTransportError as exc:
             # Réseau/clé/quota : visible dans les logs pour qualifier la panne — la sandbox
             # ne remontait qu'un `reason=llm_error` opaque sans la cause exacte.
             logger.warning("triage: appel LLM échoué (ticket=%s): %s", ticket_id, exc)
-            return TriageOutcome(accepted=False, reason=TriageReason.LLM_ERROR), None
+            return TriageOutcome(accepted=False, reason=TriageReason.LLM_ERROR), None, trace
 
         outcome = engine.evaluate(result.decision, refs, self._confidence_threshold)
+        return outcome, result, trace
+
+    async def evaluate_text(
+        self, ticket_id: int, raw_text: str, refs: Referentials
+    ) -> tuple[TriageOutcome, LlmResult | None]:
+        """Façade historique (sandbox) : évaluation sans trace de facturation."""
+        outcome, result, _ = await self._evaluate(ticket_id, raw_text, refs)
         return outcome, result
 
-    async def handle(self, ticket: Ticket, refs: Referentials) -> bool:
-        """Handler du poller. Renvoie True si un Suivi a été écrit.
+    async def handle(self, ticket: Ticket, refs: Referentials) -> HandlerOutcome:
+        """Handler du poller. Voir `HandlerOutcome` pour le contrat rendu.
 
         Orchestration à ordre immuable (cf. docstring du module) ; chaque étape est
         déléguée à une méthode dédiée pour la lisibilité, sans changer l'enchaînement.
@@ -215,54 +277,121 @@ class TriageService:
         # Étage 1 (FR-5) : déjà traité par une règle GLPI → pas d'appel LLM.
         if rules_fully_handled(ticket):
             logger.info("ticket %s déjà traité par règle GLPI → skip moteur", ticket.id)
-            return False
+            return HandlerOutcome()
 
         # Cost cap (FR-10) AVANT tout appel facturant.
-        if self._cost_cap_reached(ticket):
-            return False
+        capped, cap_db_error = self._cost_cap_reached(ticket)
+        if capped:
+            # Le triage N'A PAS EU LIEU : aucun appel n'a été émis, aucune Décision rendue.
+            # Le Ticket doit rester repris au cycle suivant — et il ne consomme AUCUN essai
+            # (`costly=False`) : un plafond atteint ne coûte rien, il n'y a donc pas de
+            # boucle facturée à borner, seulement un arriéré à rejouer une fois la fenêtre
+            # de 24 h passée (ou le plafond relevé depuis la console).
+            return HandlerOutcome(
+                retryable=True, db_error=cap_db_error, reason=TriageReason.COST_CAP_REACHED
+            )
 
         raw_text = f"{ticket.title}\n{ticket.content}".strip()
-        outcome, result = await self.evaluate_text(ticket.id, raw_text, refs)
+        outcome, result, trace = await self._evaluate(ticket.id, raw_text, refs)
 
-        if result is not None:
-            self._journal_llm_call(ticket, raw_text, result)
+        journal_db_error = self._journal_llm_calls(ticket, trace, result)
+        persisted = await self._persist_outcome(ticket, outcome, refs)
 
-        return await self._persist_outcome(ticket, outcome, refs)
+        # Une mutation partielle (GLPI V2) interdit le rejeu, quelle que soit la raison :
+        # le Ticket a DÉJÀ bougé, le rejouer le muterait deux fois et le re-facturerait.
+        retryable = outcome.reason in RETRYABLE_REASONS and not persisted.partial_mutation
+        return HandlerOutcome(
+            followup_written=persisted.wrote,
+            retryable=retryable,
+            costly=True,  # au moins une tentative est partie chez le fournisseur
+            db_error=journal_db_error or persisted.db_error,
+            reason=outcome.reason,
+        )
 
-    def _cost_cap_reached(self, ticket: Ticket) -> bool:
-        """Cost cap (FR-10) : True si atteint. Journalise alors « à trier »."""
-        with self._session_factory() as session:
-            if cost_cap.is_over_cap(session, self._cost_cap_eur_per_day):
+    def _cost_cap_reached(self, ticket: Ticket) -> tuple[bool, bool]:
+        """Cost cap (FR-10) : (atteint ?, échec d'écriture ?). Journalise « à trier »."""
+        try:
+            with self._session_factory() as session:
+                if not cost_cap.is_over_cap(session, self._cost_cap_eur_per_day):
+                    return False, False
                 journal.record_decision(
                     session, ticket.id,
                     TriageOutcome(accepted=False, reason=TriageReason.COST_CAP_REACHED),
                     subject=ticket.title,
                 )
-                logger.warning("cost cap atteint → ticket %s en « à trier »", ticket.id)
-                return True
-        return False
+            logger.warning("cost cap atteint → ticket %s en « à trier »", ticket.id)
+            return True, False
+        except Exception as exc:
+            # Base indisponible (disque plein, volume en lecture seule) : on NE PEUT PAS
+            # savoir si le plafond est atteint. Défaut sûr = considérer qu'il l'est, donc
+            # ne lancer AUCUN appel facturant — c'est précisément le scénario où le cap
+            # devenait aveugle (les insertions `llm_calls` échouent aussi) et où le moteur
+            # rejouait 5 appels par cycle, indéfiniment. Le poller prend le relais avec
+            # son circuit-breaker via `db_error`.
+            logger.error(
+                "triage: plafond de coût non vérifiable (base en échec, ticket=%s): %s "
+                "→ aucun appel LLM lancé (défaut sûr)", ticket.id, exc,
+            )
+            return True, True
 
-    def _journal_llm_call(self, ticket: Ticket, raw_text: str, result: LlmResult) -> None:
-        """Journalise l'appel LLM (FR-19) — contenu masqué, coût pour le cap."""
+    def _journal_llm_calls(
+        self, ticket: Ticket, trace: _LlmTrace, result: LlmResult | None
+    ) -> bool:
+        """Journalise TOUTES les tentatives LLM émises (FR-19). True si l'écriture a échoué.
+
+        POURQUOI les échecs aussi : `_journal_llm_call` ne s'exécutait que si une
+        `LlmResult` était revenue. Or une tentative rejetée au parsing (`LlmResponseError`)
+        ou cassée en transport a bel et bien consommé des tokens chez le fournisseur.
+        Résultat mesuré : 50 tickets, 150 appels réels, **0 ligne en base**, `is_over_cap`
+        systématiquement False — le plafond (FR-10) ne pouvait jamais se déclencher.
+
+        Une ligne par TENTATIVE (et non par ticket) : c'est le nombre d'appels réellement
+        facturés, et `count_llm_calls` cesse de mentir. Coût d'un échec : tokens du prompt
+        ESTIMÉS (on connaît exactement le texte envoyé) et complétion à 0 — la sortie
+        rejetée n'est pas récupérable, on préfère sous-estimer que d'inventer un volume.
+        """
         price_in = self._settings.llm_price_input_per_mtok
         price_out = self._settings.llm_price_output_per_mtok
-        with self._session_factory() as session:
-            journal.record_llm_call(
-                session,
-                ticket_id=ticket.id,
-                model=result.model,
-                prompt_sent=self._advanced(masking.mask(raw_text, **self._mask_flags).text),
-                response_received=result.raw_response,
-                prompt_tokens=result.prompt_tokens,
-                completion_tokens=result.completion_tokens,
-                cost_eur=cost_cap.cost_eur(
-                    result.prompt_tokens, result.completion_tokens, price_in, price_out
-                ),
+        total = len(trace.failures) + (1 if result is not None else 0)
+        prompt_tokens_est = estimate_tokens(trace.prompt_sent)
+        try:
+            with self._session_factory() as session:
+                for i, failure in enumerate(trace.failures, start=1):
+                    journal.record_llm_call(
+                        session,
+                        ticket_id=ticket.id,
+                        model=self._model_name,
+                        prompt_sent=trace.prompt_sent,
+                        response_received=f"{LLM_FAILURE_PREFIX} tentative {i}/{total} — {failure}",
+                        prompt_tokens=prompt_tokens_est,
+                        completion_tokens=0,
+                        cost_eur=cost_cap.cost_eur(prompt_tokens_est, 0, price_in, price_out),
+                    )
+                if result is not None:
+                    journal.record_llm_call(
+                        session,
+                        ticket_id=ticket.id,
+                        model=result.model,
+                        prompt_sent=trace.prompt_sent,
+                        response_received=result.raw_response,
+                        prompt_tokens=result.prompt_tokens,
+                        completion_tokens=result.completion_tokens,
+                        cost_eur=cost_cap.cost_eur(
+                            result.prompt_tokens, result.completion_tokens, price_in, price_out
+                        ),
+                    )
+            return False
+        except Exception as exc:
+            # Ne pas laisser remonter : sinon le Ticket n'est jamais marqué et l'appel est
+            # re-facturé à chaque cycle. On signale l'échec au poller (circuit-breaker).
+            logger.error(
+                "triage: journalisation des appels LLM échouée (ticket=%s): %s", ticket.id, exc
             )
+            return True
 
     async def _persist_outcome(
         self, ticket: Ticket, outcome: TriageOutcome, refs: Referentials
-    ) -> bool:
+    ) -> _PersistResult:
         """Applique la Décision selon le mode du périmètre, puis journalise (FR-17).
 
         Mode du périmètre (par entité, défaut global) → `resolve_action` :
@@ -275,6 +404,7 @@ class TriageService:
         mode = self._default_mode
         applied = False
         wrote = False
+        partial_error = ""  # message d'une mutation GLPI partielle (annotation Journal)
 
         if outcome.accepted:
             if self._itsm is None:
@@ -294,17 +424,34 @@ class TriageService:
             # mutation et le Suivi → pas de divergence GLPI/Journal.
             tech_id, group_id = whitelist.effective_assignment(d, refs)
             if action.apply:  # modes semi/full-auto : mutation réelle du Ticket
-                # Si apply échoue : rien n'a été muté → on laisse l'exception remonter
-                # (ticket non marqué « traité », repris au cycle suivant, sans état partiel).
-                await self._itsm.apply_decision(
-                    ticket.id,
-                    category=d.category,
-                    priority=d.priority,
-                    technician_id=tech_id,
-                    group_id=group_id,
-                )
-                applied = True
-            if action.write_followup:  # toujours pour une Décision acceptée
+                # CORRECTION du commentaire d'origine, qui était FAUX : « si apply échoue,
+                # rien n'a été muté » ne vaut que pour le connecteur legacy (un seul PATCH).
+                # L'API GLPI V2 fait DEUX appels réseau (PATCH des champs, puis POST
+                # TeamMember) : un échec du second laisse le Ticket muté dans GLPI. On ne
+                # peut pas rendre GLPI transactionnel, alors on rend l'état OBSERVABLE
+                # (annotation au Journal) et NON-BOUCLANT (le Ticket est consommé) — sinon
+                # il serait re-muté ET re-facturé à chaque cycle, sans une seule trace.
+                # Un échec « propre » (rien n'a bougé) remonte, lui, tel quel : le Ticket
+                # reste rejouable, sous la protection du compteur d'essais du poller.
+                try:
+                    await self._itsm.apply_decision(
+                        ticket.id,
+                        category=d.category,
+                        priority=d.priority,
+                        technician_id=tech_id,
+                        group_id=group_id,
+                    )
+                    applied = True
+                except Exception as exc:
+                    if not getattr(exc, "partial_mutation", False):
+                        raise
+                    partial_error = f"{type(exc).__name__}: {exc}"
+                    applied = True  # GLPI A bougé : le Journal doit le dire (audit)
+                    logger.error(
+                        "triage: mutation GLPI PARTIELLE sur le ticket %s — état incohérent "
+                        "journalisé, ticket NON rejoué: %s", ticket.id, exc,
+                    )
+            if action.write_followup and not partial_error:  # Décision acceptée, état sain
                 # Le Suivi est un acte SECONDAIRE. Si la mutation a déjà eu lieu (applied),
                 # une exception ici NE doit PAS empêcher le marquage « traité » : sinon le
                 # cycle suivant re-muterait le Ticket → doublon (2e réponse publique). On
@@ -332,9 +479,31 @@ class TriageService:
 
         # Journal TOUJOURS écrit (FR-19/20) — y compris si le Suivi a échoué après une
         # mutation : la trace d'audit doit refléter l'acte réellement appliqué à GLPI.
-        with self._session_factory() as session:
-            journal.record_decision(
-                session, ticket.id, outcome, glpi_link=glpi_link, mode=mode.value,
-                applied=applied, subject=ticket.title,
+        # L'écriture est PROTÉGÉE au même titre que le Suivi juste au-dessus : une panne
+        # de base ici faisait remonter l'exception, le Ticket n'était jamais marqué et le
+        # cycle suivant produisait une suggestion DUPLIQUÉE + un appel LLM re-facturé.
+        # On avale donc l'échec, on le trace en ERROR et on le signale au poller (`db_error`),
+        # dont le circuit-breaker coupera le cycle si la base reste en échec.
+        db_error = False
+        try:
+            with self._session_factory() as session:
+                decision_id = journal.record_decision(
+                    session, ticket.id, outcome, glpi_link=glpi_link, mode=mode.value,
+                    applied=applied, subject=ticket.title,
+                )
+                if partial_error:
+                    # Seule trace lisible par l'admin de l'état réellement atteint dans
+                    # GLPI : catégorie/priorité posées, acteur NON assigné, aucun Suivi.
+                    journal.set_annotation(
+                        session, decision_id,
+                        "⚠️ Mutation GLPI PARTIELLE : champs appliqués, assignation de "
+                        f"l'acteur échouée — à terminer manuellement. Détail : {partial_error}",
+                    )
+        except Exception as exc:
+            db_error = True
+            logger.error(
+                "triage: journalisation de la Décision échouée (ticket=%s, applied=%s): %s "
+                "— la Décision est perdue pour l'audit, le Ticket reste marqué pour éviter "
+                "un doublon de suggestion.", ticket.id, applied, exc,
             )
-        return wrote
+        return _PersistResult(wrote=wrote, db_error=db_error, partial_mutation=bool(partial_error))

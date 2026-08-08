@@ -10,7 +10,7 @@ sur le réseau lirait la consommation et la volumétrie de l'instance.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, model_serializer
 from sqlmodel import Session
 
 from ...persistence import journal
@@ -20,6 +20,54 @@ from ..deps import get_session
 from ..security import session_is_authenticated
 
 router = APIRouter(prefix="/api", tags=["status"])
+
+
+_ERROR_MESSAGE_MAX_CHARS = 300  # même borne que `_detail_sur` (routes/debug.py)
+
+
+class LastPoll(BaseModel):
+    """État du DERNIER cycle de polling — bloc de diagnostic (session admin UNIQUEMENT).
+
+    `PollStats` n'existait que le temps d'un `logger.info` : la seule façon de répondre à
+    « pourquoi aucun ticket n'est trié ? » était d'ouvrir `docker logs`. Le poller persiste
+    désormais ces compteurs dans `RuntimeConfig` (clés `poll_last_*`), et on les rend ici.
+
+    « Aucun cycle n'a jamais tourné » est le symptôme n°1 à rendre visible (worker affiché
+    « En marche » alors que rien ne s'est exécuté). On l'exprime par `has_run: false` — un
+    booléen NON nul, qui survit à `response_model_exclude_none=True` — plutôt que par un
+    `last_poll: null` que ce même filtrage ferait disparaître, rendant « jamais exécuté »
+    indiscernable de « ce moteur n'expose pas encore le bloc ». La réponse ANONYME, elle,
+    n'a toujours aucune clé `last_poll` : le niveau public reste inchangé.
+    """
+
+    has_run: bool = False  # un cycle a-t-il déjà été exécuté ?
+    run_at: str | None = None  # ISO 8601 UTC
+    fetched: int = 0
+    processed: int = 0
+    skipped_done: int = 0
+    skipped_scope: int = 0
+    errors: int = 0
+    error_message: str | None = None
+
+    @model_serializer
+    def _serialize(self) -> dict[str, object]:
+        """Sérialisation EXPLICITE : les clés du bloc sont toujours présentes.
+
+        La route est en `response_model_exclude_none=True` (c'est ce qui garde la réponse
+        publique minimale), et cette exclusion est RÉCURSIVE : sans ce sérialiseur,
+        `error_message: null` disparaîtrait du bloc. Or « pas d'erreur » est une
+        information, pas une absence de champ — le contrat rendu à l'UI est stable.
+        """
+        return {
+            "has_run": self.has_run,
+            "run_at": self.run_at,
+            "fetched": self.fetched,
+            "processed": self.processed,
+            "skipped_done": self.skipped_done,
+            "skipped_scope": self.skipped_scope,
+            "errors": self.errors,
+            "error_message": self.error_message,
+        }
 
 
 class Status(BaseModel):
@@ -35,6 +83,10 @@ class Status(BaseModel):
     llm_calls_total: int | None = None
     cost_eur_last_24h: float | None = None
     cost_cap_eur_per_day: float | None = None
+    # Bloc de diagnostic du dernier cycle — jamais exposé à un anonyme (volumétrie et
+    # message d'erreur = reconnaissance offerte). Absent = appelant non authentifié ;
+    # présent avec `has_run: false` = authentifié, aucun cycle encore exécuté.
+    last_poll: LastPoll | None = None
 
 
 @router.get("/status", response_model=Status, response_model_exclude_none=True)
@@ -63,4 +115,32 @@ def status(request: Request, session: Session = Depends(get_session)) -> Status:
     body.llm_calls_total = journal.count_llm_calls(session)
     body.cost_eur_last_24h = round(cost_cap.spent_last_24h(session), 4)
     body.cost_cap_eur_per_day = cfg.get_float("cost_cap_eur_per_day", settings.cost_cap_eur_per_day)
+    body.last_poll = _last_poll(cfg)
     return body
+
+
+def _last_poll(cfg: RuntimeConfigService) -> LastPoll:
+    """Relit l'état du dernier cycle persisté par le poller.
+
+    Renvoie TOUJOURS un objet : `has_run=False` est l'état explicite « aucun cycle n'a
+    jamais tourné », lisible tel quel par l'UI (cf. docstring de `LastPoll`).
+    """
+    run_at = cfg.get("poll_last_run_at")
+    if not run_at:
+        return LastPoll()
+    # Le message est déjà masqué et borné à l'écriture (`scheduler/poller.py`) ; on
+    # re-borne ici par principe : un champ de diagnostic ne doit jamais devenir un
+    # canal de fuite, quelle que soit la façon dont la valeur est arrivée en base.
+    message = (cfg.get("poll_last_error_message") or "").strip()
+    if len(message) > _ERROR_MESSAGE_MAX_CHARS:
+        message = message[:_ERROR_MESSAGE_MAX_CHARS].rstrip() + "…"
+    return LastPoll(
+        has_run=True,
+        run_at=run_at,
+        fetched=cfg.get_int("poll_last_fetched", 0),
+        processed=cfg.get_int("poll_last_processed", 0),
+        skipped_done=cfg.get_int("poll_last_skipped_done", 0),
+        skipped_scope=cfg.get_int("poll_last_skipped_scope", 0),
+        errors=cfg.get_int("poll_last_errors", 0),
+        error_message=message or None,
+    )

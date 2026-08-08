@@ -155,6 +155,64 @@ def test_sandbox_journals_llm_call_visible_in_cost(client):
     assert cost["spent_eur_last_24h"] > 0
 
 
+# ── Intégrité de la preuve : le journal doit refléter CE QUI EST SORTI ────────
+@respx.mock
+def test_sandbox_journal_prompt_is_exactly_what_was_sent(client):
+    """La trace d'audit ne doit jamais attester d'un masquage qui n'a pas eu lieu.
+
+    La sandbox journalisait avec les flags PAR DÉFAUT de `masking.mask()` (tous actifs) et
+    sans la passe avancée, alors que le prompt réellement envoyé utilise les flags du
+    service — où `iban`/`secret`/`network` valent False en édition Community (gating
+    Supporter). Résultat : la DPO relisait `[IBAN]`/`[SECRET]`/`[IP]` pour des données
+    parties EN CLAIR chez le fournisseur, exactement à l'inverse de la réalité.
+
+    On verrouille la propriété la plus forte possible : le prompt journalisé est un
+    EXTRAIT EXACT du corps de la requête HTTP envoyée au LLM.
+    """
+    import json
+
+    from sqlmodel import select
+
+    from itsm_modern_ai.domain import masking
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import LlmCall
+
+    client.post("/api/config", json={"llm_api_key": "sk-test"})
+    route = respx.post(f"{LLM_BASE}/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": '{"category":1,"priority":3,"technician_id":11,'
+                                                    '"draft":"Bonjour","confidence":0.88}'}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            },
+        )
+    )
+    contenu = (
+        "IBAN FR76 3000 4000 5000 6000 7000 189 — mot de passe : Azerty1234 "
+        "— poste 10.0.1.42 — mail alice@acme.com"
+    )
+    assert client.post("/api/sandbox", json={"content": contenu}).status_code == 200
+
+    envoye = json.loads(route.calls.last.request.content)["messages"][-1]["content"]
+    with db.session_scope() as s:
+        journalise = s.exec(select(LlmCall)).one().prompt_sent
+
+    # La preuve est littéralement un morceau du prompt envoyé : aucun écart possible.
+    assert journalise in envoye
+
+    # Édition Community (pas de licence) : IBAN / secret / IP ne sont PAS masqués — le
+    # journal doit le montrer tel quel, sans placeholder trompeur.
+    for en_clair in ("FR76 3000 4000 5000 6000 7000 189", "Azerty1234", "10.0.1.42"):
+        assert en_clair in journalise
+    for mensonge in ("[IBAN]", "[SECRET]", "[IP]"):
+        assert mensonge not in journalise
+
+    # E-mail : masqué en Community → masqué des DEUX côtés (envoi et journal).
+    assert "alice@acme.com" not in journalise and "alice@acme.com" not in envoye
+    assert masking.EMAIL_PLACEHOLDER in journalise
+
+
 def test_sandbox_refused_over_cost_cap(client):
     # Plafond quasi nul + une dépense seedée → is_over_cap True AVANT tout appel LLM.
     client.post("/api/config", json={"llm_api_key": "sk-test", "cost_cap_eur_per_day": 0.001})

@@ -91,8 +91,13 @@ async def test_null_content_raises_response_error():
 
 
 @respx.mock
-async def test_null_usage_does_not_crash():
-    # `usage: null` ne doit pas lever d'AttributeError : tokens comptés à 0.
+async def test_null_usage_is_estimated_not_zero(caplog):
+    """`usage` absent ⇒ ANOMALIE, pas gratuité (audit fiabilité 2026-08).
+
+    L'adaptateur comptait 0 token : une passerelle sans bloc `usage` faisait avancer le
+    compteur de 0,00 € indéfiniment et le plafond (FR-10) n'était JAMAIS atteint. On
+    exige désormais une estimation non nulle + un warning explicite pour l'exploitant.
+    """
     respx.post(URL).mock(
         return_value=httpx.Response(
             200,
@@ -103,8 +108,11 @@ async def test_null_usage_does_not_crash():
             },
         )
     )
-    result = await _adapter().complete("sys", "user")
-    assert result.prompt_tokens == 0 and result.completion_tokens == 0
+    with caplog.at_level("WARNING"):
+        result = await _adapter().complete("sys", "un prompt utilisateur de taille réaliste")
+    assert result.prompt_tokens > 0 and result.completion_tokens > 0
+    assert "usage.prompt_tokens absent" in caplog.text
+    assert "usage.completion_tokens absent" in caplog.text
 
 
 @respx.mock
@@ -144,3 +152,56 @@ async def test_ssrf_guard_blocks_host_resolving_to_internal_ip(monkeypatch):
     adapter = OpenAiCompatibleLlm(base_url=BASE, api_key="k", model="m", ssrf_guard=True)
     with pytest.raises(LlmTransportError, match="anti-SSRF"):
         await adapter.complete("sys", "user")
+
+
+# ── Frontière STRICTE de la Décision (audit fiabilité 2026-08) ────────────────
+
+
+@respx.mock
+async def test_boolean_is_not_coerced_into_a_category():
+    """`{"category": true}` donnait `category=1` : une Décision était ACCEPTÉE sur la
+    catégorie #1 sans que le modèle n'en ait proposé aucune. `strict=True` referme ce
+    trou — un type faux part désormais en `invalid_output`."""
+    respx.post(URL).mock(
+        return_value=_chat_response(
+            '{"category": true, "priority": 3, "technician_id": 11, '
+            '"draft": "x", "confidence": 0.9}'
+        )
+    )
+    with pytest.raises(LlmResponseError):
+        await _adapter().complete("sys", "user")
+
+
+@respx.mock
+async def test_numeric_strings_are_coerced_explicitly_in_the_adapter():
+    """Certaines passerelles sérialisent les nombres en chaîne. La compatibilité est
+    conservée, mais par une coercition EXPLICITE et bornée de l'adaptateur — plus par
+    la coercition implicite (et non maîtrisée) du modèle de domaine."""
+    respx.post(URL).mock(
+        return_value=_chat_response(
+            '{"category": "2", "priority": "3", "technician_id": "11", '
+            '"draft": "x", "confidence": "0.9"}'
+        )
+    )
+    result = await _adapter().complete("sys", "user")
+    assert result.decision.category == 2 and result.decision.priority == 3
+    assert result.decision.technician_id == 11 and result.decision.confidence == 0.9
+
+
+@respx.mock
+async def test_usage_present_but_zero_is_also_estimated(caplog):
+    """`usage` présent mais à 0 est aussi une anomalie : un appel qui a produit du texte
+    n'a jamais consommé zéro token. Sinon le plafond reste aveugle de la même façon."""
+    respx.post(URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": '{"category":1,"priority":3,'
+                                         '"technician_id":11,"draft":"ok","confidence":0.9}'}}],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            },
+        )
+    )
+    with caplog.at_level("WARNING"):
+        result = await _adapter().complete("sys", "un prompt de taille réaliste")
+    assert result.prompt_tokens > 0 and result.completion_tokens > 0

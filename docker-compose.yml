@@ -39,8 +39,13 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    # Sonde de VIVACITE uniquement (processus + base) : /health/live ne fait AUCUN appel
+    # sortant. L'ancienne sonde `/health?probe=true` interrogeait GLPI ET le fournisseur
+    # LLM toutes les 30 s (~2 880 sessions GLPI + 2 880 appels sortants/jour) et rendait
+    # le conteneur `unhealthy` sur un incident FOURNISSEUR — inoffensif ici, destructeur
+    # sous Swarm/k8s/autoheal. L'etat GLPI/LLM reste lisible via /health et /api/status.
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health?probe=true').status==200 else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health/live', timeout=4).status==200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3

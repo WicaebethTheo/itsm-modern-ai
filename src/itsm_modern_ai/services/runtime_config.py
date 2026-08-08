@@ -17,7 +17,7 @@ from ..config.credentials import (  # value objects réutilisés par glpi_creden
     GlpiV2Credentials,
 )
 from ..config.settings import Settings
-from ..persistence.tables import RuntimeConfig
+from ..persistence.tables import AuditLog, RuntimeConfig
 from ..ports.secrets import SecretsPort
 
 # Sentinelle de DÉSACTIVATION explicite d'un réglage surchargeable. Une valeur vide ("")
@@ -70,6 +70,12 @@ PLAIN_KEYS = frozenset(
         "automation_purge_last_decisions_deleted",
         "automation_purge_last_llm_calls_deleted",
         "automation_purge_last_run_by",  # audit trail (scheduler | IP de l'admin)
+        # État du DERNIER cycle de polling (observabilité). `PollStats` était jeté après
+        # un simple log : impossible de répondre à « pourquoi aucun ticket n'est trié ? »
+        # sans accéder aux logs du conteneur. Écrit par le poller, lu par /api/status.
+        "poll_last_run_at", "poll_last_fetched", "poll_last_processed",
+        "poll_last_skipped_done", "poll_last_skipped_scope", "poll_last_errors",
+        "poll_last_error_message",
         # Licence Supporter (open-core) — jeton signé Ed25519, auto-portant (non chiffré).
         "license_key",
         # Vérification de mise à jour (opt-in, souverain) — URL du flux de versions.
@@ -77,12 +83,46 @@ PLAIN_KEYS = frozenset(
     }
 )
 
+# ── Journal d'audit (imputabilité) ────────────────────────────────────────────────
+# Initiateur par défaut quand l'appelant n'a pas d'IP à fournir (job planifié, CLI).
+AUDIT_ACTOR_SYSTEM = "system"
+# Marqueur substitué à toute valeur qu'on refuse de recopier dans l'audit.
+AUDIT_MASK = "***"
+# Clés NON secrètes mais sensibles : leur valeur ne doit pas être recopiée en clair dans
+# l'audit. `license_key` est un jeton signé qui déverrouille les features Supporter :
+# le recopier reviendrait à en distribuer une copie utilisable à quiconque lit l'audit.
+SENSITIVE_PLAIN_KEYS = frozenset({"license_key"})
+# Écritures d'ÉTAT MACHINE (télémétrie), volontairement NON auditées : elles sont produites
+# par le moteur à chaque cycle (polling) ou à chaque purge, pas par une décision d'admin.
+# Les auditer noierait les vraies actions d'administration sous des milliers de lignes de
+# bruit — un journal d'audit illisible ne vaut pas mieux qu'un journal absent.
+AUDIT_SILENT_PREFIXES = ("poll_last_", "automation_purge_last_")
+# Bornage de ce qu'on recopie (un `system_prompt` fait jusqu'à 8000 caractères ; l'audit
+# doit dire QUE la valeur a changé, pas archiver le corpus complet à chaque frappe).
+AUDIT_VALUE_MAX_CHARS = 500
+
+# Clé RÉSERVÉE (hors PLAIN_KEYS/SECRET_KEYS, donc non exposée ni écrivable via /api/config) :
+# compteur de génération des sessions admin. Toute session porte la valeur au moment du
+# login ; incrémenter ce compteur invalide instantanément TOUS les cookies déjà émis.
+SESSION_VERSION_KEY = "session_version"
+
 
 class RuntimeConfigService:
-    def __init__(self, session: Session, secrets: SecretsPort, settings: Settings) -> None:
+    def __init__(
+        self,
+        session: Session,
+        secrets: SecretsPort,
+        settings: Settings,
+        *,
+        actor: str = AUDIT_ACTOR_SYSTEM,
+    ) -> None:
         self._session = session
         self._secrets = secrets
         self._settings = settings
+        # Initiateur par défaut des écritures auditées. Câblé à l'IP du client par
+        # `api/deps.config_service_from_request` ; reste "system" pour le scheduler/CLI.
+        # Paramètre nommé avec défaut : aucun appelant existant n'est cassé.
+        self._actor = actor or AUDIT_ACTOR_SYSTEM
 
     @property
     def settings(self) -> Settings:
@@ -194,13 +234,23 @@ class RuntimeConfigService:
         return defaults.get(key)
 
     # ── écriture ────────────────────────────────────────────────────────────────
-    def set_secret(self, key: str, plaintext: str) -> None:
+    def set_secret(self, key: str, plaintext: str, *, by: str | None = None) -> None:
+        """Écrit un secret chiffré. `by` = initiateur (IP admin) pour le journal d'audit.
+
+        Même convention que `retention.record_last_run(by=...)` : optionnel, et à défaut on
+        retombe sur l'`actor` du service (l'IP câblée par la dépendance FastAPI, sinon
+        "system"). Le service n'a pas accès à la requête HTTP : c'est l'appelant qui sait.
+        """
         if key not in SECRET_KEYS:
             raise ValueError(f"{key} n'est pas un secret connu")
+        # Ancienne valeur JAMAIS déchiffrée pour l'audit : on ne consigne que la PRÉSENCE
+        # (et déchiffrer échouerait de toute façon après une rotation de MASTER_KEY).
+        old = AUDIT_MASK if self.is_secret_set(key) else ""
         token = self._secrets.encrypt(plaintext) if plaintext else ""
         self._upsert(key, token, is_secret=True)
+        self._audit("config.set_secret", key, old, AUDIT_MASK if plaintext else "", by)
 
-    def set(self, key: str, value: str) -> None:
+    def set(self, key: str, value: str, *, by: str | None = None) -> None:
         if key not in PLAIN_KEYS:
             raise ValueError(f"{key} n'est pas un réglage surchargeable")
         # Anti-SSRF à la sauvegarde : l'URL du flux de versions doit pointer un hôte
@@ -214,7 +264,11 @@ class RuntimeConfigService:
                 value = validate_base_url(value.strip(), allow_local=False)
             except UrlSafetyError as exc:
                 raise ValueError(str(exc)) from exc
+        # Ancienne valeur EFFECTIVE (surcharge base, sinon env) : c'est celle que le moteur
+        # appliquait réellement avant le changement — la seule qui rende l'audit lisible.
+        old = self.get(key) or ""
         self._upsert(key, value, is_secret=False)
+        self._audit("config.set", key, old, value, by)
 
     def _upsert(self, key: str, value: str, *, is_secret: bool) -> None:
         row = self._row(key)
@@ -225,6 +279,63 @@ class RuntimeConfigService:
             row.is_secret = is_secret
         self._session.add(row)
         self._session.commit()
+
+    # ── journal d'audit ─────────────────────────────────────────────────────────
+    def _audit(self, action: str, key: str, old: str, new: str, by: str | None) -> None:
+        """Consigne une écriture de configuration (imputabilité — cf. `tables.AuditLog`).
+
+        Placé ici et non dans les routes : `set`/`set_secret` sont le point de passage
+        UNIQUE de toute écriture de config (API, licence, automations, reset GLPI), donc
+        aucun chemin d'écriture ne peut « oublier » de tracer.
+        """
+        if key.startswith(AUDIT_SILENT_PREFIXES):
+            return  # état machine (télémétrie) — pas une action d'administration
+        if key in SENSITIVE_PLAIN_KEYS:
+            # Sensible sans être « secret » au sens du chiffrement : on ne garde que
+            # la présence (posé / retiré), jamais le jeton exploitable.
+            old = AUDIT_MASK if old else ""
+            new = AUDIT_MASK if new and new != CLEARED_SENTINEL else ""
+        self._session.add(
+            AuditLog(
+                actor=(by or self._actor or AUDIT_ACTOR_SYSTEM)[:200],
+                action=action,
+                key=key,
+                old_value=old[:AUDIT_VALUE_MAX_CHARS],
+                new_value=new[:AUDIT_VALUE_MAX_CHARS],
+            )
+        )
+        self._session.commit()
+
+    # ── révocation des sessions admin ───────────────────────────────────────────
+    def session_version(self) -> int:
+        """Génération courante des sessions admin (0 si jamais incrémentée).
+
+        Portée dans le cookie signé au login et revérifiée à chaque requête : c'est ce qui
+        rend une session RÉVOCABLE sans store partagé (un simple entier en base suffit,
+        l'instance étant mono-process — cf. le limiteur de login, même hypothèse).
+        """
+        row = self._row(SESSION_VERSION_KEY)
+        if row is None or not row.value:
+            return 0
+        try:
+            return int(row.value)
+        except ValueError:
+            # Valeur corrompue : on repart de 0 plutôt que de crasher le login. Le pire cas
+            # est une invalidation supplémentaire des cookies, jamais une acceptation.
+            return 0
+
+    def bump_session_version(self) -> int:
+        """Incrémente la génération : TOUS les cookies déjà émis deviennent invalides.
+
+        Appelé au logout ET à tout changement de mot de passe admin. Sans ça, la seule
+        parade à un cookie volé était de changer `MASTER_KEY` — ce qui rend illisibles
+        TOUS les secrets chiffrés et verrouille la console. Écrit via `_upsert` (et non
+        `set`) : la clé est réservée, hors `PLAIN_KEYS`, donc ni exposée ni écrivable par
+        `/api/config`, et le bruit login/logout ne pollue pas le journal d'audit.
+        """
+        new = self.session_version() + 1
+        self._upsert(SESSION_VERSION_KEY, str(new), is_secret=False)
+        return new
 
     # ── vues typées ──────────────────────────────────────────────────────────────
     def glpi_credentials(self) -> GlpiCredentials:
