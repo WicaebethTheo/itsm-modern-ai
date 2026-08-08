@@ -40,13 +40,13 @@
       "enabled": false
     },
     {
-      "description": "INVARIANT — `requires-python` reste figé à `>=3.13`. Passer à 3.14 impose de bouger en même temps le Dockerfile, la CI GitHub et la CI GitLab : décision humaine, pas une PR de bot.",
+      "description": "INVARIANT — `requires-python` reste figé à `>=3.13` : c'est le PLANCHER supporté, distinct de l'interpréteur livré (l'image est en 3.14 et la CI teste les deux). Le relever exclurait les installations depuis les sources sur 3.13 : décision humaine, pas une PR de bot.",
       "matchManagers": ["pep621"],
       "matchDepTypes": ["requires-python"],
       "enabled": false
     },
     {
-      "description": "INVARIANT — image de base `python:3.13-slim` gelée, alignée sur `requires-python`. Corollaire de la règle précédente : un bump ici sans bump du `requires-python` ferait diverger l'interpréteur de référence.",
+      "description": "INVARIANT — la MAJEURE de l'image de base `python:3.14-slim` est gelée : passer à 3.15 impose de rejouer la suite sur le nouvel interpréteur et d'aligner la CI (GitHub + GitLab), donc décision humaine. Ce gel ne prive de rien côté sécurité : le tag `3.14-slim` est FLOTTANT et reçoit les correctifs de patch à chaque `docker pull` (les digests ne sont volontairement pas épinglés, cf. absence de `docker:pinDigests`).",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["python"],
       "enabled": false
@@ -95,7 +95,7 @@
       "groupName": "GitHub Actions"
     },
     {
-      "description": "GROUPE 5 — images de base Docker (node:22-slim, postgres:16-alpine, ghcr.io/astral-sh/uv) en non majeur. Les MAJEURES (node 22→24, postgres 16→17) sortent en PR individuelles : elles impliquent une migration ou un alignement avec `actions/setup-node`.",
+      "description": "GROUPE 5 — images de base Docker (node:24-slim, postgres:16-alpine, ghcr.io/astral-sh/uv) en non majeur. Les MAJEURES sortent en PR individuelles, car aucune n'est un simple bump : node ne doit passer qu'à une ligne LTS (26 ne l'est qu'au 2026-10-28) et en même temps que `actions/setup-node` ; postgres impose une migration de cluster (`pg_dump`/restauration, cf. l'avertissement dans docker-compose.yml).",
       "matchDatasources": ["docker"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Docker base images"

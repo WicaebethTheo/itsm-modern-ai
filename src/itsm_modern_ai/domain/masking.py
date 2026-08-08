@@ -23,14 +23,24 @@ MAC_PLACEHOLDER = "[MAC]"
 CLOUD_KEY_PLACEHOLDER = "[CLOUD_KEY]"
 
 # ⚠️ QUANTIFICATEURS BORNÉS, PAS `+` (durcissement ReDoS, audit CodeQL 2026-08).
-# `[\w.+-]+@…` est POLYNOMIAL sur une entrée sans `@` : la classe avale toute une longue
-# suite puis rend un caractère à la fois en cherchant l'arobase, à chaque position de
-# départ → coût quadratique. Or le texte masqué est le CONTENU D'UN TICKET, écrit par le
-# demandeur (non fiable), et `mask()` est appelé SYNCHRONEMENT dans une coroutine : un
-# seul ticket suffisait à geler l'event loop (donc l'API ET le poller). Les bornes
-# suivent les limites RFC 5321 (partie locale ≤ 64, label DNS ≤ 63) : aucune adresse
-# légitime n'est perdue, et le backtracking devient constant par position.
-_EMAIL_RE = re.compile(r"\b[\w.+-]{1,64}@[\w-]{1,63}\.[\w.-]{1,190}\b")
+# `[\w.+-]+@…` est POLYNOMIAL sur une entrée sans `@` : à CHAQUE position de départ, la
+# classe avale toute la suite avant d'échouer sur l'arobase → coût quadratique. Or le
+# texte masqué est le CONTENU D'UN TICKET, écrit par le demandeur (non fiable), et
+# `mask()` est appelé SYNCHRONEMENT dans une coroutine : un seul ticket suffisait à geler
+# l'event loop (donc l'API ET le poller).
+#
+# Seule une BORNE plafonne ce coût (un quantificateur possessif ne suffit pas : le coût
+# vient du redémarrage du scan, pas du backtracking — vérifié à la mesure). Le choix de
+# la borne est un arbitrage assumé :
+#   - 64 = limite RFC 5321 de la partie locale. Rejetée : une adresse de 70 caractères
+#     n'est pas conforme mais s'écrit très bien dans un ticket, et ne serait alors PAS
+#     masquée du tout (l'ancrage `\b` empêche toute reprise plus loin) — la borne
+#     « correcte » créait une fuite silencieuse ;
+#   - 256 = retenue. Couvre tout ce qu'un humain peut écrire, et reste linéaire
+#     (mesuré ×4,1 pour une entrée ×4, 21 ms sur une charge pathologique de 16 ko).
+# Reste non masquée : une « adresse » à partie locale de plus de 256 caractères, ce qui
+# n'est plus une adresse.
+_EMAIL_RE = re.compile(r"\b[\w.+-]{1,256}@[\w-]{1,63}\.[\w.-]{1,190}\b")
 
 # IBAN : 2 lettres pays + 2 clés + 11 à 30 caractères (groupes espacés tolérés).
 _IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b")
@@ -77,17 +87,27 @@ def _luhn_ok(digits: str) -> bool:
     return total % 10 == 0
 
 # Mot de passe / token : mot-clé déclencheur puis une chaîne 8+ à classes mixtes.
-# ⚠️ ESPACES BORNÉS, PAS `\s*` (durcissement ReDoS, audit CodeQL 2026-08). Le motif
-# `…\s*[:=]?\s*` porte DEUX quantificateurs illimités adjacents séparés par un optionnel :
-# sur « password » suivi de N espaces puis d'une valeur trop courte pour `\S{8,}`, le
-# moteur essaie les N+1 découpes des espaces entre les deux `\s*` → coût quadratique
-# (mesuré : 32 000 espaces = 5,7 s de CPU). Même vecteur que pour `_EMAIL_RE` : contenu
-# de ticket non fiable, masquage synchrone dans l'event loop. Les bornes ci-dessous
-# couvrent très largement l'usage réel (« mot  de  passe : … ») et rendent le
-# backtracking constant.
+#
+# ⚠️ DEUX contraintes s'opposent ici, et le premier correctif s'était trompé d'arbitrage.
+#
+# 1. ReDoS. `…\s*[:=]?\s*` porte DEUX quantificateurs illimités adjacents séparés par un
+#    optionnel : sur « password » + N espaces + une valeur trop courte pour `\S{8,}`, le
+#    moteur essaie les N+1 découpes des espaces → quadratique (mesuré : 32 000 espaces =
+#    5,7 s de CPU, sur du contenu de ticket non fiable, masqué dans l'event loop).
+# 2. Couverture. Des bornes trop SERRÉES font silencieusement rater le masquage : avec
+#    `\s{0,8}`, « Mot de passe<9 espaces>:<9 espaces>Azerty1234 » — un simple collage
+#    depuis un formulaire ou un tableau aligné — laissait le mot de passe partir EN CLAIR
+#    au LLM, soit exactement ce que cette fonction existe pour empêcher.
+#
+# La réponse n'est donc pas « borner au plus juste » mais : (a) supprimer l'AMBIGUÏTÉ,
+# en exigeant que le groupe optionnel commence par le séparateur — `(?:[:=]\s{0,32})?`
+# au lieu de `[:=]?\s{0,32}`, ce qui interdit les découpes multiples d'un même blanc ;
+# (b) borner LARGEMENT (32), ce qui couvre tout alignement humain plausible. Mesuré :
+# les trois cas d'alignement passent, et le coût reste linéaire (0,18 ms sur la charge
+# pathologique qui coûtait 5,7 s).
 _SECRET_KEYWORD_RE = re.compile(
-    r"(?P<kw>(?:mots?\s{0,4}de\s{0,4}passe|mot\s{0,4}d[e']\s{0,4}passe|password|passwd|pwd|mdp"
-    r"|token|secret|cl[ée]\s{0,4}api|api[_\s-]?key)\s{0,8}[:=]?\s{0,8})"
+    r"(?P<kw>(?:mots?\s{0,32}de\s{0,32}passe|mot\s{0,32}d[e']\s{0,32}passe|password|passwd|pwd|mdp"
+    r"|token|secret|cl[ée]\s{0,32}api|api[_\s-]?key)\s{0,32}(?:[:=]\s{0,32})?)"
     r"(?P<val>\S{8,})",
     re.IGNORECASE,
 )

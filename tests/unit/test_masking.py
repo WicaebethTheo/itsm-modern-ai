@@ -181,17 +181,28 @@ def test_card_and_ip_follow_toggles():
     ],
 )
 def test_masquage_reste_lineaire_sur_entree_pathologique(charge):
-    def chrono(n: int) -> float:
-        texte = charge(n)
-        debut = time.perf_counter()
-        masking.mask(texte)
-        return time.perf_counter() - debut
+    """Budget ABSOLU, pas un ratio : c'est ce qui distingue vraiment linéaire de quadratique.
 
-    # On mesure sur 4× la taille : linéaire → ~×4, quadratique → ~×16.
-    petit = max(chrono(2_000), 1e-4)  # plancher : évite une division par ~0
-    grand = chrono(8_000)
-    assert grand / petit < 8, (
-        f"croissance suspecte (×{grand / petit:.1f} pour une entrée ×4) — "
+    Un ratio grand/petit sur une seule mesure est fragile — les temps en jeu sont de
+    l'ordre de la milliseconde, et une pause GC ou une préemption de l'ordonnanceur sur
+    un runner CI partagé suffit à le faire basculer, rougissant des PR sans rapport.
+    On prend donc le MINIMUM de plusieurs répétitions (le minimum élimine le bruit :
+    une exécution ne peut pas être plus rapide que le coût réel) et on le compare à un
+    plafond large. Avant correctif, ces charges coûtaient de 0,4 s à 5,7 s ; après,
+    elles sont sous les 10 ms. Un plafond à 500 ms ne peut donc être franchi que par un
+    retour du comportement quadratique, jamais par du bruit de mesure.
+    """
+
+    def chrono_min(n: int, repetitions: int = 5) -> float:
+        texte = charge(n)
+        return min(
+            (lambda d=time.perf_counter(): (masking.mask(texte), time.perf_counter() - d)[1])()
+            for _ in range(repetitions)
+        )
+
+    ecoule = chrono_min(8_000)
+    assert ecoule < 0.5, (
+        f"masquage anormalement lent ({ecoule * 1000:.0f} ms pour 8 000 caractères) — "
         "un quantificateur non borné a probablement été réintroduit"
     )
 
@@ -201,3 +212,33 @@ def test_email_long_reste_masque_malgre_les_bornes():
     locale = "prenom.nom.service-informatique.n1"
     adresse = f"{locale}@sous-domaine.exemple-client.co.uk"
     assert masking.mask(f"écrire à {adresse} svp").text == "écrire à [EMAIL] svp"
+
+
+# ── Non-régression : le bornage anti-ReDoS ne doit pas créer de FUITE ─────────
+# Le premier correctif ReDoS avait borné les blancs à 4/8 et la partie locale d'e-mail
+# à 64 : des bornes « correctes » sur le papier, qui laissaient partir EN CLAIR au LLM
+# un mot de passe collé depuis un formulaire aligné, ou une adresse à partie locale
+# longue. Ces cas verrouillent l'arbitrage : résister au ReDoS ne justifie jamais de
+# rater un masquage.
+@pytest.mark.parametrize(
+    "texte",
+    [
+        pytest.param("Mot de passe" + " " * 9 + ":" + " " * 9 + "Azerty1234", id="aligne-9-espaces"),
+        pytest.param("Mot de passe" + " " * 30 + ": Azerty1234", id="aligne-30-espaces"),
+        pytest.param("Mot     de     passe : Azerty1234", id="mots-espaces"),
+        pytest.param("mot de passe: Azerty1234", id="sans-espace"),
+    ],
+)
+def test_secret_masque_malgre_les_alignements(texte):
+    assert "Azerty1234" not in masking.mask(texte).text
+
+
+@pytest.mark.parametrize("longueur", [60, 70, 120, 250])
+def test_email_masque_meme_partie_locale_longue(longueur):
+    """> 64 caractères n'est pas conforme RFC, mais s'écrit très bien dans un ticket.
+
+    L'ancrage `\\b` empêche toute reprise plus loin : si la borne est dépassée, l'adresse
+    n'est pas masquée DU TOUT (et non partiellement) — d'où une fuite silencieuse.
+    """
+    adresse = "a" * longueur + "@exemple.fr"
+    assert adresse not in masking.mask(f"contact {adresse} svp").text

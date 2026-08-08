@@ -103,6 +103,36 @@ def _checked_sub(is_valid: Callable[[str], bool], placeholder: str) -> Callable[
     return repl
 
 
+def _siret_sub(m: re.Match[str]) -> str:
+    """Substitution SIREN/SIRET avec REPLI sur le préfixe de 9 chiffres.
+
+    ⚠️ Pourquoi ce repli. `_SIRET_RE` est gourmand : sur « SIREN 123456782 12345 unités »
+    il capture les 14 chiffres d'un coup (SIREN valide + un nombre voisin). Ces 14
+    chiffres échouent à Luhn, et comme le scan reprend APRÈS le match, le SIREN valide
+    des 9 premiers chiffres n'était jamais réessayé — il partait EN CLAIR. Un SIREN suivi
+    d'une quantité, d'un code postal ou d'un numéro de ligne suffisait à contourner le
+    masquage. On retente donc explicitement le préfixe de 9, et on ne masque que lui en
+    conservant le reste du texte capturé.
+    """
+    brut = m.group(0)
+    chiffres = brut.replace(" ", "")
+    if _siret_ok(chiffres):
+        return SIRET_PLACEHOLDER
+    # Repli : les 9 premiers chiffres forment-ils un SIREN valide ?
+    if len(chiffres) == 14 and _siret_ok(chiffres[:9]):
+        # On re-découpe le texte D'ORIGINE (espaces compris) au 9ᵉ chiffre pour ne
+        # remplacer que la partie SIREN et restituer le reliquat tel quel.
+        vus, coupe = 0, len(brut)
+        for i, car in enumerate(brut):
+            if car.isdigit():
+                vus += 1
+                if vus == 9:
+                    coupe = i + 1
+                    break
+        return SIRET_PLACEHOLDER + brut[coupe:]
+    return brut
+
+
 @dataclass
 class AdvancedPiiMasker:
     """Passe de masquage avancée appliquée APRÈS le masquage de base du core."""
@@ -146,7 +176,7 @@ class AdvancedPiiMasker:
         # ses 9 premiers chiffres ne sont donc pas ré-essayés comme SIREN — voulu, c'est ce
         # qui évite de masquer un « SIREN » au milieu d'un numéro de série plus long.
         out = _NIR_RE.sub(_checked_sub(_nir_ok, NIR_PLACEHOLDER), text)
-        out = _SIRET_RE.sub(_checked_sub(_siret_ok, SIRET_PLACEHOLDER), out)
+        out = _SIRET_RE.sub(_siret_sub, out)
         for pattern, placeholder in self.custom_patterns:
             out = pattern.sub(placeholder, out)
         return out

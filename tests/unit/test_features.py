@@ -16,7 +16,7 @@ from itsm_modern_ai.domain.licensing import (
 )
 from itsm_modern_ai.features import register as register_features
 from itsm_modern_ai.features.multi_entity import EntityPolicy, MultiEntityResolver
-from itsm_modern_ai.features.pii_advanced import AdvancedPiiMasker
+from itsm_modern_ai.features.pii_advanced import SIRET_PLACEHOLDER, AdvancedPiiMasker
 from itsm_modern_ai.features.scheduled_exports import ExportSchedule
 from itsm_modern_ai.plugins import PluginRegistry
 
@@ -116,3 +116,18 @@ def test_scheduled_export_next_run_is_in_future():
     now = datetime(2026, 5, 31, 10, 0, 0)
     nxt = sched.next_run_after(now)
     assert nxt > now
+
+
+def test_siren_valide_masque_meme_suivi_de_cinq_chiffres():
+    """Le motif SIRET est gourmand : il avale « SIREN valide + nombre voisin ».
+
+    Les 14 chiffres ainsi capturés échouent à Luhn et, le scan reprenant APRÈS le match,
+    le SIREN valide des 9 premiers n'était jamais réessayé — il partait en clair. Un
+    SIREN suivi d'une quantité ou d'un code suffisait donc à contourner le masquage.
+    """
+    masker = AdvancedPiiMasker()
+    sortie = masker.mask("SIREN 123456782 12345 unites")
+    assert "123456782" not in sortie
+    assert SIRET_PLACEHOLDER in sortie
+    # Le reliquat non-SIREN reste intact : on ne caviarde que ce qui est identifié.
+    assert "12345 unites" in sortie

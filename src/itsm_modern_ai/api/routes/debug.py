@@ -85,8 +85,13 @@ def _detail_sur(exc: Exception) -> str:
     peut recracher une adresse, un jeton…) et on le borne en longueur. Le type de
     l'exception est préfixé : c'est souvent lui qui qualifie la panne.
     """
+    # `network=False` : on garde e-mail / IBAN / secrets masqués, mais PAS les IP ni les
+    # MAC. Sur un déploiement on-premise, l'adresse de l'hôte EST le diagnostic (mauvais
+    # VLAN, mauvaise IP de conteneur, port fermé) : la masquer rendait l'outil aveugle
+    # pour le seul public qui y a accès — un admin authentifié, sur un endpoint livré
+    # désactivé. Masquer un secret : oui. Masquer l'information recherchée : non.
     brut = f"{type(exc).__name__}: {exc}"
-    propre = masking.mask(brut).text
+    propre = masking.mask(brut, network=False).text
     return propre if len(propre) <= _DETAIL_MAX_CHARS else propre[:_DETAIL_MAX_CHARS].rstrip() + "…"
 
 

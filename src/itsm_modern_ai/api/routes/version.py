@@ -126,8 +126,17 @@ async def _fetch_latest(url: str, timeout: float, *, guard: bool) -> dict | None
     # pour l'analyse statique (cf. `.github/codeql/` — `validate_base_url` y est déclaré
     # comme barrière de la requête SSRF). Ignorer le retour laisserait circuler la valeur
     # d'origine, non validée en apparence.
+    #
+    # `allow_local` suit `ssrf_guard_enabled` — et ce n'est PAS un relâchement. Le produit
+    # DOCUMENTE le repointage de `UPDATE_CHECK_URL` vers un flux de releases auto-hébergé
+    # (GitLab interne), qui est par nature en `http://` ou sur une IP privée. Avec un refus
+    # inconditionnel, ce cas documenté cassait sans recours : `None` renvoyé, mis en cache
+    # une heure, pour seule trace un avertissement dans les logs. L'opérateur qui met
+    # `SSRF_GUARD_ENABLED=false` a fait un choix explicite et assumé ; on le respecte ici
+    # comme les clients GLPI/LLM le font déjà. Défaut inchangé : garde ACTIF, hôte public
+    # exigé.
     try:
-        url = validate_base_url(url, allow_local=False)
+        url = validate_base_url(url, allow_local=not guard)
     except UrlSafetyError as exc:
         logger.warning("update_check_url refusée (anti-SSRF) : %s", exc)
         return None

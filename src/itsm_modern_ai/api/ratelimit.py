@@ -158,8 +158,19 @@ class LoginRateLimiter:
                 del self._entries[key]
         if len(self._entries) >= _MAX_ENTRIES:
             low_water = max(1, (_MAX_ENTRIES * 9) // 10)
-            evictable = sorted((e.last_seen, k) for k, e in self._entries.items() if e.blocked_until <= now)
-            for _, key in evictable:
+            # Ordre d'éviction : d'abord le NOMBRE D'ÉCHECS accumulés, puis la récence.
+            # Trier par récence seule ouvrait un contournement : une clé arrivée à
+            # `max_attempts - 1` échecs est, par construction, la plus ancienne de la
+            # table ; un attaquant pouvait donc la faire évincer par une rafale de clés
+            # neuves et repartir de zéro indéfiniment, sans jamais atteindre le blocage.
+            # En sacrifiant d'abord les clés à 1 échec, celles qui approchent du seuil
+            # survivent — c'est précisément l'information qu'on ne doit pas perdre.
+            evictable = sorted(
+                (len(e.failures), e.last_seen, k)
+                for k, e in self._entries.items()
+                if e.blocked_until <= now
+            )
+            for _, _, key in evictable:
                 if len(self._entries) <= low_water:
                     break
                 del self._entries[key]

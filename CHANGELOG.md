@@ -65,6 +65,27 @@ jour » :
   d'IP bidon ne permet donc pas de se débloquer. Sémantique du limiteur inchangée (seuils,
   durées, `retry_after`, `reset`).
 
+### Sécurité — fuites de masquage introduites par le correctif ReDoS, refermées
+
+Le correctif ReDoS (ci-dessous) avait borné les quantificateurs « au plus juste ». Une
+revue de code a montré que ces bornes créaient **trois fuites de PII** — exactement ce
+que le masquage existe pour empêcher. Corrigées, avec un test de non-régression chacune.
+
+- **Mot de passe non masqué sur du texte aligné.** Avec `\s{0,8}`, un simple collage
+  depuis un formulaire ou un tableau — `Mot de passe<9 espaces>:<9 espaces>Azerty1234` —
+  laissait le mot de passe partir **en clair au LLM**. La bonne réponse n'était pas de
+  borner au plus juste mais de supprimer l'**ambiguïté** du motif (`(?:[:=]\s{0,32})?`
+  au lieu de `[:=]?\s{0,32}`, ce qui interdit les découpes multiples d'un même blanc)
+  puis de borner **largement** (32). Les alignements passent, le coût reste linéaire.
+- **Adresse e-mail à partie locale longue non masquée.** La borne à 64 (limite RFC 5321)
+  était « correcte » mais fausse en pratique : une adresse de 70 caractères s'écrit très
+  bien dans un ticket, et comme le motif est ancré sur `\b`, dépasser la borne ne masque
+  pas **du tout** l'adresse au lieu de la masquer partiellement. Borne portée à 256.
+- **SIREN valide non masqué quand il est suivi d'un nombre à 5 chiffres.** Le motif
+  gourmand capturait les 14 chiffres d'un coup (`SIREN 123456782 12345 unités`), échouait
+  à Luhn, et le scan reprenant après le match, le SIREN valide des 9 premiers chiffres
+  n'était jamais réessayé. Ajout d'un repli explicite sur le préfixe de 9.
+
 ### Sécurité — déni de service par expression régulière (ReDoS)
 
 - **Deux motifs de masquage étaient à backtracking quadratique** (`domain/masking.py`) et
