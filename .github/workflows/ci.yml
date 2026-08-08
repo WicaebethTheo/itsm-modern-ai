@@ -1,7 +1,9 @@
 # CI publique (GitHub) — porte minimale pour les PR sur le mirror : ruff + pytest +
 # build frontend. La CI complète (e2e Playwright, scans de dépendances) reste sur
-# GitLab (.gitlab-ci.yml, strippé du mirror). Python 3.13 requis (pyproject
-# requires-python >=3.13) : on l'épingle explicitement (sinon faux échecs en 3.12).
+# GitLab (.gitlab-ci.yml, strippé du mirror). Le job backend tourne sur DEUX
+# interpréteurs : 3.14 (celui de l'image livrée) et 3.13 (le plancher déclaré par
+# `requires-python`). Sans la seconde jambe, le plancher ne serait plus exercé nulle
+# part et une dépendance abandonnant 3.13 casserait les installs source en silence.
 name: CI
 
 on:
@@ -18,11 +20,23 @@ concurrency:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    strategy:
+      # DEUX interpréteurs, et c'est délibéré :
+      #   - 3.14 = celui de l'image livrée (`Dockerfile`), donc ce qui tourne en prod ;
+      #   - 3.13 = le plancher déclaré par `requires-python` dans pyproject.
+      # Sans la seconde jambe, le plancher ne serait exercé NULLE PART : une dépendance
+      # abandonnant les roues 3.13, ou de la syntaxe 3.14-only glissée dans `src/`,
+      # casserait toutes les installations depuis les sources sans que rien ne le voie.
+      # Si l'on décide un jour d'abandonner 3.13, il faut monter `requires-python`
+      # AVANT de retirer cette jambe — pas l'inverse.
+      fail-fast: false
+      matrix:
+        python-version: ["3.14", "3.13"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python-version }}
       # setup-uv plutôt que `pip install uv` : version gérée par l'action + cache uv
       # automatique (clé sur uv.lock). Cohérent avec docker-publish.yml.
       # Épinglage sur la version EXACTE (`@v9.0.0`, pas `@v9`) : depuis sa v8 cette

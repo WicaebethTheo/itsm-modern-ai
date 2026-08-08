@@ -61,7 +61,7 @@ tests/             pytest + respx (unit + integration)
 docs/              install, dpo, spike, project-context, architecture, …
 ```
 
-Le moteur reste **headless** : la SPA React est servie en statique par le moteur (image Docker multi-stage `node:22 → python:3.13`), aucun serveur Node au runtime. Le contrat REST est l'API publique du moteur — CLI/Slack/batch peuvent s'y brancher demain.
+Le moteur reste **headless** : la SPA React est servie en statique par le moteur (image Docker multi-stage `node:24 → python:3.14`), aucun serveur Node au runtime. Le contrat REST est l'API publique du moteur — CLI/Slack/batch peuvent s'y brancher demain.
 
 ## Voir aussi
 

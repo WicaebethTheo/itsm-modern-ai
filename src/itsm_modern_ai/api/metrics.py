@@ -37,18 +37,38 @@ _LATENCY = Histogram(
 )
 
 
-def _route_template(request: Request) -> str:
-    """Chemin templaté de la route (borne la cardinalité, évite la PII dans les labels).
+def _route_contexts(app) -> list:
+    """Vue à plat des routes, calculée UNE fois et mémoïsée sur `app.state`.
 
     ⚠️ Depuis FastAPI 0.138, `include_router()` n'aplatit plus les routes dans
     `app.routes` : on y trouve des nœuds de routeur paresseux, qui n'ont pas d'attribut
     `path` et dont le `matches()` ne rend pas le chemin templaté de la route finale.
     `iter_route_contexts()` (API publique FastAPI) redonne la vue à plat, chaque contexte
     portant le chemin EFFECTIF (préfixe du routeur appliqué) et le `matches()` de la
-    route réelle. L'ordre d'itération reste l'ordre de déclaration, donc la première
-    correspondance FULL est bien celle que le routeur aurait choisie.
+    route réelle.
+
+    Pourquoi mémoïser : `_route_template` est appelé par le middleware à CHAQUE requête.
+    Reconstruire la vue à plat à chaque fois alloue un `RouteContext` par route et coûte
+    ~2,5× le simple parcours de liste d'avant (mesuré 43 µs contre 17 µs sur cette app).
+    Le cache est invalidé si `app.routes` change de taille : `install_metrics()` est
+    appelé AVANT `mount_spa()` (cf. `api/app.py`), donc la route catch-all de la SPA
+    arrive après — un cache figé au démarrage la manquerait et étiquetterait toute l'UI
+    en `<other>`.
     """
-    for ctx in iter_route_contexts(request.app.routes):
+    cache = getattr(app.state, "route_contexts_cache", None)
+    if cache is None or cache[0] != len(app.routes):
+        cache = (len(app.routes), list(iter_route_contexts(app.routes)))
+        app.state.route_contexts_cache = cache
+    return cache[1]
+
+
+def _route_template(request: Request) -> str:
+    """Chemin templaté de la route (borne la cardinalité, évite la PII dans les labels).
+
+    L'ordre d'itération reste l'ordre de déclaration, donc la première correspondance
+    FULL est bien celle que le routeur aurait choisie.
+    """
+    for ctx in _route_contexts(request.app):
         match, _ = ctx.matches(request.scope)
         if match == Match.FULL:
             return ctx.path or "<other>"

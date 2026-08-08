@@ -155,7 +155,7 @@ Les features Supporter se déverrouillent **en place** par une **clé de licence
 ```bash
 make install     # venv (uv) + deps Python
 make migrate     # alembic upgrade head
-make ui          # build de la SPA (requiert Node 22)
+make ui          # build de la SPA (requiert Node 24 LTS)
 make run         # uvicorn + scheduler → http://localhost:8000
 
 make ui-dev      # frontend hot-reload (proxy /api → :8000) → http://localhost:5173

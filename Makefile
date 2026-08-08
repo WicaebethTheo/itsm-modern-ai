@@ -1,7 +1,7 @@
 .PHONY: install update backup lint test fmt run migrate set-admin-password ui ui-dev ui-lint ui-test ui-e2e spike spike-mock glpi-diagnose
 
 install:
-	uv venv --python 3.13
+	uv venv --python 3.14
 	uv pip install -e ".[dev]"
 
 # Déploiement on-prem (Docker) : mise à jour avec sauvegarde préalable (via l'installeur unique).

@@ -65,9 +65,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Python 3.13 épinglé (pyproject requires-python >=3.13), comme ci.yml : un
-      # autre interpréteur résoudrait un autre jeu de marqueurs d'environnement et
-      # donc un autre ensemble de paquets à auditer.
+      # Python 3.14 épinglé : c'est l'interpréteur de l'image LIVRÉE, donc le seul
+      # dont l'ensemble de paquets résolu corresponde à ce qui tourne en production.
+      # Un autre interpréteur résoudrait d'autres marqueurs d'environnement, donc un
+      # autre ensemble de paquets — et auditerait autre chose que ce qu'on déploie.
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
