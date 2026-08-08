@@ -7,7 +7,10 @@ import { Technicians } from "./Technicians";
 
 vi.mock("@/lib/api", async (orig) => {
   const actual = await orig<typeof import("@/lib/api")>();
-  return { ...actual, Api: { ...actual.Api, discovery: vi.fn(), saveTechnicians: vi.fn(), skillCatalog: vi.fn() } };
+  return {
+    ...actual,
+    Api: { ...actual.Api, discovery: vi.fn(), saveTechnicians: vi.fn(), skillCatalog: vi.fn() },
+  };
 });
 
 const ref = (over: Partial<RefItem> & { ext_id: number; name: string }): RefItem => ({
@@ -66,8 +69,18 @@ describe("Technicians (éditeur d'éligibilité)", () => {
 
 describe("Domaines de compétence cochables", () => {
   const CATALOGUE = [
-    { key: "workstation", label_fr: "Poste de travail", label_en: "Workstation", hint_fr: "PC, portables" },
-    { key: "network", label_fr: "Réseau & Wifi", label_en: "Network & Wi-Fi", hint_fr: "connectivité, Wifi" },
+    {
+      key: "workstation",
+      label_fr: "Poste de travail",
+      label_en: "Workstation",
+      hint_fr: "PC, portables",
+    },
+    {
+      key: "network",
+      label_fr: "Réseau & Wifi",
+      label_en: "Network & Wi-Fi",
+      hint_fr: "connectivité, Wifi",
+    },
   ];
 
   beforeEach(() => {
