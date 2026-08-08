@@ -122,6 +122,38 @@ protégés. Les défauts corrigés ici ne sont pas dans la logique de triage : i
   à une limite conteneur de 512 Mo. Désormais **1,2 Mo**, sans troncature — un export
   d'audit tronqué vaut moins qu'un export lent.
 
+### 🔴 Confronté à un vrai GLPI — deux défauts que les tests mockés ne pouvaient pas voir
+
+Validé contre une instance **GLPI 11.0.7** réelle (193 tickets, dont **3 seulement au
+statut « Nouveau »** — l'ordre de grandeur explique tout ce qui suit).
+
+- **La lecture des tickets est enfin filtrée CÔTÉ SERVEUR** (`searchText[status]`) et
+  triée du **plus ancien au plus récent**. Auparavant on lisait les N tickets aux ID les
+  plus grands *tous statuts confondus*, puis on filtrait en Python : sur une instance
+  réelle où l'écrasante majorité des tickets est close, la fenêtre se remplissait de
+  tickets clos et pouvait ne renvoyer **aucun candidat** alors que des tickets attendaient
+  d'être triés. Le tri ascendant fait par ailleurs passer **l'arriéré en premier** — le
+  stock que le client attend justement de voir traiter le jour de la mise en service.
+  `Content-Range` fournit désormais le total réel, donc une troncature **mesurée** plutôt
+  que devinée. Le filtrage Python est conservé en ceinture : un GLPI plus ancien qui
+  ignorerait `searchText` dégraderait la performance, jamais la correction.
+- **Le masquage était mis en échec par l'encodage HTML de GLPI.** Les tickets sont stockés
+  en HTML (éditeur TinyMCE) : balisage `<p>` et **entités**. Or l'éditeur insère `&nbsp;`
+  automatiquement, et la typographie française place une espace insécable **avant les
+  deux-points**. Mesuré sur des données réalistes :
+
+  | Contenu tel que GLPI le stocke | Avant |
+  |---|---|
+  | `06&nbsp;12&nbsp;34&nbsp;56&nbsp;78` | **téléphone en clair** |
+  | `mot de passe&nbsp;: Azerty1234` | **mot de passe en clair** |
+
+  Ce n'est pas un cas tordu, c'est la forme **normale** d'un numéro ou d'un mot de passe
+  collé dans un ticket français. Le texte GLPI est désormais normalisé en texte simple à
+  la frontière de l'adaptateur — là où la représentation GLPI devient de la donnée du
+  domaine — plutôt que d'apprendre le HTML aux motifs de masquage, qui doivent rester purs.
+  Bénéfice second : le LLM reçoit `Je n'ai plus internet` au lieu de
+  `Je n&#039;ai plus internet`, ce qui améliore le triage et économise des jetons.
+
 ### Suites de l'audit — imputabilité, troncatures visibles, documentation
 
 - **Le passage d'une ENTITÉ en `full_auto` est désormais audité.** Il transitait par
@@ -164,7 +196,7 @@ protégés. Les défauts corrigés ici ne sont pas dans la logique de triage : i
 
 ### Tests
 
-**389 → 485 pytest** (verts sur 3.13 **et** 3.14) et **89 → 111 Vitest**. Chaque
+**389 → 490 pytest** (verts sur 3.13 **et** 3.14) et **89 → 111 Vitest**. Chaque
 correction a un test vérifié **rouge avant, vert après**. Aucun test existant affaibli.
 
 ## 2026-08-08 — 0.9.47 — Honnêteté des claims, bornes mémoire et remise à niveau complète

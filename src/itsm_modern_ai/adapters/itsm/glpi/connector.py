@@ -44,6 +44,21 @@ _REFERENTIALS_PAGE = 1000  # taille de page des lectures de référentiels (rang
 
 logger = logging.getLogger("itsm.glpi")
 
+
+def _content_range_total(header: str | None) -> int | None:
+    """Total réel annoncé par GLPI dans `Content-Range: <début>-<fin>/<total>`.
+
+    Sert à distinguer « la page est pleine » de « il y a réellement plus » : sans ce
+    total, une page pleine est ambiguë (exactement N résultats, ou N sur beaucoup plus ?).
+    Renvoie None si l'en-tête est absent ou illisible — on ne devine pas.
+    """
+    if not header or "/" not in header:
+        return None
+    try:
+        return int(header.rsplit("/", 1)[1].strip())
+    except (ValueError, IndexError):
+        return None
+
 class GlpiConnector:
     def __init__(
         self,
@@ -77,37 +92,57 @@ class GlpiConnector:
         )
 
     async def get_new_tickets(self) -> list[Ticket]:
-        """Tickets « Nouveau », lus dans une FENÊTRE des N plus récents.
+        """Tickets « Nouveau », filtrés PAR GLPI et lus du plus ANCIEN au plus récent.
 
-        ⚠️ LIMITE CONNUE, à ne pas découvrir en production. La lecture porte sur les
-        `polling_max_tickets` tickets aux ID les plus GRANDS (tous statuts confondus), et
-        le filtrage « Nouveau » se fait ensuite CÔTÉ CLIENT. Conséquence : sur une
-        instance qui compte plus de tickets récents que la fenêtre, un arriéré de tickets
-        « Nouveau » ANCIENS (ID faibles) sort de la fenêtre et n'est jamais trié — c'est
-        précisément le stock que le client attend de voir traiter le jour de la mise en
-        service.
+        Deux choix structurants, validés contre une instance GLPI 11.0.7 réelle :
 
-        Le correctif propre est un filtre de statut CÔTÉ GLPI (`criteria[…]` sur l'API de
-        recherche) plus une pagination réelle sur `Content-Range` ; il demande d'être
-        validé contre une instance GLPI réelle, les deux API (legacy/V2) n'exposant pas
-        la même syntaxe. En attendant, on refuse au moins que la troncature soit
-        SILENCIEUSE : une page pleine signifie « il y a probablement plus », et on le dit.
+        1. **Filtrage CÔTÉ SERVEUR** (`searchText[status]`). Auparavant on lisait les N
+           tickets aux ID les plus grands *tous statuts confondus*, puis on filtrait en
+           Python. Sur une instance réelle, l'écrasante majorité des tickets est résolue
+           ou close — mesuré sur l'instance de test : **193 tickets dont 3 « Nouveau »**.
+           La fenêtre se remplissait donc de tickets clos, et pouvait ne renvoyer AUCUN
+           candidat alors que des tickets à trier existaient. Le filtre déplace la fenêtre
+           sur les seuls tickets pertinents. `Content-Range` renvoie alors le total réel
+           des tickets « Nouveau », ce qui rend la troncature mesurable et non devinée.
+
+        2. **Tri ASCENDANT** (le plus ancien d'abord). L'ordre DESC servait d'abord les
+           tickets récents ; l'arriéré ancien restait invisible tant que la fenêtre était
+           pleine — or c'est précisément le stock que le client attend de voir traiter le
+           jour de la mise en service. En ASC, l'arriéré passe en premier.
+
+        Le filtrage Python est CONSERVÉ en ceinture : si un GLPI plus ancien ignorait
+        `searchText`, il renverrait tous les statuts et le filtre local rattraperait —
+        moins efficace, mais jamais faux. Une régression silencieuse de l'API dégrade donc
+        la performance, pas la correction.
+
+        ⚠️ Limite résiduelle assumée : en mode `suggestion`, un ticket traité reste
+        « Nouveau » côté GLPI. Si le nombre de tickets « Nouveau » dépasse durablement
+        `polling_max_tickets`, les mêmes tickets déjà traités occuperont la fenêtre. Le
+        cas est signalé par l'avertissement ci-dessous ; le résoudre demanderait un curseur
+        persistant entre les cycles.
         """
         async with self._client() as gc:
             resp = await gc.get(
-                "Ticket", params={"range": f"0-{self._max_tickets - 1}", "sort": "id", "order": "DESC"}
+                "Ticket",
+                params={
+                    f"searchText[{mapper.STATUS_FIELD}]": str(mapper.STATUS_NEW),
+                    "sort": "id",
+                    "order": "ASC",
+                    "range": f"0-{self._max_tickets - 1}",
+                },
             )
             data = resp.json()
+            total = _content_range_total(resp.headers.get("content-range"))
         if isinstance(data, dict):  # GLPI peut renvoyer un objet unique
             data = [data]
-        if len(data) >= self._max_tickets:
+        if total is not None and total > self._max_tickets:
             logger.warning(
-                "lecture GLPI TRONQUÉE : %d tickets lus = plafond POLLING_MAX_TICKETS. "
-                "Les tickets « Nouveau » plus anciens que cette fenêtre ne sont PAS vus "
-                "et ne le seront jamais tant que des tickets plus récents la remplissent. "
-                "Si un arriéré doit être trié, relever POLLING_MAX_TICKETS le temps de le "
-                "résorber.",
-                len(data),
+                "arriéré GLPI TRONQUÉ : %d tickets « Nouveau » côté GLPI pour une fenêtre "
+                "de %d (POLLING_MAX_TICKETS). Les plus anciens sont traités en premier, "
+                "mais le reste attendra les cycles suivants — et ne sera jamais atteint si "
+                "le mode `suggestion` laisse les tickets au statut « Nouveau ». Relever "
+                "POLLING_MAX_TICKETS le temps de résorber l'arriéré.",
+                total, self._max_tickets,
             )
         return [mapper.ticket_from_glpi(t) for t in data if mapper.is_new(t)]
 
