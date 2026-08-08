@@ -11,8 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
-import { Api, type EligibilityItem, type RefItem, type RefKind } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { Api, type EligibilityItem, type RefItem, type RefKind, type SkillDomain } from "@/lib/api";
+import { useLang, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const ALL = "__all__";
@@ -50,9 +50,16 @@ export function RefEligibilityEditor({
   save: (items: EligibilityItem[]) => Promise<RefItem[]>;
 }) {
   const t = useT();
+  const { lang } = useLang();
   const toast = useToast();
   const res = useResource(useCallback(() => Api.discovery(kind), [kind]));
-  const [draft, setDraft] = useState<Record<number, { eligible: boolean; skills: string }>>({});
+  const [draft, setDraft] = useState<
+    Record<number, { eligible: boolean; skills: string; skill_tags: string[] }>
+  >({});
+  // Catalogue chargé depuis l'API : le dupliquer côté client ferait cocher des clés que
+  // le moteur ignorerait ensuite en silence. Un échec de chargement n'est PAS bloquant —
+  // la prose libre reste utilisable, on n'ampute pas la page pour une liste d'aide.
+  const [catalog, setCatalog] = useState<SkillDomain[]>([]);
   const [query, setQuery] = useState("");
   const [profile, setProfile] = useState(ALL);
   const [eligibleOnly, setEligibleOnlyState] = useState(() => readEligibleOnly(kind));
@@ -86,7 +93,10 @@ export function RefEligibilityEditor({
     if (res.data) {
       setDraft(
         Object.fromEntries(
-          res.data.map((r) => [r.ext_id, { eligible: r.eligible, skills: r.skills }]),
+          res.data.map((r) => [
+            r.ext_id,
+            { eligible: r.eligible, skills: r.skills, skill_tags: r.skill_tags ?? [] },
+          ]),
         ),
       );
     }
@@ -111,7 +121,33 @@ export function RefEligibilityEditor({
 
   const eligibleCount = items.filter((r) => draft[r.ext_id]?.eligible ?? r.eligible).length;
 
-  function patch(id: number, p: Partial<{ eligible: boolean; skills: string }>) {
+  useEffect(() => {
+    let vivant = true;
+    Api.skillCatalog()
+      .then((c) => vivant && setCatalog(c))
+      .catch(() => undefined); // non bloquant : la prose reste saisissable
+    return () => {
+      vivant = false;
+    };
+  }, []);
+
+  function toggleTag(id: number, key: string, coche: boolean) {
+    setDraft((d) => {
+      const actuel = d[id]?.skill_tags ?? [];
+      return {
+        ...d,
+        [id]: {
+          ...d[id],
+          skill_tags: coche ? [...actuel, key] : actuel.filter((k) => k !== key),
+        },
+      };
+    });
+  }
+
+  function patch(
+    id: number,
+    p: Partial<{ eligible: boolean; skills: string; skill_tags: string[] }>,
+  ) {
     setDraft((d) => ({ ...d, [id]: { ...d[id], ...p } }));
   }
 
@@ -193,7 +229,11 @@ export function RefEligibilityEditor({
 
           <div className="flex flex-col">
             {filtered.map((r, i) => {
-              const d = draft[r.ext_id] ?? { eligible: r.eligible, skills: r.skills };
+              const d = draft[r.ext_id] ?? {
+                eligible: r.eligible,
+                skills: r.skills,
+                skill_tags: r.skill_tags ?? [],
+              };
               return (
                 <div
                   key={r.ext_id}
@@ -239,14 +279,46 @@ export function RefEligibilityEditor({
                     )}
                     {r.profile && <Tag tone="muted">{r.profile}</Tag>}
                   </div>
+                  {d.eligible && catalog.length > 0 && (
+                    <div className="mt-3 pl-[44px]">
+                      <p className="mb-1.5 text-[11.5px] text-muted-foreground">
+                        {t(
+                          "Domaines pris en charge — cochez pour décrire ce technicien sans rien rédiger.",
+                          "Supported domains — tick to describe this technician without writing anything.",
+                        )}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {catalog.map((dom) => {
+                          const coche = d.skill_tags.includes(dom.key);
+                          return (
+                            <button
+                              type="button"
+                              key={dom.key}
+                              title={dom.hint_fr}
+                              aria-pressed={coche}
+                              onClick={() => toggleTag(r.ext_id, dom.key, !coche)}
+                              className={cn(
+                                "rounded-full border px-2.5 py-1 text-[11.5px] transition-colors",
+                                coche
+                                  ? "border-primary/40 bg-primary/15 text-accent-indigo"
+                                  : "border-border text-muted-foreground hover:bg-accent/60",
+                              )}
+                            >
+                              {lang === "fr" ? dom.label_fr : dom.label_en}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   {d.eligible && (
                     <div className="mt-3 pl-[44px]">
                       <Textarea
                         className="min-h-16 bg-background/40"
                         value={d.skills}
                         placeholder={t(
-                          "Compétences / domaines (prose) — sert au routage de l'IA…",
-                          "Skills / domains (prose) — used for AI routing…",
+                          "Précisions libres — exceptions, spécialités, disponibilités…",
+                          "Free-form notes — exceptions, specialties, availability…",
                         )}
                         onChange={(e) => patch(r.ext_id, { skills: e.target.value })}
                       />

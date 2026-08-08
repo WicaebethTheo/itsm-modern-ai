@@ -5,6 +5,7 @@
 | Fonctionnalité | Détails |
 |---|---|
 | **Whitelist curée depuis GLPI** | Scan GLPI (`POST /api/glpi/sync`) → l'admin sélectionne dans la console les catégories autorisées, les entités du périmètre, et les techniciens/groupes éligibles. Le moteur n'agit que dans ce **périmètre effectif** = GLPI ∩ sélections admin. |
+| **Compétences cochables + fiches en prose** | 14 domaines d'un service IT type (poste de travail, réseau, messagerie, comptes & droits…) à cocher par technicien ou groupe : le routage devient exploitable **dès l'installation**, sans rédaction. La fiche en prose reste disponible pour les nuances (exceptions, spécialités, disponibilités) et **prime** sur le domaine générique. Catalogue servi par `GET /api/skills`. |
 | **Fiches techniciens en prose, en base** | Plus de YAML — chaque technicien et chaque groupe a une fiche libre éditable depuis l'UI. Le LLM s'en sert pour router ; le code rejette toute proposition hors périmètre. |
 | **Routage technicien (préféré) ou groupe (fallback)** | Préférence pour un technicien nommé ; bascule sur un groupe éligible si aucun technicien ne convient. |
 | **3 modes d'exécution par entité** | `suggestion` (Suivi privé, aucune mutation) · `semi_auto` (applique si confiance ≥ 2ᵉ seuil) · `full_auto` (applique + répond au demandeur en Suivi public). Réglés indépendamment par entité GLPI. Détail : [`modes.md`](modes.md). |

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
+from ...domain import skills as domain_skills
 from ...services import referentials
 from ...services.runtime_config import RuntimeConfigService
 from ..deps import get_config_service, get_session
@@ -27,6 +28,7 @@ class RefItem(BaseModel):
     selected: bool
     eligible: bool
     skills: str
+    skill_tags: list[str] = Field(default_factory=list)  # domaines cochés (cf. domain.skills)
     mode: str | None = None  # mode d'exécution (entités) — None = défaut global
     auto_min_confidence: float | None = None  # 2e seuil semi-auto (entités)
 
@@ -41,6 +43,9 @@ class EligibilityItem(BaseModel):
     ext_id: int
     eligible: bool = False
     skills: str = Field(default="", max_length=20_000)
+    # `None` = champ NON fourni → les cases déjà cochées côté serveur sont préservées.
+    # Un client plus ancien ne doit pas effacer une sélection qu'il ignore.
+    skill_tags: list[str] | None = Field(default=None, max_length=64)
 
 
 class Scope(BaseModel):
@@ -58,6 +63,7 @@ def _item(row) -> RefItem:
     return RefItem(
         ext_id=row.ext_id, name=row.name, profile=row.profile, selected=row.selected,
         eligible=row.eligible, skills=row.skills,
+        skill_tags=[k for k in (getattr(row, "skill_tags", "") or "").split(",") if k],
         mode=getattr(row, "mode", None), auto_min_confidence=getattr(row, "auto_min_confidence", None),
     )
 
@@ -74,6 +80,23 @@ async def sync_glpi(request: Request, session: Session = Depends(get_session)) -
         return SyncResult(ok=False, detail=f"Échec du scan GLPI : {exc}")
     counts = referentials.sync(session, refs)
     return SyncResult(ok=True, detail="Référentiels synchronisés.", counts=counts)
+
+
+class SkillDomainView(BaseModel):
+    key: str
+    label_fr: str
+    label_en: str
+    hint_fr: str
+
+
+@router.get("/skills", response_model=list[SkillDomainView])
+def skill_catalog() -> list[SkillDomainView]:
+    """Catalogue des domaines de compétence cochables (contenu produit, pas de la config).
+
+    Exposé par l'API pour que la console n'ait pas à le dupliquer : une divergence entre
+    les deux listes ferait cocher des clés que le moteur ignorerait ensuite en silence.
+    """
+    return [SkillDomainView(**vars(d)) for d in domain_skills.SKILL_CATALOG]
 
 
 @router.get("/discovery/{kind}", response_model=list[RefItem])

@@ -1,3 +1,54 @@
+## 2026-08-08 — 0.9.49 — Compétences cochables : un routage exploitable dès l'installation
+
+### Le problème, observé en conditions réelles
+
+Sur une instance fraîchement installée, **7 propositions sur 20 étaient rejetées en
+`low_confidence`**. La cause n'était ni la whitelist ni le modèle : `routing_prose`
+n'incluait que les techniciens dont la **fiche en prose était remplie**. Tant que l'admin
+n'avait rien rédigé, le LLM recevait une liste de noms **sans aucune description** et
+routait sur un patronyme. Il s'en tirait mal — et le seuil de confiance faisait son travail
+en rejetant. Le produit demandait donc un travail de rédaction avant de rendre le moindre
+service.
+
+### Ce que ça change
+
+- **14 domaines de compétence cochables** (`domain/skills.py`) couvrant un service IT type :
+  poste de travail, impression, réseau & Wifi, VPN, messagerie, téléphonie, comptes &
+  droits, applications métier, ERP & comptabilité, sécurité, mobilité, serveurs &
+  sauvegarde, accès physique, licences. Cocher suffit à rendre un technicien **exploitable
+  par le moteur**, sans rédiger une ligne.
+- **Chaque domaine embarque un indice** transmis au LLM avec le libellé (« Réseau & Wifi
+  (connectivité, Wifi, switches, DHCP/DNS, câblage) »). Sans lui, « Réseau » et « VPN » se
+  confondent et le modèle hésite entre deux techniciens — soit exactement la confiance
+  basse qu'on cherche à supprimer.
+- **La prose reste, et prime.** Le prompt place le socle coché d'abord, la prose ensuite :
+  une nuance rédigée (« ne gère pas les Mac », « astreinte le week-end ») l'emporte sur le
+  domaine générique, car c'est la dernière information lue qui pèse le plus.
+- **Console** : puces cliquables sous chaque technicien ou groupe éligible, libellées
+  FR/EN, avec l'indice en infobulle. Le champ libre est recentré sur son vrai rôle —
+  « Précisions libres : exceptions, spécialités, disponibilités ».
+
+### Détails qui comptent
+
+- **Le catalogue est servi par l'API** (`GET /api/skills`), jamais dupliqué côté client :
+  deux listes divergentes feraient cocher des clés que le moteur ignorerait en silence.
+- **Un client qui n'envoie pas le champ ne l'efface pas.** `skill_tags` absent = sélection
+  préservée ; liste vide explicite = l'admin a décoché. La distinction est testée, parce
+  que Pydantic sérialise un champ absent à `null` et rendait les deux cas indiscernables.
+- **Les clés inconnues sont ignorées, pas rejetées** : perdre une case vaut mieux
+  qu'empêcher un admin d'enregistrer son périmètre. Les clés sont stables — elles vivent
+  en base ; seuls les libellés peuvent évoluer.
+- **Migration `b3e5c1f27a04`** avec `server_default=""` : la colonne est `NOT NULL` et la
+  table contient déjà le périmètre sélectionné. Sans défaut serveur, l'`ALTER TABLE`
+  échouerait sur base peuplée — le défaut relevé sur `cb8ffef4f8f3`, vérifié non reproduit
+  ici (migration testée à vide **et** sur base peuplée, aller-retour compris).
+- **Panne du catalogue non bloquante** : si l'API échoue, les puces disparaissent mais la
+  saisie libre reste utilisable. On n'ampute pas la page pour une liste d'aide.
+
+### Tests
+
+**492 → 497 pytest**, **111 → 115 Vitest**, verts sur 3.13 et 3.14.
+
 # Changelog
 
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/) ; le projet ne suit

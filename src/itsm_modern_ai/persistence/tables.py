@@ -147,6 +147,11 @@ class ReferentialCache(SQLModel, table=True):
     selected: bool = False  # catégories/entités dans le périmètre
     eligible: bool = False  # techniciens/groupes vers qui l'IA peut router
     skills: str = ""  # prose (techniciens/groupes)
+    # Domaines de compétence COCHÉS (clés de `domain.skills`, séparées par des virgules).
+    # Stocké à plat plutôt que dans une table de liaison : la cardinalité est minuscule
+    # (≤ 14 clés par ligne), la lecture est toujours globale, et une jointure n'apporterait
+    # que de la complexité. Complète `skills` sans le remplacer — cf. `routing_prose`.
+    skill_tags: str = ""
     # Mode d'exécution par ENTITÉ (kind="entity") : None = défaut global (runtime_config).
     # `auto_min_confidence` = 2e seuil strict du mode semi_auto (None = défaut global).
     mode: str | None = None  # "suggestion" | "semi_auto" | "full_auto"

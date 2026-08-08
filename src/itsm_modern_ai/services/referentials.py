@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from sqlmodel import Session, select
 
+from ..domain import skills as domain_skills
 from ..domain.models import Referentials
 from ..domain.modes import ExecutionMode
 from ..persistence.tables import ReferentialCache
@@ -69,13 +70,23 @@ def list_kind(session: Session, kind: str) -> list[ReferentialCache]:
 
 
 def set_eligibility(session: Session, kind: str, items: list[dict]) -> None:
-    """Met à jour `eligible` + `skills` pour des techniciens/groupes (par ext_id)."""
+    """Met à jour `eligible`, `skills` (prose) et `skill_tags` (cases) par ext_id.
+
+    `skill_tags` n'est écrit que s'il est FOURNI : un client plus ancien qui n'envoie pas
+    le champ ne doit pas effacer des cases cochées côté serveur. Les clés inconnues sont
+    filtrées par `skills.normalize` (catalogue versionné avec le code).
+    """
     for it in items:
         row = _row(session, kind, int(it["ext_id"]))
         if row is None:
             continue
         row.eligible = bool(it.get("eligible", False))
         row.skills = str(it.get("skills", "") or "")
+        # `is not None` et non `in it` : Pydantic sérialise le champ absent à `None`, ce
+        # qui rendait « non fourni » indiscernable de « vidé ». Une liste VIDE explicite
+        # efface bien la sélection (l'admin a décoché) ; `None` la préserve.
+        if it.get("skill_tags") is not None:
+            row.skill_tags = ",".join(domain_skills.normalize(it.get("skill_tags")))
         session.add(row)
     session.commit()
 
@@ -135,13 +146,41 @@ def effective_referentials(session: Session) -> Referentials:
     return Referentials(categories=cats, technicians=techs, groups=groups, entities=entities)
 
 
+def _fiche(libelle: str, row) -> str | None:
+    """Description d'un acteur éligible : domaines cochés PUIS prose libre.
+
+    L'ordre n'est pas cosmétique. Le socle coché donne au LLM des repères stables et
+    discriminants ; la prose vient APRÈS pour qu'une nuance (« ne gère pas les Mac »,
+    « ne prend plus les demandes d'accès ») prime sur le domaine générique en cas de
+    contradiction — c'est la dernière information lue qui pèse le plus.
+
+    Renvoie None si l'acteur n'a NI case NI prose : l'inclure n'apprendrait rien au modèle
+    et diluerait le prompt (son nom figure déjà dans la liste des acteurs éligibles).
+    """
+    socle = domain_skills.describe([k for k in (row.skill_tags or "").split(",") if k])
+    prose = (row.skills or "").strip()
+    if not socle and not prose:
+        return None
+    lignes = [f"{libelle} {row.ext_id} ({row.name}) :"]
+    if socle:
+        lignes.append(f"Domaines : {socle}")
+    if prose:
+        lignes.append(prose)
+    return "\n".join(lignes)
+
+
 def routing_prose(session: Session) -> str:
-    """Prose des techniciens et groupes ÉLIGIBLES (pour le routage, FR-15)."""
-    blocks: list[str] = []
-    for r in list_kind(session, KIND_TECHNICIAN):
-        if r.eligible and r.skills.strip():
-            blocks.append(f"Technicien {r.ext_id} ({r.name}) :\n{r.skills.strip()}")
-    for r in list_kind(session, KIND_GROUP):
-        if r.eligible and r.skills.strip():
-            blocks.append(f"Groupe {r.ext_id} ({r.name}) :\n{r.skills.strip()}")
+    """Description des techniciens et groupes ÉLIGIBLES (pour le routage, FR-15).
+
+    ⚠️ Un acteur sans description reste routable (son nom est listé dans le prompt) mais le
+    modèle doit alors deviner son périmètre à partir d'un patronyme. Mesuré sur une instance
+    aux fiches vides : 7 propositions sur 20 rejetées en `low_confidence`. D'où les domaines
+    cochables — un socle en quelques clics, sans rédaction.
+    """
+    blocks = [
+        f for f in (
+            [_fiche("Technicien", r) for r in list_kind(session, KIND_TECHNICIAN) if r.eligible]
+            + [_fiche("Groupe", r) for r in list_kind(session, KIND_GROUP) if r.eligible]
+        ) if f
+    ]
     return "\n\n".join(blocks)

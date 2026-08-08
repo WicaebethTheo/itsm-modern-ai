@@ -165,3 +165,94 @@ def test_unchanged_entity_modes_do_not_flood_the_audit_log(client):
     with db.session_scope() as session:
         lignes = [a for a in session.exec(select(AuditLog)).all() if a.key == "entity:88"]
     assert len(lignes) == 1, "une réécriture sans changement a produit une entrée d'audit"
+
+
+def test_catalogue_de_competences_est_expose(client):
+    """La console doit lire le catalogue depuis l'API, jamais le dupliquer.
+
+    Une liste divergente ferait cocher des clés que le moteur ignorerait en silence.
+    """
+    r = client.get("/api/skills")
+    assert r.status_code == 200
+    cat = r.json()
+    assert len(cat) == 14
+    cles = {d["key"] for d in cat}
+    assert {"workstation", "network", "accounts", "erp_finance"} <= cles
+    assert all(d["label_fr"] and d["label_en"] and d["hint_fr"] for d in cat)
+
+
+def test_competences_cochees_decrivent_le_technicien_sans_prose(client):
+    """LE cas du jour 1 : cocher suffit à rendre un technicien exploitable par le LLM.
+
+    Sans cases ni prose, `routing_prose` n'incluait aucune description et le modèle
+    routait sur un patronyme — d'où des rejets `low_confidence`.
+    """
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import ReferentialCache
+    from itsm_modern_ai.services import referentials
+
+    with db.session_scope() as s:
+        s.add(ReferentialCache(kind="technician", ext_id=42, name="Alice"))
+        s.commit()
+
+    assert client.put(
+        "/api/technicians",
+        json=[{"ext_id": 42, "eligible": True, "skills": "", "skill_tags": ["workstation", "printing"]}],
+    ).status_code == 200
+
+    with db.session_scope() as s:
+        prose = referentials.routing_prose(s)
+    assert "Alice" in prose
+    assert "Poste de travail" in prose and "Impression" in prose
+    # Le `hint` accompagne le libellé : c'est lui qui rend deux domaines discriminables.
+    assert "imprimantes" in prose
+
+
+def test_prose_libre_passe_apres_le_socle_coche(client):
+    """La nuance rédigée doit primer sur le domaine générique — donc être lue en dernier."""
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import ReferentialCache
+    from itsm_modern_ai.services import referentials
+
+    with db.session_scope() as s:
+        s.add(ReferentialCache(kind="technician", ext_id=43, name="Bob"))
+        s.commit()
+    client.put(
+        "/api/technicians",
+        json=[{"ext_id": 43, "eligible": True, "skills": "Ne gère pas les Mac.",
+               "skill_tags": ["workstation"]}],
+    )
+    with db.session_scope() as s:
+        prose = referentials.routing_prose(s)
+    assert prose.index("Domaines :") < prose.index("Ne gère pas les Mac.")
+
+
+def test_client_sans_skill_tags_ne_efface_pas_la_selection(client):
+    """Un client plus ancien qui ignore le champ ne doit pas effacer les cases cochées."""
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import ReferentialCache
+
+    with db.session_scope() as s:
+        s.add(ReferentialCache(kind="technician", ext_id=44, name="Carl"))
+        s.commit()
+    client.put("/api/technicians", json=[{"ext_id": 44, "eligible": True, "skills": "", "skill_tags": ["security"]}])
+    client.put("/api/technicians", json=[{"ext_id": 44, "eligible": True, "skills": "note"}])  # sans le champ
+
+    r = [x for x in client.get("/api/discovery/technician").json() if x["ext_id"] == 44][0]
+    assert r["skill_tags"] == ["security"], "une sélection a été effacée par un client qui l'ignorait"
+
+
+def test_cles_inconnues_sont_ignorees_sans_bloquer(client):
+    """Perdre une case est préférable à empêcher un admin d'enregistrer son périmètre."""
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import ReferentialCache
+
+    with db.session_scope() as s:
+        s.add(ReferentialCache(kind="technician", ext_id=45, name="Dana"))
+        s.commit()
+    assert client.put(
+        "/api/technicians",
+        json=[{"ext_id": 45, "eligible": True, "skills": "", "skill_tags": ["network", "n_existe_pas"]}],
+    ).status_code == 200
+    r = [x for x in client.get("/api/discovery/technician").json() if x["ext_id"] == 45][0]
+    assert r["skill_tags"] == ["network"]

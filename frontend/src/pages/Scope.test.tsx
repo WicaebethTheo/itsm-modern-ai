@@ -18,6 +18,7 @@ const ref = (over: Partial<RefItem> & { ext_id: number; name: string }): RefItem
   selected: false,
   eligible: false,
   skills: "",
+  skill_tags: [],
   mode: null,
   ...over,
 });

@@ -110,7 +110,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.48";
+export const APP_VERSION = "0.9.49";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -470,6 +470,8 @@ export interface RefItem {
   selected: boolean;
   eligible: boolean;
   skills: string;
+  /** Domaines de compétence cochés (clés du catalogue `/api/skills`). */
+  skill_tags: string[];
   mode?: ExecutionMode | null;
   auto_min_confidence?: number | null;
 }
@@ -491,10 +493,20 @@ export interface Scope {
   entity_ids: number[];
 }
 
+/** Domaine cochable du catalogue produit — servi par l'API, jamais dupliqué côté client. */
+export interface SkillDomain {
+  key: string;
+  label_fr: string;
+  label_en: string;
+  hint_fr: string;
+}
+
 export interface EligibilityItem {
   ext_id: number;
   eligible: boolean;
   skills: string;
+  /** Omis = le serveur PRÉSERVE la sélection existante ; `[]` la vide. */
+  skill_tags?: string[];
 }
 
 export interface Anomaly {
@@ -746,6 +758,7 @@ export const Api = {
                 : demo.categories,
         )
       : api.get<RefItem[]>(`/api/discovery/${kind}`),
+  skillCatalog: () => api.get<SkillDomain[]>("/api/skills"),
   saveTechnicians: (items: EligibilityItem[]) =>
     DEMO ? ok(demo.technicians) : api.put<RefItem[]>("/api/technicians", items),
   saveGroups: (items: EligibilityItem[]) =>
