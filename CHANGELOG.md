@@ -40,11 +40,17 @@ deux **garde-fous trop laxistes**. Aucun changement de comportement du moteur.
 ### Sécurité — surface d'attaque
 
 - **Vérification de version : garde anti-SSRF rendu inconditionnel** (`routes/version.py`).
-  L'URL du flux était validée à l'écriture et re-vérifiée par résolution DNS, mais ce
-  second garde dépendait de `ssrf_guard_enabled` — un opérateur le désactivant pour une
-  cible GLPI/LLM on-premise laissait cet appel sans protection, alors qu'un flux de
-  versions n'a aucune raison légitime de pointer un hôte interne. La validation est
-  désormais refaite **au point d'appel**, quel que soit le flag.
+  `update_check_url` n'est **écrivable par aucune route** (la clé n'est pas un champ de
+  `ConfigUpdate`, l'UI ne l'expose pas) : sa seule source est la variable d'environnement
+  `UPDATE_CHECK_URL`, qui arrive par `Settings` **sans passer** par la validation de
+  `RuntimeConfigService.set()`. Le seul contrôle restant était donc la résolution DNS des
+  `event_hooks`, elle-même conditionnée à `ssrf_guard_enabled` — flag qu'un opérateur peut
+  désactiver pour une cible GLPI/LLM on-premise. Un `.env` pointant `169.254.169.254`
+  partait alors sans aucun contrôle. La validation (schéma `https`, hôte public routable)
+  est désormais refaite **au point d'appel**, quel que soit le flag.
+  *À noter : ce n'est pas un vecteur d'élévation de privilèges — qui peut écrire le `.env`
+  contrôle déjà le process. C'est une protection contre l'erreur de configuration, et
+  contre un futur endpoint qui rendrait la clé modifiable.*
 - **`/api/debug/diagnostics` : détails d'exception masqués et bornés**. Le endpoint
   (admin authentifié **et** `DEBUG_TOOLS_ENABLED`, livré à `false`) renvoyait `str(exc)`
   brut, or une erreur de transport LLM embarque jusqu'à 500 caractères du corps renvoyé
