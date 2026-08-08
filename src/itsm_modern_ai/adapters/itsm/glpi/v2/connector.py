@@ -90,7 +90,11 @@ class GlpiV2Connector:
                 "Assistance/Ticket",
                 # `status` est un objet imbriqué {id,name} en V2 → filtre RSQL en dot-notation.
                 filter=f"status.id=={mapper.STATUS_NEW}",
-                sort="id:desc",
+                # ASCENDANT : l'arriéré d'abord. En `desc`, les tickets « Nouveau » les plus
+                # ANCIENS restaient hors fenêtre tant que des plus récents la remplissaient —
+                # or c'est précisément le stock que le client attend de voir traiter le jour
+                # de la mise en service. Cohérent avec le connecteur legacy.
+                sort="id:asc",
                 limit=self._max_tickets,
             )
         # Filet : on revalide le statut côté domaine (le filtre RSQL fait l'essentiel).

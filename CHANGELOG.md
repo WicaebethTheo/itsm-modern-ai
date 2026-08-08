@@ -154,6 +154,23 @@ statut « Nouveau »** — l'ordre de grandeur explique tout ce qui suit).
   Bénéfice second : le LLM reçoit `Je n'ai plus internet` au lieu de
   `Je n&#039;ai plus internet`, ce qui améliore le triage et économise des jetons.
 
+### API GLPI V2 — validée contre l'instance réelle, mêmes défauts corrigés
+
+L'accès OAuth2 (grant `password`) a permis de vérifier le connecteur V2, jusqu'ici jamais
+éprouvé contre un vrai GLPI.
+
+- **Le masquage y était mis en échec à l'identique.** L'API V2 renvoie exactement le même
+  HTML que le legacy (`Je n&#039;ai plus internet`, `<p>…</p>`) : le `&nbsp;` faisait donc
+  partir mots de passe et téléphones **en clair** au LLM, quel que soit le connecteur
+  choisi. La normalisation est désormais **partagée** par les deux (`glpi/_text.py`) —
+  la dupliquer aurait garanti qu'une copie dérive au prochain correctif, et une dérive
+  ici, c'est de la PII qui fuit.
+- **Tri passé en ascendant**, cohérent avec le legacy : l'arriéré d'abord. Le filtrage
+  RSQL côté serveur (`filter=status.id==1`) était, lui, déjà correct.
+- **Vérification croisée** : les deux connecteurs renvoient exactement les mêmes tickets
+  sur la même instance, avec un texte normalisé identique. Un basculement d'API ne change
+  donc plus ce qui part au LLM — ni ce qui est masqué.
+
 ### Suites de l'audit — imputabilité, troncatures visibles, documentation
 
 - **Le passage d'une ENTITÉ en `full_auto` est désormais audité.** Il transitait par
@@ -196,7 +213,7 @@ statut « Nouveau »** — l'ordre de grandeur explique tout ce qui suit).
 
 ### Tests
 
-**389 → 490 pytest** (verts sur 3.13 **et** 3.14) et **89 → 111 Vitest**. Chaque
+**389 → 492 pytest** (verts sur 3.13 **et** 3.14) et **89 → 111 Vitest**. Chaque
 correction a un test vérifié **rouge avant, vert après**. Aucun test existant affaibli.
 
 ## 2026-08-08 — 0.9.47 — Honnêteté des claims, bornes mémoire et remise à niveau complète

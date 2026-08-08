@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from .....domain.models import Ticket, TicketStat
+from .._text import plain_text
 
 STATUS_NEW = 1  # 1=New, 2=Assigned, 3=Planned, 4=Pending, 5=Solved, 6=Closed
 
@@ -82,8 +83,12 @@ def ticket_from_glpi(raw: dict) -> Ticket:
     """Construit un Ticket domaine depuis un objet Ticket de l'API V2."""
     return Ticket(
         id=int(raw["id"]),
-        title=str(raw.get("name") or ""),
-        content=str(raw.get("content") or ""),
+        # Même encodage HTML qu'en legacy — vérifié sur GLPI 11.0.7 : l'API V2 renvoie
+        # `Je n&#039;ai plus internet` et `<p>…</p>`. Sans cette normalisation, un
+        # `&nbsp;` (inséré par l'éditeur, et par la typographie française avant les
+        # deux-points) met le masquage en échec et fait partir un mot de passe EN CLAIR.
+        title=plain_text(str(raw.get("name") or "")),
+        content=plain_text(str(raw.get("content") or "")),
         status=status_id(raw.get("status")),
         entity_id=nested_id(raw.get("entity")),
         category_id=nested_id(raw.get("category")),

@@ -87,3 +87,46 @@ def test_ticket_from_glpi_normalise_titre_et_contenu():
     )
     assert t.title == "Je n'ai plus internet"
     assert "<p>" not in t.content and "&nbsp;" not in t.content
+
+
+# ── API V2 : même encodage HTML que le legacy (vérifié sur GLPI 11.0.7) ────────
+def test_mapper_v2_normalise_aussi_le_html():
+    """L'API V2 renvoie le MÊME HTML que le legacy — la fuite de masquage y était identique.
+
+    Vérifié sur instance réelle : `name` = 'Je n&#039;ai plus internet sur mon PC',
+    `content` = '<p>…</p>'. Le statut, lui, est un objet `{id, name}` en V2.
+    """
+    from itsm_modern_ai.adapters.itsm.glpi.v2 import mapper as v2
+
+    t = v2.ticket_from_glpi(
+        {
+            "id": 191,
+            "name": "Je n&#039;ai plus internet",
+            "content": "<p>mot de passe&nbsp;: Azerty1234</p>",
+            "status": {"id": 1, "name": "Nouveau"},
+            "entity": {"id": 0, "name": "Racine"},
+        }
+    )
+    assert t.title == "Je n'ai plus internet"
+    assert "&nbsp;" not in t.content and "<p>" not in t.content
+    # Et le masquage reprend la main sur le texte normalisé.
+    from itsm_modern_ai.domain import masking
+
+    assert "Azerty1234" not in masking.mask(t.content).text
+
+
+def test_les_deux_mappers_normalisent_de_facon_identique():
+    """Legacy et V2 doivent produire le MÊME texte : c'est la même donnée GLPI.
+
+    Une divergence ici signifierait qu'un basculement d'API change ce qui part au LLM —
+    et donc ce qui est masqué.
+    """
+    from itsm_modern_ai.adapters.itsm.glpi import mapper as legacy
+    from itsm_modern_ai.adapters.itsm.glpi.v2 import mapper as v2
+
+    brut_titre, brut_contenu = "Tel&nbsp;06&nbsp;12&nbsp;34&nbsp;56&nbsp;78", "<p>Je n&#039;ai plus rien</p>"
+    a = legacy.ticket_from_glpi({"id": 1, "name": brut_titre, "content": brut_contenu, "status": 1})
+    b = v2.ticket_from_glpi(
+        {"id": 1, "name": brut_titre, "content": brut_contenu, "status": {"id": 1, "name": "Nouveau"}}
+    )
+    assert a.title == b.title and a.content == b.content
