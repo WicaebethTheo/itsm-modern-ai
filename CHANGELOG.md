@@ -1,3 +1,49 @@
+## 2026-08-09 — 0.9.51 — Carte de couverture : voir la panne de routage avant de la subir
+
+### Le problème
+
+La page Techniciens était une liste de cases à cocher **sans aucun retour** sur ce que la
+sélection produit. Un domaine que personne ne couvre garantit pourtant un « à trier » dès
+qu'un ticket en relève — et l'admin ne le découvrait que dans le Journal, trois semaines
+plus tard, sous forme de tickets non triés. Même chose pour un domaine tenu par **une seule
+personne** : le trou n'apparaissait que le jour de son congé.
+
+### Ce qui change
+
+Un bandeau de **diagnostic prédictif** coiffe les pages Techniciens et Groupes :
+
+- **Domaines sans aucun acteur** — routage impossible, « à trier » garanti. Nommés
+  explicitement, avec leur conséquence.
+- **Domaines tenus par un seul technicien, sans groupe** — point de défaillance unique. Un
+  groupe éligible, lui, encaisse l'absence sans configuration : la distinction est faite,
+  les compteurs techniciens et groupes restent séparés.
+- **Tout est couvert** → confirmation explicite, plutôt qu'un silence ambigu.
+
+Le bandeau **réagit à la case qu'on vient de cocher**, avant tout enregistrement : le
+compteur du type en cours d'édition vient du brouillon local, celui de l'autre type (qui ne
+peut pas changer depuis cette page) vient du serveur. Sans cela, le diagnostic aurait
+contredit ce que l'admin a sous les yeux.
+
+Il n'apparaît **qu'une fois la configuration commencée** : afficher « 14 domaines non
+couverts » sur une instance qu'on vient de scanner serait du bruit, pas un diagnostic.
+
+### Nouveau endpoint
+
+`GET /api/skills/coverage` — par domaine du catalogue : nombre de techniciens et de groupes
+**éligibles** qui le couvrent. Le calcul écarte les acteurs non éligibles (les compter
+donnerait une carte rassurante et fausse) et les clés d'un catalogue antérieur.
+
+**Anti-mouchard (FR-18/21) :** l'endpoint ne renvoie que des **cardinalités par domaine** —
+aucun acteur nommé, aucun identifiant, aucune métrique par technicien. C'est une carte de la
+configuration, pas une mesure des personnes. Un test verrouille cette propriété.
+
+### Détails
+
+- Échec de chargement **non bloquant** : le bandeau disparaît, la page de configuration
+  reste entièrement utilisable. Même règle que le catalogue des domaines.
+- Tests : **508** pytest (+3) et **120** Vitest (+5), dont la réactivité au brouillon, la
+  levée d'alerte par un groupe de repli, et l'absence de fuite nominative.
+
 ## 2026-08-09 — 0.9.50 — « À trier » ne veut plus dire « invisible »
 
 ### Le trou, mesuré en conditions réelles

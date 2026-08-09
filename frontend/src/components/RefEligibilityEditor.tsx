@@ -1,6 +1,7 @@
 import { CheckCircle2, Search, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
+import { SkillCoverageBanner } from "@/components/SkillCoverage";
 import { SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -121,6 +122,18 @@ export function RefEligibilityEditor({
 
   const eligibleCount = items.filter((r) => draft[r.ext_id]?.eligible ?? r.eligible).length;
 
+  // Couverture par domaine telle qu'elle est À L'ÉCRAN (brouillon compris) : le bandeau
+  // de diagnostic doit réagir à la case qu'on vient de cocher, pas à l'état enregistré.
+  const liveCoverage = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const r of items) {
+      const d = draft[r.ext_id];
+      if (!(d?.eligible ?? r.eligible)) continue;
+      for (const k of d?.skill_tags ?? r.skill_tags ?? []) counts[k] = (counts[k] ?? 0) + 1;
+    }
+    return counts;
+  }, [items, draft]);
+
   useEffect(() => {
     let vivant = true;
     Api.skillCatalog()
@@ -170,6 +183,11 @@ export function RefEligibilityEditor({
         <p className="max-w-2xl text-[12px] text-muted-foreground">{desc}</p>
         <SyncButton onSynced={res.reload} />
       </div>
+
+      {/* Tant qu'aucun acteur n'est éligible, la carte annoncerait « 14 domaines non
+          couverts » : c'est du bruit sur une instance qu'on vient de scanner, pas un
+          diagnostic. Elle n'apparaît qu'une fois la configuration commencée. */}
+      {eligibleCount > 0 && <SkillCoverageBanner kind={kind} live={liveCoverage} />}
 
       {items.length === 0 ? (
         <Card>

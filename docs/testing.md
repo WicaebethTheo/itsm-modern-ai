@@ -4,8 +4,8 @@
 
 | Suite | Compte | Commande |
 |---|---:|---|
-| **pytest** (unit + integration via `respx`) | **505** | `make test` |
-| **Vitest + Testing Library** (composants + pages) | **115** (20 fichiers) | `make ui-test` |
+| **pytest** (unit + integration via `respx`) | **508** | `make test` |
+| **Vitest + Testing Library** (composants + pages) | **120** (20 fichiers) | `make ui-test` |
 | **Playwright** (E2E, API mockée) | **3 parcours** | `make ui-e2e` |
 | **ruff** (Python) | 0 violation | `make lint` |
 | **Biome + tsc** (TS/JSX) | 0 violation | `make ui-lint` |

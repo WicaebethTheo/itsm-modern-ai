@@ -256,3 +256,54 @@ def test_cles_inconnues_sont_ignorees_sans_bloquer(client):
     ).status_code == 200
     r = [x for x in client.get("/api/discovery/technician").json() if x["ext_id"] == 45][0]
     assert r["skill_tags"] == ["network"]
+
+
+# ── Carte de couverture des domaines (0.9.50) ────────────────────────────────────────
+
+
+def test_couverture_compte_separement_techniciens_et_groupes(client):
+    """Un groupe absorbe une absence, un technicien seul non : les compteurs restent
+    distincts. Les fusionner effacerait la nuance qui rend l'alerte actionnable."""
+    _seed_cache()
+    client.put(
+        "/api/technicians",
+        json=[{"ext_id": 11, "eligible": True, "skills": "", "skill_tags": ["network", "printing"]}],
+    )
+    client.put(
+        "/api/groups",
+        json=[{"ext_id": 5, "eligible": True, "skills": "", "skill_tags": ["network"]}],
+    )
+
+    couverture = {d["key"]: d for d in client.get("/api/skills/coverage").json()}
+    assert len(couverture) == 14  # le catalogue ENTIER, y compris les domaines à zéro
+    assert (couverture["network"]["technicians"], couverture["network"]["groups"]) == (1, 1)
+    assert (couverture["printing"]["technicians"], couverture["printing"]["groups"]) == (1, 0)
+    # Domaine que personne ne couvre : « à trier » garanti dès qu'un ticket en relève.
+    assert (couverture["security"]["technicians"], couverture["security"]["groups"]) == (0, 0)
+
+
+def test_couverture_ignore_les_acteurs_non_eligibles(client):
+    """Cocher des domaines sur quelqu'un de NON éligible ne couvre rien : le moteur ne
+    route jamais vers lui. Le compter donnerait une carte rassurante et fausse."""
+    _seed_cache()
+    client.put(
+        "/api/technicians",
+        json=[{"ext_id": 12, "eligible": False, "skills": "", "skill_tags": ["telephony"]}],
+    )
+    couverture = {d["key"]: d for d in client.get("/api/skills/coverage").json()}
+    assert couverture["telephony"]["technicians"] == 0
+
+
+def test_couverture_ne_nomme_aucun_acteur(client):
+    """Anti-mouchard (FR-18/21) : une carte de la CONFIGURATION, pas une mesure des
+    personnes. Aucun nom, aucun identifiant d'acteur ne doit sortir par cet endpoint."""
+    _seed_cache()
+    client.put(
+        "/api/technicians",
+        json=[{"ext_id": 11, "eligible": True, "skills": "", "skill_tags": ["network"]}],
+    )
+    brut = client.get("/api/skills/coverage").text
+    assert "Sylvain" not in brut and "ext_id" not in brut
+    assert set(client.get("/api/skills/coverage").json()[0]) == {
+        "key", "label_fr", "label_en", "technicians", "groups",
+    }

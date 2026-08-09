@@ -51,6 +51,8 @@ Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `
 | `/api/modes` | `PUT` | Mode d'exécution par entité (`suggestion`/`semi_auto`/`full_auto`). |
 | `/api/technicians` | `PUT` | Éligibilité + fiche en prose par technicien. |
 | `/api/groups` | `PUT` | Éligibilité + fiche en prose par groupe. |
+| `/api/skills` | `GET` | Catalogue des 14 domaines de compétence cochables (contenu produit). |
+| `/api/skills/coverage` | `GET` | Carte de couverture : par domaine, nombre de techniciens et de groupes **éligibles** qui le couvrent. Cardinalités seulement — aucun acteur n'est nommé (anti-mouchard). |
 
 ## Triage & Journal
 

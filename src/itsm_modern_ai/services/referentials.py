@@ -169,6 +169,34 @@ def _fiche(libelle: str, row) -> str | None:
     return "\n".join(lignes)
 
 
+def skill_coverage(session: Session) -> dict[str, dict[str, int]]:
+    """Combien d'acteurs ÉLIGIBLES couvrent chaque domaine du catalogue (routage, FR-15).
+
+    Diagnostic PRÉDICTIF, pas une statistique : un domaine que personne ne couvre garantit
+    un « à trier » le jour où un ticket en relève — l'admin le découvrait jusqu'ici dans le
+    Journal, trois semaines plus tard. Un domaine couvert par UN SEUL technicien est un
+    point de défaillance unique, donc un trou le jour de son congé.
+
+    Techniciens et groupes sont comptés SÉPARÉMENT : un groupe absorbe une absence sans
+    configuration, un technicien seul non. Fusionner les deux compteurs effacerait
+    exactement la nuance qui rend l'alerte actionnable.
+
+    Anti-mouchard (FR-18/21) : on renvoie des CARDINALITÉS par domaine, jamais un acteur
+    nommé ni une métrique par technicien — c'est une carte de la configuration, pas une
+    mesure des personnes.
+    """
+    coverage = {d.key: {"technicians": 0, "groups": 0} for d in domain_skills.SKILL_CATALOG}
+    for kind, compteur in ((KIND_TECHNICIAN, "technicians"), (KIND_GROUP, "groups")):
+        for row in list_kind(session, kind):
+            if not row.eligible:
+                continue
+            # `normalize` écarte les clés d'un catalogue antérieur : sans lui, une sélection
+            # obsolète en base ferait exploser un domaine qui n'existe plus.
+            for key in domain_skills.normalize((row.skill_tags or "").split(",")):
+                coverage[key][compteur] += 1
+    return coverage
+
+
 def routing_prose(session: Session) -> str:
     """Description des techniciens et groupes ÉLIGIBLES (pour le routage, FR-15).
 

@@ -110,7 +110,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.50";
+export const APP_VERSION = "0.9.51";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -501,6 +501,19 @@ export interface SkillDomain {
   hint_fr: string;
 }
 
+/**
+ * Couverture d'un domaine par les acteurs ÉLIGIBLES — diagnostic, pas statistique.
+ * Compteurs distincts : un groupe absorbe une absence, un technicien seul non.
+ * Aucun acteur n'est nommé (anti-mouchard).
+ */
+export interface SkillCoverage {
+  key: string;
+  label_fr: string;
+  label_en: string;
+  technicians: number;
+  groups: number;
+}
+
 export interface EligibilityItem {
   ext_id: number;
   eligible: boolean;
@@ -759,6 +772,7 @@ export const Api = {
         )
       : api.get<RefItem[]>(`/api/discovery/${kind}`),
   skillCatalog: () => api.get<SkillDomain[]>("/api/skills"),
+  skillCoverage: () => api.get<SkillCoverage[]>("/api/skills/coverage"),
   saveTechnicians: (items: EligibilityItem[]) =>
     DEMO ? ok(demo.technicians) : api.put<RefItem[]>("/api/technicians", items),
   saveGroups: (items: EligibilityItem[]) =>

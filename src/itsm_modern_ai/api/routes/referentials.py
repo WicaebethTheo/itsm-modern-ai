@@ -99,6 +99,34 @@ def skill_catalog() -> list[SkillDomainView]:
     return [SkillDomainView(**vars(d)) for d in domain_skills.SKILL_CATALOG]
 
 
+class SkillCoverageView(BaseModel):
+    key: str
+    label_fr: str
+    label_en: str
+    technicians: int  # techniciens ÉLIGIBLES ayant coché ce domaine
+    groups: int  # groupes ÉLIGIBLES ayant coché ce domaine
+
+
+@router.get("/skills/coverage", response_model=list[SkillCoverageView])
+def skill_coverage(session: Session = Depends(get_session)) -> list[SkillCoverageView]:
+    """Carte de couverture des domaines : où le routage va casser, AVANT qu'il casse.
+
+    Un domaine à 0 acteur garantit un « à trier » dès qu'un ticket en relève ; un domaine
+    tenu par un seul technicien (et aucun groupe) tombe le jour de son congé. La console
+    en fait un bandeau de diagnostic au-dessus de la liste — même écran que celui où l'on
+    coche, pour que la panne se corrige là où elle se voit.
+
+    Cardinalités seulement : aucun acteur n'est nommé (anti-mouchard, FR-18/21).
+    """
+    coverage = referentials.skill_coverage(session)
+    return [
+        SkillCoverageView(
+            key=d.key, label_fr=d.label_fr, label_en=d.label_en, **coverage[d.key]
+        )
+        for d in domain_skills.SKILL_CATALOG
+    ]
+
+
 @router.get("/discovery/{kind}", response_model=list[RefItem])
 def discovery(kind: str, session: Session = Depends(get_session)) -> list[RefItem]:
     if kind not in referentials.KINDS:
