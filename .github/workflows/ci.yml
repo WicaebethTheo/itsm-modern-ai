@@ -141,7 +141,9 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
+      # `test:coverage` et non `test` : seuils et périmètre de mesure vivent dans
+      # `vitest.config.ts`, donc la commande locale mesure la même chose que la CI.
+      - run: npm run test:coverage
       - run: npm run build
 
   # Prouve que l'image Docker est constructible AVANT merge : la publication GHCR

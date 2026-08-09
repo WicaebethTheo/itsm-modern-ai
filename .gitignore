@@ -26,6 +26,14 @@ data/
 spike-report*.json
 spike-report*.md
 
+# Node — présent ici AUSSI, pas seulement dans frontend/.gitignore : un outil lancé
+# depuis la racine (un `npx vitest` sur le mauvais répertoire, par exemple) y crée un
+# `node_modules/` que `git add -A` embarquerait sans bruit.
+node_modules/
+.vite/
+# Rapports de couverture front (vitest --coverage)
+coverage/
+
 # OS / IDE
 .DS_Store
 .idea/

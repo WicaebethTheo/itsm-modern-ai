@@ -5,7 +5,7 @@
 | Suite | Compte | Commande |
 |---|---:|---|
 | **pytest** (unit + integration via `respx`) | **539** | `make test` |
-| **Vitest + Testing Library** (composants + pages) | **130** (21 fichiers) | `make ui-test` |
+| **Vitest + Testing Library** (composants + pages) | **141** (22 fichiers) | `make ui-test` |
 | **Playwright** (E2E, API mockée) | **3 parcours** | `make ui-e2e` |
 | **ruff** (Python) | 0 violation | `make lint` |
 | **Biome + tsc** (TS/JSX) | 0 violation | `make ui-lint` |
@@ -13,6 +13,7 @@
 ## Chemins critiques couverts
 
 - Pipeline à ordre immuable (règles → cost cap → masquage → LLM → Pydantic → whitelist → seuil → Suivi / « à trier »).
+- Purge RGPD côté console : confirmation obligatoire **avant** toute suppression, annulation qui n'exécute rien, fenêtres réellement appliquées annoncées dans la confirmation (et non le brouillon non enregistré), échec remonté à l'admin.
 - Suivi « non tranché » sur « à trier » : déposé sur un refus **arbitré** (dans les 3 modes, sans mutation, sans brouillon), **jamais** sur un motif rejouable (panne LLM, sortie invalide, cap) ; un GLPI en panne ne casse ni la journalisation ni le marquage « traité ».
 - Congés : bornes incluses, sortie du périmètre effectif, expiration automatique, héritage des domaines par le remplaçant, un seul saut d'intérim (ni chaîne ni cycle), fuseau local, purge RGPD des seules absences terminées.
 - Repli assigné sur un refus arbitré : route sans classer (aucun champ de triage), jamais en mode `suggestion`, groupe préféré au technicien, cible revalidée contre la whitelist à l'écriture, échec de repli non dégradant, `fallback_applied` distinct de `applied`.
@@ -44,6 +45,31 @@
 > **`main` ne déplace plus `latest`** (0.9.54). `latest` — ce que tire tout `docker compose pull` —
 > ne bouge que sur une **release publiée**. Un merge dans `main` produit `edge` + `sha-<court>` :
 > publier redevient un acte explicite. Qui veut suivre la pointe tire `:edge` en connaissance de cause.
+
+### Couverture
+
+Deux portes, en **cliquet** : elles empêchent l'érosion, elles ne prétendent pas que la
+couverture soit suffisante.
+
+| Suite | Mesure | Seuil | Commande |
+|---|---:|---:|---|
+| Backend | **88,0 %** de *branches* (90,0 % de lignes) | 85 % | `pytest --cov` |
+| Frontend | **72,1 %** de *statements*, 62,6 % de branches | 65 / 56 / 65 | `npm run test:coverage` |
+
+Deux choix de configuration qui font toute la différence :
+
+- **Backend : `branch = true`.** Un `if` dont un seul côté est exercé compte comme couvert
+  en mesure de lignes — or c'est là que se cachent les régressions (un garde-fou dont on ne
+  teste jamais le refus).
+- **Frontend : `coverage.include` explicite.** Par défaut Vitest ne mesure que les fichiers
+  *chargés* par un test : un fichier sans test sort du **dénominateur** au lieu de compter
+  pour 0. Écart mesuré : **81,6 % annoncé contre 69,0 % réel**. Un taux qui *monte* quand on
+  supprime un test est pire que pas de taux du tout.
+
+`Dashboard.tsx` et `Debug.tsx` restent non testés — assumé : affichage en lecture seule pour
+le premier, outil désactivé par défaut en production (`DEBUG_TOOLS_ENABLED`) pour le second.
+L'effort a été mis sur `Automations.tsx`, seul écran déclenchant une **suppression
+définitive** de données (purge RGPD).
 
 **E2E Playwright** : joués **en local** (`make ui-e2e`), pas en CI — ils y étaient déjà
 non bloquants (`allow_failure`). À rebrancher dans `ci.yml` le jour où ils sont stabilisés.
