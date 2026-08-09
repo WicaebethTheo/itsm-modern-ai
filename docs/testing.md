@@ -4,7 +4,7 @@
 
 | Suite | Compte | Commande |
 |---|---:|---|
-| **pytest** (unit + integration via `respx`) | **497** | `make test` |
+| **pytest** (unit + integration via `respx`) | **505** | `make test` |
 | **Vitest + Testing Library** (composants + pages) | **115** (20 fichiers) | `make ui-test` |
 | **Playwright** (E2E, API mockée) | **3 parcours** | `make ui-e2e` |
 | **ruff** (Python) | 0 violation | `make lint` |
@@ -13,6 +13,7 @@
 ## Chemins critiques couverts
 
 - Pipeline à ordre immuable (règles → cost cap → masquage → LLM → Pydantic → whitelist → seuil → Suivi / « à trier »).
+- Suivi « non tranché » sur « à trier » : déposé sur un refus **arbitré** (dans les 3 modes, sans mutation, sans brouillon), **jamais** sur un motif rejouable (panne LLM, sortie invalide, cap) ; un GLPI en panne ne casse ni la journalisation ni le marquage « traité ».
 - Masquage PII (email, téléphone, IBAN, mot de passe/token).
 - Whitelist (catégorie/priorité/technicien/groupe hors périmètre → « à trier »).
 - Seuil de confiance + 2ᵉ seuil strict pour `semi_auto`.

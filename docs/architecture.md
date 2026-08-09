@@ -27,11 +27,17 @@ GLPI poll  →  règles déterministes  →  cost cap  →  masquage PII
                               ┌─── Décision valide ──→  Suivi GLPI (mode du périmètre)
                               │
                               └─── tout échec ─────→  « à trier » (fallback unique)
+                                                       │
+                                   refus ARBITRÉ ──────┤→  Suivi PRIVÉ « non tranché »
+                                   (whitelist / seuil) │    (aucune mutation)
+                                                       │
+                                   triage pas eu lieu ─┘→  rien, Ticket rejoué au cycle suivant
+                                   (panne LLM, cap)
 ```
 
 **Garanties absolues, tous modes confondus :**
 
-- Aucune écriture GLPI sans validation whitelist + seuil.
+- Aucune **mutation de champ** GLPI sans validation whitelist + seuil. *(Formulation précisée en 0.9.50 : un Ticket refusé reçoit désormais un Suivi PRIVÉ « non tranché », qui n'écrit aucun champ — il informe, il n'applique pas. La barrière porte sur `ItsmPort.apply_decision`, pas sur `write_followup`.)*
 - Aucune PII non masquée n'atteint le LLM (email, téléphone, IBAN, mot de passe/token).
 - Aucune métrique par technicien (anti-mouchard, RGPD).
 - Aucun appel sortant depuis le pipeline hors du fournisseur LLM configuré et du GLPI (souveraineté). Seule sortie supplémentaire du moteur, hors pipeline : la vérification de version (activée par défaut, déclenchée par un admin authentifié, lecture seule du dernier numéro publié, aucune donnée envoyée) — `UPDATE_CHECK_URL=` vide la coupe.

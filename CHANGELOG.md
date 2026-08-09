@@ -1,3 +1,73 @@
+## 2026-08-09 — 0.9.50 — « À trier » ne veut plus dire « invisible »
+
+### Le trou, mesuré en conditions réelles
+
+Sur une instance de lab en `full_auto`, **7 tickets sur 20 (35 % du flux) ne recevaient
+strictement RIEN dans GLPI** : ni catégorie, ni affectation, ni suivi. La cause n'était pas
+une panne — c'était le chemin nominal. Dans `services/triage.py`, **tout** le traitement
+vivait sous `if outcome.accepted:` : un ticket refusé par le garde-fou (confiance sous le
+seuil, cible hors liste blanche) sortait du moteur sans qu'un seul octet ne parte vers GLPI.
+
+Et il n'était **jamais réexaminé** : son motif n'appartient pas à `RETRYABLE_REASONS`, donc
+le poller le marquait « traité ». Le ticket restait « Nouveau » dans la file, **indistinguable
+d'un ticket que personne n'a ouvert**. La seule trace vivait dans le Journal de notre console
+— c'est-à-dire nulle part, du point de vue du technicien qui travaille dans GLPI.
+
+### Ce qui change
+
+Un refus **arbitré** (le LLM a répondu, le code a dit non) dépose désormais un **Suivi PRIVÉ
+« non tranché »** sur le ticket : motif du refus en français, catégorie / priorité /
+affectation envisagées, confiance annoncée. Le technicien reçoit un ticket honnêtement
+étiqueté, avec de quoi trancher en dix secondes.
+
+Ce que ce suivi **n'est pas** :
+
+- **aucune mutation** — `write_followup` n'écrit aucun champ du ticket. Ce suivi informe, il
+  n'applique pas. Il vaut donc dans les **trois** modes, `suggestion` compris ;
+- **aucun brouillon de réponse**, délibérément. Une confiance sous le seuil est basse sur
+  l'**ensemble** de la Décision : afficher un brouillon qu'un technicien pressé
+  copierait-collerait reviendrait à réintroduire par l'affichage la Décision que le garde-fou
+  vient de refuser ;
+- **aucune valeur présentée comme validée** — tout ce qui est hors périmètre est étiqueté
+  « hors du périmètre autorisé », ce qui indique du même coup à l'admin ce qu'il faudrait
+  peut-être rendre éligible.
+
+Effet de bord utile : le contenu ne reprend **aucun texte libre** du LLM ni du demandeur (que
+des identifiants et des libellés de référentiel) — donc ni PII à re-masquer, ni
+prompt-injection à échapper, contrairement au brouillon des suivis de suggestion.
+
+### Le piège évité : deux familles derrière « à trier »
+
+Les confondre aurait créé un bug d'exploitation. Le suivi n'est déposé que sur un **arbitrage
+rendu** ; les motifs **rejouables** (`llm_error`, `invalid_output`, `cost_cap_reached`)
+n'écrivent toujours rien :
+
+| Situation | Motifs | GLPI reçoit | Ticket rejoué ? |
+|---|---|---|:---:|
+| Refus arbitré | `low_confidence`, `no_eligible_assignee`, `*_not_in_whitelist` | Suivi privé « non tranché » | non |
+| Triage pas eu lieu | `llm_error`, `invalid_output`, `cost_cap_reached` | rien | **oui** |
+
+Sans cette distinction, une coupure réseau de trois secondes aurait produit une annotation
+par cycle, puis un doublon au rejeu réussi.
+
+### Invariant précisé (pas contourné)
+
+`docs/architecture.md` promettait « aucune **écriture** GLPI sans validation whitelist +
+seuil ». La formulation devient « aucune **mutation de champ** » : la barrière porte sur
+`ItsmPort.apply_decision`, jamais sur `write_followup`. L'échappatoire reste **unique** — la
+Décision demeure `accepted=False` au Journal ; c'est ce qu'on **fait** des tickets qui
+l'empruntent qui change, pas le nombre de branches du moteur. `docs/project-context.md`,
+`docs/modes.md` et `docs/guide-fonctionnement.md` (diagramme scindé en deux issues) sont
+alignés.
+
+### Détails
+
+- Un échec d'écriture du suivi est **avalé et loggé** : comme le suivi d'une Décision
+  acceptée, c'est un acte secondaire. Il ne doit ni empêcher la journalisation, ni laisser le
+  ticket non marqué (l'appel LLM serait re-facturé à chaque cycle).
+- Tests : **505** (+8), dont la non-écriture sur motif rejouable, l'exclusion du brouillon,
+  le comportement en `full_auto`, `category=null`, et un GLPI en panne.
+
 ## 2026-08-08 — 0.9.49 — Compétences cochables : un routage exploitable dès l'installation
 
 ### Le problème, observé en conditions réelles
