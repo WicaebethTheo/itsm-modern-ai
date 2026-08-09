@@ -24,7 +24,7 @@ import os
 import sys
 
 from .adapters.secrets.encrypted import FernetSecretsBox
-from .api.security import HASH_KEY, MIN_PASSWORD_LEN, hash_password, revoke_sessions
+from .api.security import HASH_KEY, MIN_ADMIN_CHARS, hash_password, revoke_sessions
 from .config.settings import get_settings
 from .persistence import db
 from .services.runtime_config import RuntimeConfigService
@@ -33,7 +33,7 @@ from .services.runtime_config import RuntimeConfigService
 # ici et n'était donc appliqué QUE par cette CLI — l'amorçage paresseux côté HTTP hashait
 # `ADMIN_PASSWORD` sans contrôle (mot de passe d'un caractère accepté). Alias conservé pour
 # ne pas casser les appelants/tests existants.
-MIN_LEN = MIN_PASSWORD_LEN
+MIN_LEN = MIN_ADMIN_CHARS
 
 
 class AdminSetupError(Exception):

@@ -105,7 +105,7 @@ def test_root_reports_ui_not_built_when_no_dist(tmp_path):
 
 
 def test_referentials_protected_when_auth_configured(tmp_path):
-    # ≥ MIN_PASSWORD_LEN : l'amorçage paresseux applique désormais la même politique de
+    # ≥ MIN_ADMIN_CHARS : l'amorçage paresseux applique désormais la même politique de
     # longueur que `admin_setup` — un "pw" de 2 caractères laisserait l'admin NON configuré.
     settings = _settings(tmp_path, admin_password="pw-assez-long")
     with TestClient(create_app(settings)) as c:

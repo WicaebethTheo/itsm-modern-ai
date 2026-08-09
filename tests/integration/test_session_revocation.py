@@ -135,9 +135,9 @@ def test_refused_password_is_not_stored_as_hash(tmp_path):
 
 
 def test_password_at_minimum_length_is_accepted(tmp_path):
-    """Borne exacte : MIN_PASSWORD_LEN caractères passent (pas de décalage d'un cran)."""
-    from itsm_modern_ai.api.security import MIN_PASSWORD_LEN
+    """Borne exacte : MIN_ADMIN_CHARS caractères passent (pas de décalage d'un cran)."""
+    from itsm_modern_ai.api.security import MIN_ADMIN_CHARS
 
-    pw = "a" * MIN_PASSWORD_LEN
+    pw = "a" * MIN_ADMIN_CHARS
     with TestClient(create_app(_settings(tmp_path, admin_password=pw))) as c:
         assert c.post("/api/auth/login", json={"password": pw}).status_code == 200
