@@ -6,6 +6,7 @@ import pytest
 
 from itsm_modern_ai.domain.errors import ItsmUnavailableError
 from itsm_modern_ai.domain.models import Referentials, Ticket
+from itsm_modern_ai.persistence import db, idempotency
 from itsm_modern_ai.scheduler.poller import TriagePoller
 from itsm_modern_ai.services.whitelist_cache import WhitelistCache
 
@@ -282,3 +283,71 @@ async def test_crashing_handler_is_also_bounded(temp_db):
     stats = await poller.poll_once()
     assert stats.skipped_already_done == 1  # abandonné, plus aucun appel facturé
     assert len(calls) == poller_mod.MAX_TRIAGE_ATTEMPTS
+
+
+# ── Fenêtre de doublon : marquage en deux temps (0.9.56) ─────────────────────────────
+
+
+async def test_reservation_posee_avant_le_handler(temp_db):
+    """La réservation doit exister AU MOMENT où le handler écrit dans GLPI — sinon un arrêt
+    brutal juste après l'écriture laisse le Ticket rejouable, donc re-répondu publiquement."""
+    vue: list[bool] = []
+
+    async def handler(ticket, refs):
+        with db.session_scope() as s:
+            vue.append(idempotency.is_processed(s, ticket.id))
+        return HandlerOutcome(followup_written=True, reason=TriageReason.ACCEPTED)
+
+    poller = TriagePoller(FakeItsm([Ticket(id=1, content="x")]), WhitelistCache(), handler=handler)
+    await poller.poll_once()
+    assert vue == [True], "le Ticket n'était pas réservé pendant l'écriture GLPI"
+
+
+async def test_interruption_en_vol_nest_pas_rejouee_mais_signalee(temp_db):
+    """Simule l'arrêt brutal : réservation posée, jamais libérée. Le Ticket ne doit PAS
+    repartir (pas de seconde réponse publique) et l'interruption doit être visible."""
+    with db.session_scope() as s:
+        idempotency.claim(s, 42)
+        assert idempotency.interrupted(s) == [42]
+
+    appels: list[int] = []
+
+    async def handler(ticket, refs):
+        appels.append(ticket.id)
+        return HandlerOutcome(followup_written=True, reason=TriageReason.ACCEPTED)
+
+    poller = TriagePoller(FakeItsm([Ticket(id=42, content="x")]), WhitelistCache(), handler=handler)
+    stats = await poller.poll_once()
+    assert appels == [], "un Ticket interrompu a été rejoué — risque de doublon public"
+    assert stats.skipped_already_done == 1
+
+
+async def test_un_triage_rejouable_rend_sa_reservation(temp_db):
+    """Sans `release`, une panne LLM de trois secondes brûlerait le Ticket définitivement —
+    une régression bien pire que le défaut corrigé."""
+    appels: list[int] = []
+
+    async def handler(ticket, refs):
+        appels.append(ticket.id)
+        return HandlerOutcome(retryable=True, costly=True, reason=TriageReason.LLM_ERROR)
+
+    poller = TriagePoller(FakeItsm([Ticket(id=7, content="x")]), WhitelistCache(), handler=handler)
+    await poller.poll_once()
+    with db.session_scope() as s:
+        assert not idempotency.is_processed(s, 7), "réservation non rendue : Ticket brûlé"
+        assert idempotency.interrupted(s) == []
+    await poller.poll_once()
+    assert appels == [7, 7], "le Ticket rejouable n'a pas été repris"
+
+
+async def test_cycle_abouti_ne_laisse_aucune_reservation(temp_db):
+    """`mark_processed` libère la réservation : un cycle normal ne doit pas ressembler à une
+    interruption, sinon l'alerte deviendrait du bruit permanent."""
+    async def handler(ticket, refs):
+        return HandlerOutcome(followup_written=True, reason=TriageReason.ACCEPTED)
+
+    poller = TriagePoller(FakeItsm([Ticket(id=9, content="x")]), WhitelistCache(), handler=handler)
+    await poller.poll_once()
+    with db.session_scope() as s:
+        assert idempotency.is_processed(s, 9)
+        assert idempotency.interrupted(s) == []

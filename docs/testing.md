@@ -4,7 +4,7 @@
 
 | Suite | Compte | Commande |
 |---|---:|---|
-| **pytest** (unit + integration via `respx`) | **543** | `make test` |
+| **pytest** (unit + integration via `respx`) | **555** | `make test` |
 | **Vitest + Testing Library** (composants + pages) | **141** (22 fichiers) | `make ui-test` |
 | **Playwright** (E2E, API mockée) | **3 parcours** | `make ui-e2e` |
 | **ruff** (Python) | 0 violation | `make lint` |
@@ -13,6 +13,8 @@
 ## Chemins critiques couverts
 
 - Pipeline à ordre immuable (règles → cost cap → masquage → LLM → Pydantic → whitelist → seuil → Suivi / « à trier »).
+- Sauvegarde : copie à chaud vérifiée, WAL embarqué, `master.key` jointe, refus explicite sur PostgreSQL, aucun dossier laissé à moitié fait en cas d'échec.
+- Fenêtre de doublon du poller : réservation posée AVANT le handler, rendue si le triage est rejouable, libérée en fin de cycle ; une interruption n'est jamais rejouée et est signalée.
 - Purge RGPD côté console : confirmation obligatoire **avant** toute suppression, annulation qui n'exécute rien, fenêtres réellement appliquées annoncées dans la confirmation (et non le brouillon non enregistré), échec remonté à l'admin.
 - Suivi « non tranché » sur « à trier » : déposé sur un refus **arbitré** (dans les 3 modes, sans mutation, sans brouillon), **jamais** sur un motif rejouable (panne LLM, sortie invalide, cap) ; un GLPI en panne ne casse ni la journalisation ni le marquage « traité ».
 - Congés : bornes incluses, sortie du périmètre effectif, expiration automatique, héritage des domaines par le remplaçant, un seul saut d'intérim (ni chaîne ni cycle), fuseau local, purge RGPD des seules absences terminées.

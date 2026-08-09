@@ -1,3 +1,55 @@
+## 2026-08-09 — 0.9.56 — Sauvegarde accessible en déploiement *pull-only* + fenêtre de doublon refermée
+
+Deux trous d'exploitation identifiés en revue de préparation à la production.
+
+### 1. On ne pouvait pas sauvegarder sans les sources
+
+La logique de sauvegarde ne vivait que dans le `Makefile`. Or la voie **recommandée** est
+*pull-only* (image GHCR, Portainer, `docker run`, one-liner) : un exploitant qui suivait la
+documentation n'avait **aucun moyen de sauvegarder** — sur un volume contenant à la fois les
+données RGPD et la `master.key` sans laquelle la base est **définitivement illisible**.
+
+```bash
+docker compose exec itsm python -m itsm_modern_ai.backup
+```
+
+Copie **à chaud** (aucun arrêt de service) par `VACUUM INTO`, puis **vérifiée** :
+`PRAGMA integrity_check` **et** comptage réel des tables et des lignes — `integrity_check`
+valide la structure, pas le fait que le fichier contienne quoi que ce soit. La `master.key`
+est jointe à la sauvegarde, ou son absence explicitement signalée. Échec **bruyant** : code de
+sortie ≠ 0 et aucun dossier laissé à moitié fait, une sauvegarde à laquelle on ferait
+confiance à tort étant pire que pas de sauvegarde. PostgreSQL est **refusé** avec la marche à
+suivre (`pg_dump`) plutôt que faussement réussi.
+
+Le `Makefile` **délègue** désormais au module : deux implémentations divergeraient, et c'est
+celle de l'exploitant — la moins testée — qui casserait.
+
+### 2. Le doublon de réponse publique en `full_auto`
+
+Le poller appelait le handler **puis** posait le marqueur « traité ». Un arrêt brutal entre
+les deux (OOM, reboot, `kill`) laissait l'écriture GLPI faite sans trace locale : le cycle
+suivant rejouait le Ticket — donc, en `full_auto`, une **seconde réponse publique au
+demandeur**. Le défaut était documenté dans le code depuis l'audit, jamais refermé.
+
+**Marquage en deux temps**, sans aucun appel GLPI supplémentaire :
+
+1. le poller **réserve** le Ticket avant d'appeler le handler ;
+2. `mark_processed` **libère** la réservation en fin de cycle ;
+3. un triage rejouable (panne LLM, plafond) **rend** la réservation — sans quoi une coupure
+   de trois secondes brûlerait le Ticket définitivement, régression bien pire que le défaut.
+
+Une réservation orpheline signifie « traitement interrompu après une écriture GLPI possible ».
+Le Ticket n'est **pas** rejoué : une seconde réponse au demandeur est pire qu'un Ticket laissé
+au triage humain. L'interruption est signalée en `ERROR` au cycle suivant, avec les
+identifiants concernés — jamais avalée.
+
+Le rejeu borné existant sur exception **attrapée** est préservé : le processus est alors
+vivant, et c'est l'arrêt brutal — où aucun code ne s'exécute — que ce mécanisme couvre. La
+fenêtre passe de « tout le traitement » à « une écriture SQLite locale ».
+
+Tests : **555** pytest (+12). Migration `e8d3a71c46b9` éprouvée sur base peuplée et en
+aller-retour.
+
 ## 2026-08-09 — 0.9.55 — Le repli n'échoue plus sur un acteur déjà assigné
 
 **Défaut trouvé en validant la 0.9.54 contre un GLPI 11 réel — invisible pour les mocks.**

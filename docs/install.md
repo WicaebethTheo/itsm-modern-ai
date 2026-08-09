@@ -27,6 +27,44 @@
 rien pour un exploitant. Une mise à jour reste donc un acte volontaire de votre côté
 (`docker compose pull && docker compose up -d`).
 
+## Sauvegarde et restauration
+
+**À faire avant toute mise à jour, et régulièrement.** Le volume contient la base **et** la
+`master.key` : sans cette clé, une base restaurée est **définitivement illisible** (mot de
+passe admin, tokens GLPI et clé LLM sont chiffrés avec).
+
+```bash
+docker compose exec itsm python -m itsm_modern_ai.backup
+```
+
+Produit `data/backups/AAAAMMJJ-HHMMSS/` contenant `itsm.db` **et** `master.key`. La copie est
+prise **à chaud** (aucun arrêt de service) puis **vérifiée** : `PRAGMA integrity_check` et
+comptage réel des tables et des lignes. En cas d'échec, la commande sort en erreur et ne
+laisse aucun dossier à moitié fait — une sauvegarde à laquelle on ferait confiance à tort est
+pire que pas de sauvegarde.
+
+> ⚠️ **Sortez la sauvegarde de l'hôte.** Elle est écrite dans le volume : un volume perdu
+> emporte ses sauvegardes avec lui.
+> `docker compose cp itsm:/app/data/backups ./sauvegardes`
+
+**Pourquoi pas un simple `cp data/itsm.db`** : le moteur tourne en `journal_mode=WAL`. Selon
+le moment où la copie est prise, une partie des écritures récentes peut ne vivre que dans le
+fichier `-wal` — la copie paraît réussir et se révèle incomplète à la restauration. La
+commande ci-dessus fait un `VACUUM INTO` : un fichier unique, cohérent, WAL inclus.
+
+**Restauration**
+
+```bash
+docker compose stop
+# remplacer data/itsm.db par la copie, supprimer les fichiers -wal/-shm résiduels,
+# et restaurer master.key si elle figure dans la sauvegarde
+docker compose up -d
+```
+
+**PostgreSQL** : cette commande ne sauvegarde que SQLite et refuse explicitement de s'exécuter
+sur une instance Postgres. Utilisez `pg_dump` :
+`docker compose exec -T postgres pg_dump -U itsm itsm > dump.sql`
+
 ## Installation (image GHCR, recommandé)
 
 Trois voies, toutes **sans clone ni build**. L'**admin est amorcé au premier démarrage** à partir
