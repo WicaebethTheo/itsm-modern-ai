@@ -52,8 +52,11 @@ jobs:
         run: uv sync --frozen --all-extras
       - name: ruff
         run: uv run ruff check src tests
-      - name: pytest
-        run: uv run pytest -q
+      # `--cov` sans argument : la source et le seuil viennent de `pyproject.toml`
+      # (`[tool.coverage]`), pour que `pytest --cov` en local mesure EXACTEMENT la même
+      # chose que la CI. Un seuil qui ne vaut qu'en CI se découvre au moment où il casse.
+      - name: pytest (+ seuil de couverture)
+        run: uv run pytest -q --cov
 
   # Migrations Alembic — le job le plus rentable de cette CI. Une révision cassée ne se
   # voit PAS dans pytest (les tests créent le schéma via `SQLModel.create_all`, pas via

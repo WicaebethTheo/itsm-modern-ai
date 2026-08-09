@@ -37,6 +37,17 @@ GLPI gère bien les tickets structurés. **ITSM Modern AI** prend en charge le r
 
 Image publique GHCR multi-arch, **pull-only** (ni clone ni build) : `ghcr.io/wicaebeththeo/itsm-modern-ai:latest`.
 
+| Tag | Contenu | Pour qui |
+|---|---|---|
+| **`latest`** | dernière version **publiée** (release) | **défaut recommandé** |
+| `X.Y.Z` / `X.Y` | version figée | qui veut épingler |
+| `edge` | **préversion** : état intégré et testé de `main`, entre deux releases | lab, avant-première — jamais en production |
+
+`latest` ne bouge **que** sur une release : un merge dans `main` ne change rien pour vous.
+Tester la préversion = remplacer `:latest` par `:edge` dans le compose ci-dessous, sur une
+instance de lab avec son propre volume. Les retours sur `edge` sont bienvenus — c'est le
+canal qui permet d'attraper un problème avant qu'il n'atteigne `latest`.
+
 **En une commande :**
 
 ```bash
