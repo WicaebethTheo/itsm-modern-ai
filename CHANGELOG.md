@@ -1,291 +1,123 @@
-## 2026-08-09 — 0.9.54 — GitHub seul, et `main` ne part plus en production tout seul
+## 2026-08-09 — 0.9.54 — « À trier » cesse d'être un trou noir : suivi, repli assigné, congés
 
-Pas de changement fonctionnel du moteur : c'est la chaîne de livraison qui change.
+> Cette version regroupe le travail des incréments **0.9.50 à 0.9.54**, qui n'ont jamais été
+> publiés séparément (aucune image, aucune release) : un seul numéro atteint les instances.
 
-### `main` ne déplace plus `latest`
+### Le point de départ, mesuré en conditions réelles
 
-`latest` est ce que tire **tout** exploitant qui fait `docker compose pull`. Tant qu'il
-suivait `main`, **chaque merge partait directement en production** chez les utilisateurs,
-sans qu'aucune release n'ait été décidée. Désormais :
+Un ticket refusé par le garde-fou ne recevait **rien** dans GLPI — ni champ, ni suivi — et
+n'était **jamais réexaminé** (son motif n'appartient pas à `RETRYABLE_REASONS`, le poller le
+marquait « traité »). Il restait « Nouveau », **indistinguable d'un ticket que personne n'a
+ouvert**. La seule trace vivait dans le Journal de la console, c'est-à-dire nulle part du
+point de vue du technicien qui travaille dans GLPI.
 
-| Événement | Tags d'image publiés | Visible par un exploitant ? |
-|---|---|---|
-| merge dans `main` | `edge` + `sha-<court>` | non (sauf s'il tire `:edge` volontairement) |
-| **release `vX.Y.Z`** | `X.Y.Z`, `X.Y`, **`latest`** | **oui** — et c'est elle qui notifie les instances |
+**Mesuré sur une instance de lab : 7 tickets sur 20, soit 35 % du flux invisible**, sur une
+instance présentée comme « full-auto ».
 
-`main` redevient une branche d'intégration ; **publier est un acte explicite**. Au passage,
-cela corrige un écart discret : `latest` était conditionné à `is_default_branch`, qui est
-**faux** sur une ref de tag — une release ne posait donc pas `latest` par elle-même, seul le
-push de `main` qui la précédait le faisait.
+### Un ticket « à trier » est désormais visible
 
-### CI : les migrations Alembic sont enfin éprouvées
-
-Une révision cassée **ne se voit pas** dans pytest — les tests créent le schéma via
-`SQLModel.create_all`, pas via Alembic. Elle ne se manifeste qu'au `docker compose up` de
-l'exploitant, où l'entrypoint boucle sur « Can't locate revision identified by … » et où la
-console ne démarre jamais. Le job `migrations` de `ci.yml` éprouve les trois chemins réels :
-base **vide**, base **peuplée** (c'est là qu'un `add_column` NOT NULL sans `server_default`
-explose), et **aller-retour** `downgrade`/`upgrade` (le chemin de `--rollback`). Il vérifie
-ensuite que les données ont survécu.
-
-### GitLab abandonné
-
-GitHub devient le forge unique. Ce que GitLab couvrait est repris par
-`ci.yml` / `security-audit.yml` / `secret-scan.yml` / `codeql.yml` ; les E2E Playwright
-restent joués en local (`make ui-e2e`) — ils étaient déjà non bloquants en CI.
-
-`docs/testing.md`, `docs/install.md` (quel tag tirer) et `CLAUDE.md` (workflow PR vers
-`main`, un bump de version **par PR** et non par commit) sont alignés.
-
-## 2026-08-09 — 0.9.53 — Congés & remplaçants : le pool s'ajuste tout seul
-
-### Le problème
-
-Un technicien en congé restait proposable au LLM, donc assignable. Ses tickets
-attendaient son retour. Et rien, dans la console, ne permettait de le dire au moteur.
-
-### L'approche retenue, et celle qu'on a écartée
-
-| Approche | Verdict |
-|---|---|
-| Laisser le LLM proposer l'absent, puis substituer le remplaçant après coup | **Non** — crée une divergence entre ce que le Journal enregistre et ce que GLPI reçoit : exactement le trou d'audit que `whitelist.effective_assignment` a été écrit pour boucher. |
-| **Retirer l'absent du périmètre effectif** | **Oui** — déterministe, jamais proposé donc jamais assigné, et compose gratuitement avec tout l'aval (whitelist, seuil, repli). |
-
-Corollaire précieux : le périmètre étant reconstruit à **chaque cycle de poll**, un congé
-prend effet et **expire tout seul**. Personne n'a besoin de penser à réactiver quelqu'un le
-lundi matin, et il n'y a aucun cache à invalider.
-
-### Le point qui décide si ça marche ou fait semblant
-
-**Le remplaçant hérite des compétences, pas seulement du nom.** Dire au modèle « route vers
-B plutôt que vers A » sans lui dire *pourquoi* B convient, c'est lui demander d'assigner du
-réseau à quelqu'un décrit comme faisant de la bureautique : il le fera avec une confiance
-basse, et le seuil le renverra… « à trier ». On aurait déplacé le problème, pas résolu.
-
-B absorbe donc les **domaines** de A dans le prompt de routage, et gagne une ligne
-« Assure l'intérim d'Adrien Durand jusqu'au 22/08/2026 inclus. » — placée **en dernier**,
-donc avec le plus de poids, comme la prose l'est déjà après le socle coché.
-
-### Les trois pièges, traités à la saisie
-
-1. **Remplaçant non éligible** → refusé (`replacement_not_eligible`). Le moteur ne route
-   jamais vers lui : accepter produirait un filet qui n'a jamais existé.
-2. **Chaînes et cycles** (A→B, B absent →C) → **un seul saut**, et le cas est refusé à
-   l'enregistrement (`replacement_also_absent`). Aucun résolveur de graphe : le comportement
-   doit être compréhensible par un admin qui débarque, pas mathématiquement complet. Le
-   refus porte sur un **chevauchement** de périodes, pas sur « B a des congés un jour ».
-3. **Fuseau horaire** → bornes **inclusives**, granularité **jour**, évaluées dans le fuseau
-   local configuré (`LOCAL_TIMEZONE`, défaut `Europe/Paris`, modifiable dans la console).
-   Évalué en UTC, un congé se terminerait à 02 h du matin le bon jour — ou la veille selon
-   la saison. Ne se voit qu'en production, en août. Un fuseau invalide retombe sur le défaut
-   documenté plutôt que d'arrêter le triage de toute une file.
-
-Sans remplaçant désigné, l'absent sort simplement du pool : ses tickets partent vers qui
-couvre le domaine — ou « à trier », donc dans le **repli assigné** de la 0.9.52. Les deux
-fonctionnalités se complètent exactement.
-
-### RGPD — point non couvert par la demande initiale
-
-« Qui est en congé, quand » est une **donnée personnelle**. Deux garde-fous :
-
-- l'absence est conservée tant qu'elle est **en cours ou à venir** (configuration active qui
-  pilote le routage), puis **purgée** avec le Journal une fois **terminée** — le produit n'a
-  aucune raison de constituer l'historique des vacances de chacun ;
-- ce n'est **pas** une métrique par technicien (anti-mouchard, FR-18/21) : on enregistre une
-  **disponibilité déclarée par l'admin** pour router, jamais une mesure d'activité, de
-  performance ou de présence effective. `docs/dpo.md` documente la table et le fait qu'un
-  remplaçant nommé apparaît dans le prompt envoyé au fournisseur LLM.
-
-### Détails
-
-- Le filtre d'absence vit **dans** `effective_referentials`, pas chez l'appelant : un
-  nouveau point d'appel réintroduirait sinon en silence des techniciens en congé dans la
-  whitelist. La sandbox l'applique donc aussi — une sandbox qui proposerait un absent
-  mentirait sur ce que fera le vrai cycle.
-- Table dédiée `technician_absences` (un technicien a plusieurs congés dans l'année), en
-  colonnes `Date` : stocker un instant aurait fait entrer le fuseau dans la **base**, alors
-  qu'il n'a lieu d'intervenir qu'à l'**évaluation**. Migration `c7b2f4a19d55`, testée en
-  aller-retour.
-- Console : planificateur sur la page Techniciens (période, remplaçant limité aux éligibles,
-  badge « En cours », avertissement de période inversée avant l'envoi).
-- Tests : **539** pytest (+17) et **130** Vitest (+7).
-
-## 2026-08-09 — 0.9.52 — Repli assigné : un ticket « à trier » a désormais un propriétaire
-
-### Le problème restant
-
-La 0.9.50 a rendu un ticket refusé **visible** (Suivi privé « non tranché »). Il restait
-**sans propriétaire** : personne n'en héritait, personne n'était notifié. Et le produit dont
-la devise est « le LLM propose, le code décide » déléguait toujours son repli **au LLM** —
-`domain/prompting.py` demande un `group_id` de repli, que le modèle peut renvoyer `null`.
-
-### Ce qui change
-
-Une **cible de repli par entité** (page Périmètre, à côté du mode). Quand le garde-fou
-refuse une Décision, le ticket est **assigné** à cette cible — et rien d'autre.
-
-- **Router, jamais classer.** Aucune catégorie, aucune priorité n'est posée. Une confiance
-  sous le seuil est basse sur l'**ensemble** de la Décision : une mauvaise catégorie est pire
-  qu'aucune, elle serait crue par les stats, les règles GLPI et le technicien.
-- **Groupe d'abord**, technicien possible. Les groupes sont listés en tête et gagnent si les
-  deux sont renseignés : un groupe encaisse une absence sans configuration, là où un
-  technicien nommé comme filet de toute l'instance est un point de défaillance unique.
-- **Jamais en mode `suggestion`** — assigner *est* une mutation, et ce mode promet zéro
-  mutation. Le Suivi « non tranché » reste déposé dans les trois modes.
-- **Cible revalidée contre la whitelist à l'écriture.** Elle était légitime le jour de
-  l'enregistrement ; rien ne garantit qu'elle le soit encore six mois plus tard. Sans ce
-  contrôle, le repli serait le seul chemin par lequel un acteur non validé reçoit un ticket —
-  un contournement de FR-7 par la porte de service.
-- **Cible non éligible refusée à l'enregistrement** (`400 fallback_not_eligible`) plutôt
-  qu'acceptée sans effet : une configuration silencieusement inopérante est pire qu'un refus.
-
-### Invariant amendé, explicitement
-
-`ItsmPort` expose désormais **deux** méthodes mutantes, aux contrats disjoints :
-`apply_decision` (Décision **acceptée** : catégorie + priorité + assignation) et
-`assign_actor` (**repli** : assignation seule, sur un ticket **refusé**). L'invariant « une
-seule porte » devient « un seul **port** ».
-
-L'alternative — rendre `category`/`priority` optionnels dans `apply_decision` — a été
-écartée : une méthode « applique une Décision acceptée » serait devenue un couteau suisse
-dont l'appelant décide des invariants, exactement ce qu'un port doit empêcher. Bénéfice
-secondaire : en API V2, `assign_actor` n'émet qu'**un seul** appel réseau (POST TeamMember,
-sans PATCH), donc aucun état partiel possible — contrairement à `apply_decision`, dont
-l'`ItsmPartialApplyError` n'existe que pour ce cas.
-
-### Traçabilité
-
-Colonne `decisions.fallback_applied`, **distincte** de `applied` : la Décision reste
-`accepted=False` (le garde-fou a bien refusé), et l'admin peut compter les tickets routés par
-repli sans les confondre avec des Décisions appliquées. Le changement de cible est **audité**
-au même titre que le mode : il autorise le moteur à muter GLPI, c'est une décision de
-gouvernance.
-
-### Détails
-
-- Un repli qui échoue retombe sur « Suivi seul » — meilleur que rien — et le Suivi
-  **n'annonce pas** une affectation qui n'a pas eu lieu.
-- Aucun repli sur un motif rejouable (panne LLM, cap) : assigner un humain sur une coupure
-  réseau de trois secondes, puis re-triager au rejeu un ticket désormais assigné.
-- Migration `a4c81d2e6f30` (`server_default=false` sur `fallback_applied`, la table est
-  peuplée en production) : testée à vide, sur base peuplée, et en aller-retour.
-- Tests : **522** pytest (+14) et **123** Vitest (+3).
-
-## 2026-08-09 — 0.9.51 — Carte de couverture : voir la panne de routage avant de la subir
-
-### Le problème
-
-La page Techniciens était une liste de cases à cocher **sans aucun retour** sur ce que la
-sélection produit. Un domaine que personne ne couvre garantit pourtant un « à trier » dès
-qu'un ticket en relève — et l'admin ne le découvrait que dans le Journal, trois semaines
-plus tard, sous forme de tickets non triés. Même chose pour un domaine tenu par **une seule
-personne** : le trou n'apparaissait que le jour de son congé.
-
-### Ce qui change
-
-Un bandeau de **diagnostic prédictif** coiffe les pages Techniciens et Groupes :
-
-- **Domaines sans aucun acteur** — routage impossible, « à trier » garanti. Nommés
-  explicitement, avec leur conséquence.
-- **Domaines tenus par un seul technicien, sans groupe** — point de défaillance unique. Un
-  groupe éligible, lui, encaisse l'absence sans configuration : la distinction est faite,
-  les compteurs techniciens et groupes restent séparés.
-- **Tout est couvert** → confirmation explicite, plutôt qu'un silence ambigu.
-
-Le bandeau **réagit à la case qu'on vient de cocher**, avant tout enregistrement : le
-compteur du type en cours d'édition vient du brouillon local, celui de l'autre type (qui ne
-peut pas changer depuis cette page) vient du serveur. Sans cela, le diagnostic aurait
-contredit ce que l'admin a sous les yeux.
-
-Il n'apparaît **qu'une fois la configuration commencée** : afficher « 14 domaines non
-couverts » sur une instance qu'on vient de scanner serait du bruit, pas un diagnostic.
-
-### Nouveau endpoint
-
-`GET /api/skills/coverage` — par domaine du catalogue : nombre de techniciens et de groupes
-**éligibles** qui le couvrent. Le calcul écarte les acteurs non éligibles (les compter
-donnerait une carte rassurante et fausse) et les clés d'un catalogue antérieur.
-
-**Anti-mouchard (FR-18/21) :** l'endpoint ne renvoie que des **cardinalités par domaine** —
-aucun acteur nommé, aucun identifiant, aucune métrique par technicien. C'est une carte de la
-configuration, pas une mesure des personnes. Un test verrouille cette propriété.
-
-### Détails
-
-- Échec de chargement **non bloquant** : le bandeau disparaît, la page de configuration
-  reste entièrement utilisable. Même règle que le catalogue des domaines.
-- Tests : **508** pytest (+3) et **120** Vitest (+5), dont la réactivité au brouillon, la
-  levée d'alerte par un groupe de repli, et l'absence de fuite nominative.
-
-## 2026-08-09 — 0.9.50 — « À trier » ne veut plus dire « invisible »
-
-### Le trou, mesuré en conditions réelles
-
-Sur une instance de lab en `full_auto`, **7 tickets sur 20 (35 % du flux) ne recevaient
-strictement RIEN dans GLPI** : ni catégorie, ni affectation, ni suivi. La cause n'était pas
-une panne — c'était le chemin nominal. Dans `services/triage.py`, **tout** le traitement
-vivait sous `if outcome.accepted:` : un ticket refusé par le garde-fou (confiance sous le
-seuil, cible hors liste blanche) sortait du moteur sans qu'un seul octet ne parte vers GLPI.
-
-Et il n'était **jamais réexaminé** : son motif n'appartient pas à `RETRYABLE_REASONS`, donc
-le poller le marquait « traité ». Le ticket restait « Nouveau » dans la file, **indistinguable
-d'un ticket que personne n'a ouvert**. La seule trace vivait dans le Journal de notre console
-— c'est-à-dire nulle part, du point de vue du technicien qui travaille dans GLPI.
-
-### Ce qui change
-
-Un refus **arbitré** (le LLM a répondu, le code a dit non) dépose désormais un **Suivi PRIVÉ
-« non tranché »** sur le ticket : motif du refus en français, catégorie / priorité /
-affectation envisagées, confiance annoncée. Le technicien reçoit un ticket honnêtement
-étiqueté, avec de quoi trancher en dix secondes.
+Un refus **arbitré** (le LLM a répondu, le code a dit non) dépose un **Suivi privé « non
+tranché »** : motif du refus en français, catégorie / priorité / affectation envisagées,
+confiance annoncée. Le technicien reçoit un ticket honnêtement étiqueté, avec de quoi
+trancher en dix secondes.
 
 Ce que ce suivi **n'est pas** :
 
-- **aucune mutation** — `write_followup` n'écrit aucun champ du ticket. Ce suivi informe, il
-  n'applique pas. Il vaut donc dans les **trois** modes, `suggestion` compris ;
+- **aucune mutation** — il informe, il n'applique pas. Il vaut donc dans les **trois** modes,
+  `suggestion` compris ;
 - **aucun brouillon de réponse**, délibérément. Une confiance sous le seuil est basse sur
   l'**ensemble** de la Décision : afficher un brouillon qu'un technicien pressé
-  copierait-collerait reviendrait à réintroduire par l'affichage la Décision que le garde-fou
-  vient de refuser ;
+  copierait-collerait réintroduirait par l'affichage la Décision que le garde-fou vient de
+  refuser ;
 - **aucune valeur présentée comme validée** — tout ce qui est hors périmètre est étiqueté
-  « hors du périmètre autorisé », ce qui indique du même coup à l'admin ce qu'il faudrait
-  peut-être rendre éligible.
+  comme tel, ce qui indique du même coup à l'admin ce qu'il faudrait rendre éligible.
 
-Effet de bord utile : le contenu ne reprend **aucun texte libre** du LLM ni du demandeur (que
-des identifiants et des libellés de référentiel) — donc ni PII à re-masquer, ni
-prompt-injection à échapper, contrairement au brouillon des suivis de suggestion.
+Une **panne** (LLM injoignable, plafond atteint) n'écrit rien : le ticket est simplement
+rejoué au cycle suivant. Confondre les deux familles aurait produit une annotation par cycle
+sur une coupure réseau de trois secondes, puis un doublon au rejeu.
 
-### Le piège évité : deux familles derrière « à trier »
+### …et il a désormais un propriétaire
 
-Les confondre aurait créé un bug d'exploitation. Le suivi n'est déposé que sur un **arbitrage
-rendu** ; les motifs **rejouables** (`llm_error`, `invalid_output`, `cost_cap_reached`)
-n'écrivent toujours rien :
+Une **cible de repli par entité** (page Périmètre, à côté du mode). Quand le garde-fou refuse,
+le ticket est **assigné** à cette cible — et rien d'autre.
 
-| Situation | Motifs | GLPI reçoit | Ticket rejoué ? |
-|---|---|---|:---:|
-| Refus arbitré | `low_confidence`, `no_eligible_assignee`, `*_not_in_whitelist` | Suivi privé « non tranché » | non |
-| Triage pas eu lieu | `llm_error`, `invalid_output`, `cost_cap_reached` | rien | **oui** |
+- **Router, jamais classer.** Aucune catégorie, aucune priorité n'est posée : une mauvaise
+  catégorie est pire qu'aucune, elle serait crue par les stats, les règles GLPI et le
+  technicien.
+- **Groupe d'abord**, technicien possible : un groupe encaisse une absence sans
+  configuration, là où une personne nommée comme filet de toute l'instance est un point de
+  défaillance unique.
+- **Jamais en mode `suggestion`** — assigner *est* une mutation, et ce mode promet zéro
+  mutation.
+- **Cible revalidée contre la whitelist au moment de l'écriture**, et refusée à
+  l'enregistrement si elle n'est pas éligible : une configuration silencieusement inopérante
+  est pire qu'un refus clair.
 
-Sans cette distinction, une coupure réseau de trois secondes aurait produit une annotation
-par cycle, puis un doublon au rejeu réussi.
+### Congés & remplaçants
 
-### Invariant précisé (pas contourné)
+Un technicien absent **sort du périmètre effectif** : jamais proposé au modèle, donc jamais
+assigné. Plutôt que de corriger la Décision après coup — ce qui créerait une divergence entre
+le Journal et ce que GLPI reçoit.
 
-`docs/architecture.md` promettait « aucune **écriture** GLPI sans validation whitelist +
-seuil ». La formulation devient « aucune **mutation de champ** » : la barrière porte sur
-`ItsmPort.apply_decision`, jamais sur `write_followup`. L'échappatoire reste **unique** — la
-Décision demeure `accepted=False` au Journal ; c'est ce qu'on **fait** des tickets qui
-l'empruntent qui change, pas le nombre de branches du moteur. `docs/project-context.md`,
-`docs/modes.md` et `docs/guide-fonctionnement.md` (diagramme scindé en deux issues) sont
-alignés.
+**Le remplaçant hérite des compétences, pas seulement du nom.** Dire au modèle « route vers B »
+sans lui dire *pourquoi* B convient, c'est lui demander d'assigner du réseau à quelqu'un
+décrit comme faisant de la bureautique : confiance basse, puis rejet par le seuil. B absorbe
+donc les **domaines** de l'absent et gagne une ligne « assure l'intérim de X jusqu'au … ».
 
-### Détails
+Bornes **incluses**, granularité **jour**, évaluées dans le **fuseau local configuré**
+(`LOCAL_TIMEZONE`, défaut `Europe/Paris`). L'absence **expire d'elle-même** : rien à
+réactiver le lundi matin. Un remplaçant non éligible, ou lui-même absent sur la période, est
+refusé à la saisie — l'intérim ne se chaîne pas.
 
-- Un échec d'écriture du suivi est **avalé et loggé** : comme le suivi d'une Décision
-  acceptée, c'est un acte secondaire. Il ne doit ni empêcher la journalisation, ni laisser le
-  ticket non marqué (l'appel LLM serait re-facturé à chaque cycle).
-- Tests : **505** (+8), dont la non-écriture sur motif rejouable, l'exclusion du brouillon,
-  le comportement en `full_auto`, `category=null`, et un GLPI en panne.
+### Carte de couverture des domaines
+
+Bandeau de diagnostic **prédictif** sur les pages Techniciens et Groupes : domaines que
+**personne** ne couvre (« à trier » garanti dès qu'un ticket en relève) et domaines tenus par
+**une seule personne** sans groupe de repli. Il réagit aux cases cochées **avant**
+enregistrement. Cardinalités uniquement, aucun acteur nommé.
+
+### Invariants amendés — explicitement, pas contournés
+
+- « Aucune **écriture** GLPI sans whitelist + seuil » → « aucune **mutation de champ** ».
+  Déposer un suivi n'écrit aucun champ : il informe, il n'applique pas.
+- « Mutation via la **seule porte** `apply_decision` » → « via le **seul port** `ItsmPort` »,
+  avec deux méthodes aux contrats disjoints : `apply_decision` (Décision acceptée) et
+  `assign_actor` (repli, assignation seule). Élargir la première en aurait fait un couteau
+  suisse dont l'appelant décide des invariants.
+
+L'échappatoire reste **unique** : la Décision demeure `accepted=False` au Journal. C'est ce
+qu'on **fait** des tickets qui l'empruntent qui change, pas le nombre de branches du moteur.
+
+### RGPD
+
+La table des absences porte une donnée personnelle (« qui est absent, quand »). Elle est
+conservée tant que l'absence est **en cours ou à venir** — c'est de la configuration active
+qui pilote le routage — puis **purgée** avec le Journal une fois **terminée** : le produit n'a
+aucune raison de constituer l'historique des vacances de chacun. Ce n'est pas une métrique par
+technicien : on enregistre une **disponibilité déclarée par l'admin**, jamais une mesure
+d'activité ou de présence effective. `docs/dpo.md` documente la table et le fait qu'un
+remplaçant nommé apparaît dans le prompt envoyé au fournisseur LLM.
+
+### Livraison : `main` ne part plus en production tout seul
+
+`latest` — ce que tire tout `docker compose pull` — ne bouge désormais **que sur une release
+publiée**. Un merge dans `main` produit `edge` + `sha-<court>` : publier redevient un acte
+explicite, et qui veut suivre la pointe tire `:edge` en connaissance de cause.
+
+| Tag | Contenu |
+|---|---|
+| `latest` | dernière version **publiée** — défaut recommandé |
+| `X.Y.Z` / `X.Y` | version figée |
+| `edge` | préversion, état intégré de `main` entre deux releases |
+
+### Vérifications
+
+- **539 tests pytest** (+42) et **141 Vitest** (+15) ; ruff, Biome, tsc, build Vite.
+- Deux migrations (`a4c81d2e6f30`, `c7b2f4a19d55`) éprouvées **à vide, sur base peuplée et en
+  aller-retour** — un nouveau job de CI rejoue ces trois chemins à chaque PR, une révision
+  cassée n'étant pas détectable par les tests unitaires.
+- Portes de couverture ajoutées : **88,0 % de branches** au backend, **72,1 %** au frontend.
+- Protection de branche sur `main` : PR obligatoire, cinq checks requis, squash seul.
 
 ## 2026-08-08 — 0.9.49 — Compétences cochables : un routage exploitable dès l'installation
 
