@@ -14,6 +14,19 @@
 > `.github/workflows/docker-publish.yml`). La voie « depuis les sources / hors-ligne » reste
 > disponible plus bas pour l'airgap et le build local.
 
+### Quel tag tirer ?
+
+| Tag | Ce que c'est | Pour qui |
+|---|---|---|
+| **`latest`** | dernière version **publiée** (release). **Défaut recommandé.** | tout le monde |
+| `X.Y.Z` / `X.Y` | version figée (ex. `0.9.54`, `0.9`) | qui veut épingler une version |
+| `edge` | pointe de `main`, **entre deux releases** | tests, avant-première — jamais en production |
+| `sha-<court>` | un commit précis de `main` | reproduction d'un incident |
+
+`latest` ne bouge **que** sur une release publiée : un simple merge dans `main` ne modifie
+rien pour un exploitant. Une mise à jour reste donc un acte volontaire de votre côté
+(`docker compose pull && docker compose up -d`).
+
 ## Installation (image GHCR, recommandé)
 
 Trois voies, toutes **sans clone ni build**. L'**admin est amorcé au premier démarrage** à partir

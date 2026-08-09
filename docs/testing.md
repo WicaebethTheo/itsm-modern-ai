@@ -30,18 +30,23 @@
 
 ## CI
 
-**GitLab** (`.gitlab-ci.yml`) — pipeline exécutée à chaque push :
+**GitHub Actions** (`.github/workflows/`) — GitHub est le seul forge de ce projet.
 
-| Stage | Jobs |
-|---|---|
-| `lint` | `backend:lint` (ruff) · `frontend:lint` (Biome + tsc) |
-| `test` | `backend:test` (pytest) · `backend:migrations` (alembic upgrade head) · `frontend:test` (Vitest) · `frontend:e2e` (Playwright, `allow_failure: true`) |
-| `build` | `frontend:build` (Vite production) · `package:image` (image Docker) |
-| `security` | `security:deps-python` (`pip-audit`) · `security:deps-frontend` (`npm audit`) |
+| Workflow | Déclencheur | Contenu |
+|---|---|---|
+| `ci.yml` | chaque **PR** + push `main` | `backend` (ruff + pytest sur **3.14 et 3.13**) · `migrations` (Alembic : base vide, base **peuplée**, aller-retour `downgrade`/`upgrade`) · `frontend` (Biome + tsc + Vitest + build Vite) · `docker-build` (image amd64, sans push) |
+| `docker-publish.yml` | push `main` → `edge` ; **release** → `latest` + semver | Re-joue ruff + pytest, **smoke test** du conteneur (boot, `/health`, `/api/status`, amorçage admin), puis build multi-arch amd64 + arm64 |
+| `release.yml` | tag `v*.*.*` | Crée la release GitHub (c'est elle qui notifie les instances déployées) |
+| `codeql.yml` | PR + push `main` + hebdo | Analyse statique de sécurité |
+| `secret-scan.yml` | PR + push `main` + hebdo | gitleaks (dont l'historique complet, en hebdo) |
+| `security-audit.yml` | hebdo + PR touchant un lockfile | `pip-audit` + `npm audit` |
 
-**GitHub** (`.github/workflows/`) — `ci.yml` (ruff + pytest, Biome + tsc + Vitest + build Vite,
-build de l'image amd64 sans push) et `docker-publish.yml` (publication de l'image GHCR
-multi-arch amd64 + arm64).
+> **`main` ne déplace plus `latest`** (0.9.54). `latest` — ce que tire tout `docker compose pull` —
+> ne bouge que sur une **release publiée**. Un merge dans `main` produit `edge` + `sha-<court>` :
+> publier redevient un acte explicite. Qui veut suivre la pointe tire `:edge` en connaissance de cause.
+
+**E2E Playwright** : joués **en local** (`make ui-e2e`), pas en CI — ils y étaient déjà
+non bloquants (`allow_failure`). À rebrancher dans `ci.yml` le jour où ils sont stabilisés.
 
 ## Outils
 

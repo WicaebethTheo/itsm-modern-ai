@@ -1,3 +1,42 @@
+## 2026-08-09 — 0.9.54 — GitHub seul, et `main` ne part plus en production tout seul
+
+Pas de changement fonctionnel du moteur : c'est la chaîne de livraison qui change.
+
+### `main` ne déplace plus `latest`
+
+`latest` est ce que tire **tout** exploitant qui fait `docker compose pull`. Tant qu'il
+suivait `main`, **chaque merge partait directement en production** chez les utilisateurs,
+sans qu'aucune release n'ait été décidée. Désormais :
+
+| Événement | Tags d'image publiés | Visible par un exploitant ? |
+|---|---|---|
+| merge dans `main` | `edge` + `sha-<court>` | non (sauf s'il tire `:edge` volontairement) |
+| **release `vX.Y.Z`** | `X.Y.Z`, `X.Y`, **`latest`** | **oui** — et c'est elle qui notifie les instances |
+
+`main` redevient une branche d'intégration ; **publier est un acte explicite**. Au passage,
+cela corrige un écart discret : `latest` était conditionné à `is_default_branch`, qui est
+**faux** sur une ref de tag — une release ne posait donc pas `latest` par elle-même, seul le
+push de `main` qui la précédait le faisait.
+
+### CI : les migrations Alembic sont enfin éprouvées
+
+Une révision cassée **ne se voit pas** dans pytest — les tests créent le schéma via
+`SQLModel.create_all`, pas via Alembic. Elle ne se manifeste qu'au `docker compose up` de
+l'exploitant, où l'entrypoint boucle sur « Can't locate revision identified by … » et où la
+console ne démarre jamais. Le job `migrations` de `ci.yml` éprouve les trois chemins réels :
+base **vide**, base **peuplée** (c'est là qu'un `add_column` NOT NULL sans `server_default`
+explose), et **aller-retour** `downgrade`/`upgrade` (le chemin de `--rollback`). Il vérifie
+ensuite que les données ont survécu.
+
+### GitLab abandonné
+
+GitHub devient le forge unique. Ce que GitLab couvrait est repris par
+`ci.yml` / `security-audit.yml` / `secret-scan.yml` / `codeql.yml` ; les E2E Playwright
+restent joués en local (`make ui-e2e`) — ils étaient déjà non bloquants en CI.
+
+`docs/testing.md`, `docs/install.md` (quel tag tirer) et `CLAUDE.md` (workflow PR vers
+`main`, un bump de version **par PR** et non par commit) sont alignés.
+
 ## 2026-08-09 — 0.9.53 — Congés & remplaçants : le pool s'ajuste tout seul
 
 ### Le problème

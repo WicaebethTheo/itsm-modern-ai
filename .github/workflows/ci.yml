@@ -1,9 +1,12 @@
-# CI publique (GitHub) — porte minimale pour les PR sur le mirror : ruff + pytest +
-# build frontend. La CI complète (e2e Playwright, scans de dépendances) reste sur
-# GitLab (.gitlab-ci.yml, strippé du mirror). Le job backend tourne sur DEUX
-# interpréteurs : 3.14 (celui de l'image livrée) et 3.13 (le plancher déclaré par
-# `requires-python`). Sans la seconde jambe, le plancher ne serait plus exercé nulle
-# part et une dépendance abandonnant 3.13 casserait les installs source en silence.
+# CI du dépôt — porte de qualité de TOUTE PR (GitHub est désormais le seul forge de ce
+# projet, cf. CLAUDE.md). Couvre : ruff + pytest, lint/typecheck/tests/build frontend,
+# migrations Alembic, et constructibilité de l'image. Les scans de dépendances vivent
+# dans `security-audit.yml`, les secrets dans `secret-scan.yml`, CodeQL dans `codeql.yml`.
+#
+# Le job backend tourne sur DEUX interpréteurs : 3.14 (celui de l'image livrée) et 3.13
+# (le plancher déclaré par `requires-python`). Sans la seconde jambe, le plancher ne serait
+# plus exercé nulle part et une dépendance abandonnant 3.13 casserait les installs source
+# en silence.
 name: CI
 
 on:
@@ -51,6 +54,71 @@ jobs:
         run: uv run ruff check src tests
       - name: pytest
         run: uv run pytest -q
+
+  # Migrations Alembic — le job le plus rentable de cette CI. Une révision cassée ne se
+  # voit PAS dans pytest (les tests créent le schéma via `SQLModel.create_all`, pas via
+  # Alembic) : elle ne se manifeste qu'au `docker compose up` de l'exploitant, où
+  # l'entrypoint boucle sur « Can't locate revision identified by … » et où la console
+  # ne démarre jamais. On éprouve donc les trois chemins réels :
+  #   1. base VIDE  -> `upgrade head` (première installation) ;
+  #   2. base PEUPLÉE -> `upgrade head` (mise à jour d'une instance existante : c'est là
+  #      qu'un `add_column` NOT NULL sans `server_default` explose) ;
+  #   3. aller-retour `downgrade -1` puis `upgrade head` (le chemin de `--rollback`).
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+      - name: Install deps (uv.lock figé)
+        run: uv sync --frozen --all-extras
+      - name: upgrade head sur base vide
+        env:
+          DATABASE_URL: sqlite:///./ci-empty.db
+        run: uv run alembic upgrade head
+      - name: upgrade head sur base PEUPLÉE + aller-retour
+        env:
+          DATABASE_URL: sqlite:///./ci-seeded.db
+        run: |
+          set -euo pipefail
+          # On s'arrête une révision AVANT la tête, on peuple, puis on migre : c'est le
+          # scénario d'un exploitant qui fait `docker compose pull` avec des données.
+          uv run alembic upgrade head-1
+          # Insertion en SQL BRUT, pas via les modèles SQLModel : le code décrit le schéma
+          # à `head`, la base est ici à `head-1`. Passer par l'ORM ferait échouer ce job
+          # dès qu'une migration ajoute une colonne — pour une raison sans rapport avec ce
+          # qu'on veut prouver (les données survivent-elles à la migration ?).
+          uv run python - <<'PY'
+          import sqlite3
+          c = sqlite3.connect("./ci-seeded.db")
+          c.execute(
+              "INSERT INTO decisions"
+              " (ticket_id, ts, subject, accepted, reason, glpi_link, annotation, mode, applied)"
+              " VALUES (1, '2026-01-01 00:00:00', 'Ticket historique', 0, 'low_confidence',"
+              " '', '', 'suggestion', 0)"
+          )
+          c.commit()
+          print("base peuplée avant migration")
+          PY
+          uv run alembic upgrade head
+          uv run alembic downgrade -1
+          uv run alembic upgrade head
+      - name: Les données ont survécu à la migration
+        env:
+          DATABASE_URL: sqlite:///./ci-seeded.db
+        run: |
+          uv run python - <<'PY'
+          import sqlite3, sys
+          c = sqlite3.connect("./ci-seeded.db")
+          sujets = [r[0] for r in c.execute("SELECT subject FROM decisions")]
+          if sujets != ["Ticket historique"]:
+              sys.exit(f"données perdues par la migration : {sujets!r}")
+          print("données préservées :", sujets)
+          PY
 
   frontend:
     runs-on: ubuntu-latest
