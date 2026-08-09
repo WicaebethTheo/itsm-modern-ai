@@ -110,7 +110,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.51";
+export const APP_VERSION = "0.9.52";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -474,12 +474,18 @@ export interface RefItem {
   skill_tags: string[];
   mode?: ExecutionMode | null;
   auto_min_confidence?: number | null;
+  /** Cible de repli (entités) : acteur assigné quand le garde-fou refuse une Décision. */
+  fallback_group_id?: number | null;
+  fallback_technician_id?: number | null;
 }
 
 export interface ModeItem {
   ext_id: number;
   mode: ExecutionMode | null;
   auto_min_confidence?: number | null;
+  /** Groupe PRIORITAIRE sur technicien : il encaisse une absence sans configuration. */
+  fallback_group_id?: number | null;
+  fallback_technician_id?: number | null;
 }
 
 export interface SyncResult {

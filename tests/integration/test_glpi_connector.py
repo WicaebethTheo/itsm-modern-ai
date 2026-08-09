@@ -217,3 +217,26 @@ async def test_whoami_none_on_error():
 async def test_avatar_none_in_legacy():
     # Legacy : pas d'endpoint photo → None (l'UI retombe sur un avatar à initiales).
     assert await (await _connector()).avatar() is None
+
+
+@respx.mock
+async def test_assign_actor_ne_touche_ni_categorie_ni_priorite():
+    """Repli de triage : ROUTER, jamais CLASSER. La Décision a été REFUSÉE par le garde-fou,
+    donc poser sa catégorie serait pire que ne rien poser (elle serait crue par les stats,
+    les règles GLPI et le technicien)."""
+    _session_routes()
+    route = respx.put(f"{BASE}/Ticket/12").mock(return_value=httpx.Response(200, json={"id": 12}))
+    await (await _connector()).assign_actor(12, group_id=5)
+    body = route.calls.last.request.content
+    assert b'"_groups_id_assign":5' in body
+    assert b"itilcategories_id" not in body
+    assert b"priority" not in body and b"urgency" not in body
+
+
+@respx.mock
+async def test_assign_actor_sans_acteur_n_emet_aucune_requete():
+    """Un PUT au corps vide ferait une écriture GLPI (et une ligne d'historique) pour rien."""
+    _session_routes()
+    route = respx.put(f"{BASE}/Ticket/13").mock(return_value=httpx.Response(200, json={"id": 13}))
+    await (await _connector()).assign_actor(13)
+    assert not route.called

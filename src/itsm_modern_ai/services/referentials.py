@@ -114,6 +114,12 @@ def set_modes(session: Session, items: list[dict]) -> None:
         row.mode = m if m in valid else None
         amc = it.get("auto_min_confidence")
         row.auto_min_confidence = float(amc) if amc is not None else None
+        # Cible de repli : au plus UNE des deux. Un technicien explicite efface le groupe
+        # (et réciproquement) — deux cibles simultanées rendraient l'aiguillage ambigu.
+        grp = it.get("fallback_group_id")
+        tech = it.get("fallback_technician_id")
+        row.fallback_group_id = int(grp) if grp is not None else None
+        row.fallback_technician_id = int(tech) if tech is not None and grp is None else None
         session.add(row)
     session.commit()
 
@@ -134,6 +140,30 @@ def mode_for_entity(
         else default_auto_min_confidence
     )
     return mode, threshold
+
+
+def fallback_for_entity(
+    session: Session, entity_id: int, refs: Referentials
+) -> tuple[int | None, int | None]:
+    """Cible de repli RÉELLEMENT applicable pour une entité : `(technicien, groupe)`.
+
+    Validée contre le périmètre AU MOMENT DE L'ÉCRITURE, pas à l'enregistrement. La cible a
+    été choisie par l'admin, donc elle était légitime — mais rien ne garantit qu'elle le soit
+    encore six mois plus tard (technicien parti, groupe décoché, absence en cours). Sans ce
+    contrôle, le repli deviendrait le SEUL chemin par lequel un acteur non validé reçoit un
+    Ticket : un contournement de FR-7 par la porte de service.
+
+    Groupe PRÉFÉRÉ : il encaisse une absence sans configuration, là où un technicien nommé
+    comme filet de toute l'instance est un point de défaillance unique.
+    """
+    row = _row(session, KIND_ENTITY, entity_id)
+    if row is None:
+        return None, None
+    if row.fallback_group_id is not None and row.fallback_group_id in refs.groups:
+        return None, row.fallback_group_id
+    if row.fallback_technician_id is not None and row.fallback_technician_id in refs.technicians:
+        return row.fallback_technician_id, None
+    return None, None
 
 
 def effective_referentials(session: Session) -> Referentials:

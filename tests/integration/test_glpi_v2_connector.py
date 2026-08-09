@@ -305,3 +305,25 @@ async def test_apply_decision_failing_patch_is_not_partial():
         await _connector().apply_decision(10, category=3, priority=4, technician_id=11)
     assert patch.called and not team.called
     assert getattr(exc.value, "partial_mutation", False) is False
+
+
+@respx.mock
+async def test_assign_actor_v2_poste_un_seul_teammember():
+    """Un SEUL appel réseau : aucun état partiel possible, contrairement à `apply_decision`
+    (PATCH puis POST) dont le premier peut réussir et le second échouer."""
+    _token_route()
+    patch = respx.patch(f"{BASE}/Assistance/Ticket/12").mock(return_value=httpx.Response(200, json={}))
+    team = respx.post(f"{BASE}/Assistance/Ticket/12/TeamMember").mock(
+        return_value=httpx.Response(200, json={}))
+    await _connector().assign_actor(12, group_id=5)
+    assert not patch.called  # ni catégorie ni priorité : le repli route, il ne classe pas
+    assert b'"type":"Group"' in team.calls.last.request.content
+
+
+@respx.mock
+async def test_assign_actor_v2_sans_acteur_n_emet_rien():
+    _token_route()
+    team = respx.post(f"{BASE}/Assistance/Ticket/13/TeamMember").mock(
+        return_value=httpx.Response(200, json={}))
+    await _connector().assign_actor(13)
+    assert not team.called

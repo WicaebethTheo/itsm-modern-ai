@@ -1,3 +1,64 @@
+## 2026-08-09 — 0.9.52 — Repli assigné : un ticket « à trier » a désormais un propriétaire
+
+### Le problème restant
+
+La 0.9.50 a rendu un ticket refusé **visible** (Suivi privé « non tranché »). Il restait
+**sans propriétaire** : personne n'en héritait, personne n'était notifié. Et le produit dont
+la devise est « le LLM propose, le code décide » déléguait toujours son repli **au LLM** —
+`domain/prompting.py` demande un `group_id` de repli, que le modèle peut renvoyer `null`.
+
+### Ce qui change
+
+Une **cible de repli par entité** (page Périmètre, à côté du mode). Quand le garde-fou
+refuse une Décision, le ticket est **assigné** à cette cible — et rien d'autre.
+
+- **Router, jamais classer.** Aucune catégorie, aucune priorité n'est posée. Une confiance
+  sous le seuil est basse sur l'**ensemble** de la Décision : une mauvaise catégorie est pire
+  qu'aucune, elle serait crue par les stats, les règles GLPI et le technicien.
+- **Groupe d'abord**, technicien possible. Les groupes sont listés en tête et gagnent si les
+  deux sont renseignés : un groupe encaisse une absence sans configuration, là où un
+  technicien nommé comme filet de toute l'instance est un point de défaillance unique.
+- **Jamais en mode `suggestion`** — assigner *est* une mutation, et ce mode promet zéro
+  mutation. Le Suivi « non tranché » reste déposé dans les trois modes.
+- **Cible revalidée contre la whitelist à l'écriture.** Elle était légitime le jour de
+  l'enregistrement ; rien ne garantit qu'elle le soit encore six mois plus tard. Sans ce
+  contrôle, le repli serait le seul chemin par lequel un acteur non validé reçoit un ticket —
+  un contournement de FR-7 par la porte de service.
+- **Cible non éligible refusée à l'enregistrement** (`400 fallback_not_eligible`) plutôt
+  qu'acceptée sans effet : une configuration silencieusement inopérante est pire qu'un refus.
+
+### Invariant amendé, explicitement
+
+`ItsmPort` expose désormais **deux** méthodes mutantes, aux contrats disjoints :
+`apply_decision` (Décision **acceptée** : catégorie + priorité + assignation) et
+`assign_actor` (**repli** : assignation seule, sur un ticket **refusé**). L'invariant « une
+seule porte » devient « un seul **port** ».
+
+L'alternative — rendre `category`/`priority` optionnels dans `apply_decision` — a été
+écartée : une méthode « applique une Décision acceptée » serait devenue un couteau suisse
+dont l'appelant décide des invariants, exactement ce qu'un port doit empêcher. Bénéfice
+secondaire : en API V2, `assign_actor` n'émet qu'**un seul** appel réseau (POST TeamMember,
+sans PATCH), donc aucun état partiel possible — contrairement à `apply_decision`, dont
+l'`ItsmPartialApplyError` n'existe que pour ce cas.
+
+### Traçabilité
+
+Colonne `decisions.fallback_applied`, **distincte** de `applied` : la Décision reste
+`accepted=False` (le garde-fou a bien refusé), et l'admin peut compter les tickets routés par
+repli sans les confondre avec des Décisions appliquées. Le changement de cible est **audité**
+au même titre que le mode : il autorise le moteur à muter GLPI, c'est une décision de
+gouvernance.
+
+### Détails
+
+- Un repli qui échoue retombe sur « Suivi seul » — meilleur que rien — et le Suivi
+  **n'annonce pas** une affectation qui n'a pas eu lieu.
+- Aucun repli sur un motif rejouable (panne LLM, cap) : assigner un humain sur une coupure
+  réseau de trois secondes, puis re-triager au rejeu un ticket désormais assigné.
+- Migration `a4c81d2e6f30` (`server_default=false` sur `fallback_applied`, la table est
+  peuplée en production) : testée à vide, sur base peuplée, et en aller-retour.
+- Tests : **522** pytest (+14) et **123** Vitest (+3).
+
 ## 2026-08-09 — 0.9.51 — Carte de couverture : voir la panne de routage avant de la subir
 
 ### Le problème

@@ -123,6 +123,11 @@ class DecisionLog(SQLModel, table=True):
     # Mode d'exécution effectif + a-t-on muté le Ticket GLPI (vs Suivi seul) — traçabilité.
     mode: str = ""  # ExecutionMode résolu pour le périmètre
     applied: bool = False  # True si la Décision a été appliquée aux champs GLPI
+    # Repli : un acteur a été assigné SUR UN REFUS (« à trier »), sans mutation de champ.
+    # Colonne DISTINCTE de `applied` à dessein : `accepted=False` reste la vérité d'audit
+    # (le garde-fou a bien refusé), et l'admin doit pouvoir compter les tickets routés par
+    # repli sans les confondre avec des Décisions appliquées.
+    fallback_applied: bool = False
 
 
 class ReferentialCache(SQLModel, table=True):
@@ -156,6 +161,13 @@ class ReferentialCache(SQLModel, table=True):
     # `auto_min_confidence` = 2e seuil strict du mode semi_auto (None = défaut global).
     mode: str | None = None  # "suggestion" | "semi_auto" | "full_auto"
     auto_min_confidence: float | None = None
+    # Cible de REPLI par entité : acteur assigné quand le garde-fou refuse une Décision
+    # (« à trier » arbitré). None = pas de repli, le Ticket reste non assigné.
+    # Groupe PRÉFÉRÉ au technicien : une personne nommée comme filet de sécurité de toute
+    # l'instance est un point de défaillance unique, et entre en collision frontale avec
+    # les absences. Un groupe GLPI encaisse l'absence sans configuration.
+    fallback_group_id: int | None = None
+    fallback_technician_id: int | None = None
     updated_at: datetime = Field(default_factory=_utcnow)
 
 

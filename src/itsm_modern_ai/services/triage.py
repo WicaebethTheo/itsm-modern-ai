@@ -199,7 +199,13 @@ def _motif_a_trier(outcome: TriageOutcome, threshold: float) -> str:
             return outcome.reason.value
 
 
-def render_fallback_followup(outcome: TriageOutcome, refs: Referentials, *, threshold: float) -> str:
+def render_fallback_followup(
+    outcome: TriageOutcome,
+    refs: Referentials,
+    *,
+    threshold: float,
+    assigned: tuple[int | None, int | None] = (None, None),
+) -> str:
     """Suivi PRIVÉ déposé sur un Ticket parti « à trier » après arbitrage (audit 2026-08).
 
     POURQUOI. Tout le traitement vivait sous `if outcome.accepted:` : un Ticket refusé par
@@ -225,6 +231,10 @@ def render_fallback_followup(outcome: TriageOutcome, refs: Referentials, *, thre
     Effet de bord utile : le contenu ne reprend AUCUN texte libre du LLM ni du demandeur
     (que des identifiants et des libellés de référentiel) — donc ni PII à re-masquer, ni
     prompt-injection à échapper, contrairement au brouillon de `render_followup`.
+
+    `assigned` = acteur RÉELLEMENT assigné par le repli, à ne pas confondre avec
+    l'affectation *envisagée* par l'IA : c'est un aiguillage décidé par l'admin pour que le
+    Ticket ait un propriétaire, pas une proposition du modèle.
     """
     d = outcome.decision
     assert d is not None
@@ -256,16 +266,32 @@ def render_fallback_followup(outcome: TriageOutcome, refs: Referentials, *, thre
     else:
         assignee = "aucun (le modèle n'a proposé ni technicien ni groupe)"
 
+    fb_tech, fb_group = assigned
+    if fb_tech is not None:
+        repli = f"\n• Repli : assigné à {refs.technicians.get(fb_tech, f'#{fb_tech}')} (#{fb_tech})"
+    elif fb_group is not None:
+        repli = f"\n• Repli : assigné au groupe {refs.groups.get(fb_group, f'#{fb_group}')} (#{fb_group})"
+    else:
+        repli = ""
+
+    cloture = (
+        "Ce ticket n'a pas été catégorisé automatiquement : il attend un triage humain. "
+        "Les valeurs ci-dessus sont indicatives — elles n'ont PAS passé le garde-fou et ne "
+        "doivent pas être reprises telles quelles."
+    )
+    if repli:
+        cloture += (
+            "\nSeule l'affectation de repli a été appliquée (configurée par l'administrateur "
+            "pour cette entité), afin que le ticket ne reste pas sans propriétaire."
+        )
     return (
-        "🤖 Triage NON TRANCHÉ — ITSM Modern AI (aucune modification appliquée)\n"
+        "🤖 Triage NON TRANCHÉ — ITSM Modern AI (aucun champ de triage modifié)\n"
         f"• Motif : {_motif_a_trier(outcome, threshold)}\n"
         f"• Catégorie envisagée : {cat}\n"
         f"• Priorité envisagée : {prio}\n"
         f"• Affectation envisagée : {assignee}\n"
-        f"• Confiance annoncée : {d.confidence:.0%}\n\n"
-        "Ce ticket n'a été ni catégorisé ni affecté automatiquement : il attend un triage "
-        "humain. Les valeurs ci-dessus sont indicatives — elles n'ont PAS passé le "
-        "garde-fou et ne doivent pas être reprises telles quelles.\n"
+        f"• Confiance annoncée : {d.confidence:.0%}{repli}\n\n"
+        f"{cloture}\n"
         "— Aucune suite donnée à ce ticket n'est enregistrée par le moteur."
     )
 
@@ -522,13 +548,15 @@ class TriageService:
         Le garde-fou (whitelist + seuil) a déjà tranché en amont ; ici on ne fait
         QUE dispatcher l'action d'une Décision acceptée.
 
-        « à trier » ne MUTE toujours rien, mais ne passe plus sous silence : un refus
-        ARBITRÉ (cf. `is_arbitrated_rejection`) dépose un Suivi PRIVÉ « non tranché ».
+        « à trier » ne pose toujours AUCUN champ de triage, mais ne passe plus sous
+        silence : un refus ARBITRÉ (cf. `is_arbitrated_rejection`) dépose un Suivi PRIVÉ
+        « non tranché » et, hors mode `suggestion`, assigne la cible de repli de l'entité.
         """
         glpi_link = _web_link(self._glpi_base_url, ticket.id)
         mode = self._default_mode
         applied = False
         wrote = False
+        fallback_applied = False  # un acteur de repli a été assigné sur un REFUS
         partial_error = ""  # message d'une mutation GLPI partielle (annotation Journal)
 
         if outcome.accepted:
@@ -603,6 +631,38 @@ class TriageService:
                     )
 
         elif is_arbitrated_rejection(outcome) and self._itsm is not None:
+            # Mode de l'entité : il commande le repli ASSIGNÉ. En `suggestion`, l'instance
+            # promet zéro mutation — or assigner EST une mutation. Le Suivi « non tranché »,
+            # lui, reste déposé dans les trois modes (il n'applique rien).
+            with self._session_factory() as session:
+                mode, _ = referentials.mode_for_entity(
+                    session,
+                    ticket.entity_id,
+                    default_mode=self._default_mode,
+                    default_auto_min_confidence=self._auto_min_confidence,
+                )
+                fb_tech, fb_group = (
+                    referentials.fallback_for_entity(session, ticket.entity_id, refs)
+                    if mode is not ExecutionMode.SUGGESTION
+                    else (None, None)
+                )
+            if fb_tech is not None or fb_group is not None:
+                try:
+                    # ROUTER, JAMAIS CLASSER : `assign_actor` ne touche ni la catégorie ni
+                    # la priorité. Une confiance sous le seuil est basse sur l'ENSEMBLE de
+                    # la Décision — une mauvaise catégorie est pire qu'aucune, elle serait
+                    # crue par les stats, les règles GLPI et le technicien.
+                    await self._itsm.assign_actor(
+                        ticket.id, technician_id=fb_tech, group_id=fb_group
+                    )
+                    fallback_applied = True
+                except Exception as exc:
+                    # Un repli raté ne doit pas dégrader l'existant : on retombe sur le
+                    # comportement « Suivi seul », qui reste meilleur que rien.
+                    fb_tech = fb_group = None
+                    logger.warning(
+                        "triage: repli non assigné (ticket=%s): %s", ticket.id, exc
+                    )
             # « à trier » ARBITRÉ : le garde-fou a refusé, et le poller ne rejouera JAMAIS
             # ce Ticket. Sans ce Suivi, GLPI ne reçoit RIEN et le Ticket devient invisible
             # (cf. `render_fallback_followup`). Il INFORME, il n'applique pas :
@@ -613,7 +673,10 @@ class TriageService:
                 await self._itsm.write_followup(
                     ticket.id,
                     render_fallback_followup(
-                        outcome, refs, threshold=self._confidence_threshold
+                        outcome,
+                        refs,
+                        threshold=self._confidence_threshold,
+                        assigned=(fb_tech, fb_group),
                     ),
                     private=True,
                 )
@@ -639,7 +702,7 @@ class TriageService:
             with self._session_factory() as session:
                 decision_id = journal.record_decision(
                     session, ticket.id, outcome, glpi_link=glpi_link, mode=mode.value,
-                    applied=applied, subject=ticket.title,
+                    applied=applied, subject=ticket.title, fallback_applied=fallback_applied,
                 )
                 if partial_error:
                     # Seule trace lisible par l'admin de l'état réellement atteint dans

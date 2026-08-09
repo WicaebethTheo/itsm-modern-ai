@@ -76,11 +76,16 @@ def record_decision(
     mode: str = "",
     applied: bool = False,
     subject: str = "",
+    fallback_applied: bool = False,
 ) -> int:
     """Consigne une Décision (acceptée ou « à trier ») dans le Journal (FR-20).
 
     `mode` = mode d'exécution effectif ; `applied` = la Décision a-t-elle muté le Ticket
     GLPI (vs Suivi seul) ; `subject` = titre du Ticket (lisibilité). Traçabilité (audit/DPO).
+
+    `fallback_applied` = un acteur de repli a été assigné sur un REFUS. Distinct de
+    `applied` : la Décision reste refusée (`accepted=False`), aucun champ n'a été muté —
+    c'est un aiguillage, pas une application.
     """
     d = outcome.decision
     row = DecisionLog(
@@ -96,6 +101,7 @@ def record_decision(
         glpi_link=glpi_link,
         mode=mode,
         applied=applied,
+        fallback_applied=fallback_applied,
     )
     session.add(row)
     session.commit()

@@ -307,3 +307,51 @@ def test_couverture_ne_nomme_aucun_acteur(client):
     assert set(client.get("/api/skills/coverage").json()[0]) == {
         "key", "label_fr", "label_en", "technicians", "groups",
     }
+
+
+# ── Cible de repli par entité (0.9.52) ───────────────────────────────────────────────
+
+
+def test_repli_hors_perimetre_est_refuse_a_l_enregistrement(client):
+    """Accepter silencieusement produirait une configuration INOPÉRANTE : le moteur
+    revalide la cible à l'écriture et n'assignerait rien, sans que l'admin sache pourquoi."""
+    _seed_cache()
+    r = client.put(
+        "/api/modes",
+        json=[{"ext_id": 0, "mode": "full_auto", "fallback_group_id": 5}],  # groupe non éligible
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "fallback_not_eligible"
+    # Rien n'a été enregistré : l'entité garde son état antérieur.
+    entite = [e for e in client.get("/api/discovery/entity").json() if e["ext_id"] == 0][0]
+    assert entite["fallback_group_id"] is None
+
+
+def test_repli_accepte_une_fois_la_cible_eligible(client):
+    _seed_cache()
+    client.put("/api/groups", json=[{"ext_id": 5, "eligible": True, "skills": ""}])
+    assert client.put(
+        "/api/modes", json=[{"ext_id": 0, "mode": "full_auto", "fallback_group_id": 5}]
+    ).status_code == 200
+
+    entite = [e for e in client.get("/api/discovery/entity").json() if e["ext_id"] == 0][0]
+    assert entite["fallback_group_id"] == 5 and entite["fallback_technician_id"] is None
+
+
+def test_changement_de_cible_de_repli_est_audite(client):
+    """Autoriser le moteur à assigner un acteur sur un Ticket refusé est une décision de
+    gouvernance : elle doit être imputable au même titre que le mode."""
+    _seed_cache()
+    client.put("/api/groups", json=[{"ext_id": 5, "eligible": True, "skills": ""}])
+    client.put("/api/modes", json=[{"ext_id": 0, "mode": "full_auto", "fallback_group_id": 5}])
+
+    from sqlmodel import select
+
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import AuditLog
+
+    with db.session_scope() as session:
+        lignes = [a for a in session.exec(select(AuditLog)).all() if a.action == "entity_mode"]
+    assert len(lignes) == 1
+    assert "repli groupe #5" in lignes[0].new_value
+    assert "repli" not in lignes[0].old_value  # aucun repli configuré auparavant

@@ -711,3 +711,133 @@ async def test_fallback_followup_failure_still_journals_and_consumes(temp_db):
     assert res.followup_written is False and res.retryable is False and res.db_error is False
     with db.session_scope() as s:
         assert journal.list_decisions(s)[0].reason == "low_confidence"
+
+
+# ── Repli assigné sur « à trier » (0.9.52) ───────────────────────────────────────────
+# Le repli ROUTE (assigne un acteur) mais ne CLASSE jamais : une confiance sous le seuil
+# est basse sur l'ENSEMBLE de la Décision, une mauvaise catégorie est pire qu'aucune.
+
+
+class FallbackItsm(FakeItsm):
+    def __init__(self):
+        super().__init__()
+        self.assigned = []  # (ticket_id, technician_id, group_id)
+
+    async def assign_actor(self, ticket_id, *, technician_id=None, group_id=None) -> None:
+        self.assigned.append((ticket_id, technician_id, group_id))
+
+
+REFS_REPLI = Referentials(
+    categories={1: "Compte"}, technicians={11: "Syl"}, groups={5: "Support N1"}
+)
+
+
+def _entite_avec_repli(*, mode="full_auto", group_id=None, technician_id=None, ext_id=0):
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import ReferentialCache
+
+    with db.session_scope() as s:
+        s.add(
+            ReferentialCache(
+                kind="entity", ext_id=ext_id, name="Racine", selected=True, mode=mode,
+                fallback_group_id=group_id, fallback_technician_id=technician_id,
+            )
+        )
+        s.commit()
+
+
+def _refuse() -> Decision:
+    return Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.3)
+
+
+async def test_repli_assigne_un_groupe_sans_toucher_aux_champs(temp_db):
+    """Router, jamais classer : `assign_actor` ne pose ni catégorie ni priorité."""
+    _entite_avec_repli(group_id=5)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=400, content="x", entity_id=0), REFS_REPLI)
+
+    assert itsm.assigned == [(400, None, 5)]
+    assert itsm.applied == []  # AUCUNE mutation de champ sur une Décision refusée
+    assert "Repli : assigné au groupe Support N1 (#5)" in itsm.followups[0][1]
+    with db.session_scope() as s:
+        row = journal.list_decisions(s)[0]
+    assert row.accepted is False  # la vérité d'audit reste INTACTE : le garde-fou a refusé
+    assert row.applied is False and row.fallback_applied is True
+
+
+async def test_pas_de_repli_assigne_en_mode_suggestion(temp_db):
+    """Le mode suggestion promet ZÉRO mutation — or assigner EST une mutation.
+    Le Suivi « non tranché », lui, reste déposé (il n'applique rien)."""
+    _entite_avec_repli(mode="suggestion", group_id=5)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.SUGGESTION)
+    await svc.handle(Ticket(id=401, content="x", entity_id=0), REFS_REPLI)
+
+    assert itsm.assigned == []
+    assert "NON TRANCHÉ" in itsm.followups[0][1]
+    assert "Repli" not in itsm.followups[0][1]
+    with db.session_scope() as s:
+        assert journal.list_decisions(s)[0].fallback_applied is False
+
+
+async def test_cible_de_repli_revalidee_contre_la_whitelist(temp_db):
+    """La cible était légitime à l'enregistrement — rien ne garantit qu'elle le soit encore.
+    Sans revalidation, le repli serait le seul chemin par lequel un acteur non validé reçoit
+    un Ticket : un contournement de FR-7 par la porte de service."""
+    _entite_avec_repli(group_id=999)  # groupe décoché depuis (absent du périmètre effectif)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=402, content="x", entity_id=0), REFS_REPLI)
+
+    assert itsm.assigned == []  # rien n'est assigné à un acteur hors périmètre
+    assert itsm.followups and "Repli" not in itsm.followups[0][1]
+
+
+async def test_repli_prefere_le_groupe_au_technicien(temp_db):
+    """Un technicien nommé comme filet de toute l'instance est un point de défaillance
+    unique, et entre en collision avec les congés. Un groupe encaisse l'absence."""
+    _entite_avec_repli(group_id=5, technician_id=11)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=403, content="x", entity_id=0), REFS_REPLI)
+    assert itsm.assigned == [(403, None, 5)]
+
+
+async def test_repli_technicien_si_aucun_groupe_configure(temp_db):
+    _entite_avec_repli(technician_id=11)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=404, content="x", entity_id=0), REFS_REPLI)
+    assert itsm.assigned == [(404, 11, None)]
+    assert "Repli : assigné à Syl (#11)" in itsm.followups[0][1]
+
+
+async def test_echec_du_repli_ne_degrade_pas_le_suivi(temp_db):
+    """Un repli raté doit retomber sur le comportement « Suivi seul » — meilleur que rien —
+    et surtout ne pas annoncer une affectation qui n'a pas eu lieu."""
+    class ReplRate(FallbackItsm):
+        async def assign_actor(self, ticket_id, *, technician_id=None, group_id=None):
+            raise RuntimeError("GLPI 500")
+
+    _entite_avec_repli(group_id=5)
+    itsm = ReplRate()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    res = await svc.handle(Ticket(id=405, content="x", entity_id=0), REFS_REPLI)
+
+    assert res.retryable is False  # le Ticket reste consommé, pas de boucle facturée
+    assert "NON TRANCHÉ" in itsm.followups[0][1]
+    assert "Repli" not in itsm.followups[0][1]  # ne pas annoncer une affectation ratée
+    with db.session_scope() as s:
+        assert journal.list_decisions(s)[0].fallback_applied is False
+
+
+async def test_aucun_repli_sur_un_motif_rejouable(temp_db):
+    """Assigner un humain sur une coupure réseau de trois secondes, puis re-triager au rejeu
+    un Ticket désormais assigné : le piège que la distinction des deux familles évite."""
+    _entite_avec_repli(group_id=5)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(error=LlmTransportError("réseau")), itsm,
+                   default_mode=ExecutionMode.FULL_AUTO)
+    res = await svc.handle(Ticket(id=406, content="x", entity_id=0), REFS_REPLI)
+    assert itsm.assigned == [] and itsm.followups == [] and res.retryable is True

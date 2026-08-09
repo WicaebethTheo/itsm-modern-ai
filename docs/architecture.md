@@ -29,7 +29,8 @@ GLPI poll  →  règles déterministes  →  cost cap  →  masquage PII
                               └─── tout échec ─────→  « à trier » (fallback unique)
                                                        │
                                    refus ARBITRÉ ──────┤→  Suivi PRIVÉ « non tranché »
-                                   (whitelist / seuil) │    (aucune mutation)
+                                   (whitelist / seuil) │    + repli assigné (hors suggestion)
+                                                       │    — aucun champ de triage posé
                                                        │
                                    triage pas eu lieu ─┘→  rien, Ticket rejoué au cycle suivant
                                    (panne LLM, cap)

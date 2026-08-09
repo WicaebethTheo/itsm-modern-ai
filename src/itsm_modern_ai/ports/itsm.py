@@ -46,6 +46,30 @@ class ItsmPort(Protocol):
         """
         ...
 
+    async def assign_actor(
+        self, ticket_id: int, *, technician_id: int | None = None, group_id: int | None = None
+    ) -> None:
+        """Assigne un acteur SANS toucher à la catégorie ni à la priorité (repli de triage).
+
+        DEUXIÈME porte de mutation, ouverte délibérément — l'invariant « une seule porte »
+        a été précisé, pas contourné (cf. `docs/project-context.md`). Deux raisons de ne
+        PAS réutiliser `apply_decision` :
+
+        1. **Router n'est pas classer.** Un repli s'applique à une Décision que le garde-fou
+           a REFUSÉE : sa confiance est basse sur l'ENSEMBLE de la Décision, donc poser sa
+           catégorie serait pire que ne rien poser (elle serait crue par les stats, les
+           règles GLPI et le technicien). Élargir `apply_decision` à des champs optionnels
+           aurait fait d'une méthode « applique une Décision acceptée » un couteau suisse
+           dont l'appelant décide des invariants — exactement ce qu'un port doit empêcher.
+        2. **Un seul appel réseau.** En V2, `apply_decision` fait PATCH puis POST : le
+           `ItsmPartialApplyError` n'existe que parce que le premier peut réussir et le
+           second échouer. Ici il n'y a QUE l'assignation : soit elle passe, soit rien n'a
+           bougé — pas d'état partiel possible.
+
+        L'appelant garantit que l'acteur est éligible (défense en profondeur côté domaine).
+        """
+        ...
+
     async def healthcheck(self) -> bool:
         """True si GLPI est joignable et l'auth fonctionne (FR-27)."""
         ...

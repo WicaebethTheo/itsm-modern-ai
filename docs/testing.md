@@ -4,8 +4,8 @@
 
 | Suite | Compte | Commande |
 |---|---:|---|
-| **pytest** (unit + integration via `respx`) | **508** | `make test` |
-| **Vitest + Testing Library** (composants + pages) | **120** (20 fichiers) | `make ui-test` |
+| **pytest** (unit + integration via `respx`) | **522** | `make test` |
+| **Vitest + Testing Library** (composants + pages) | **123** (20 fichiers) | `make ui-test` |
 | **Playwright** (E2E, API mockée) | **3 parcours** | `make ui-e2e` |
 | **ruff** (Python) | 0 violation | `make lint` |
 | **Biome + tsc** (TS/JSX) | 0 violation | `make ui-lint` |
@@ -14,6 +14,7 @@
 
 - Pipeline à ordre immuable (règles → cost cap → masquage → LLM → Pydantic → whitelist → seuil → Suivi / « à trier »).
 - Suivi « non tranché » sur « à trier » : déposé sur un refus **arbitré** (dans les 3 modes, sans mutation, sans brouillon), **jamais** sur un motif rejouable (panne LLM, sortie invalide, cap) ; un GLPI en panne ne casse ni la journalisation ni le marquage « traité ».
+- Repli assigné sur un refus arbitré : route sans classer (aucun champ de triage), jamais en mode `suggestion`, groupe préféré au technicien, cible revalidée contre la whitelist à l'écriture, échec de repli non dégradant, `fallback_applied` distinct de `applied`.
 - Masquage PII (email, téléphone, IBAN, mot de passe/token).
 - Whitelist (catégorie/priorité/technicien/groupe hors périmètre → « à trier »).
 - Seuil de confiance + 2ᵉ seuil strict pour `semi_auto`.

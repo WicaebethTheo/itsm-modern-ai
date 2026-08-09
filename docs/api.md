@@ -48,7 +48,7 @@ Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `
 | `/api/discovery/{kind}` | `GET` | Liste tout le cache pour `kind ∈ {category, entity, technician, group}`. |
 | `/api/scope` | `GET` | Périmètre actuel (catégories autorisées + entités). |
 | `/api/scope` | `PUT` | Met à jour le périmètre. |
-| `/api/modes` | `PUT` | Mode d'exécution par entité (`suggestion`/`semi_auto`/`full_auto`). |
+| `/api/modes` | `PUT` | Mode d'exécution par entité (`suggestion`/`semi_auto`/`full_auto`), 2ᵉ seuil semi-auto, et **cible de repli** (`fallback_group_id` / `fallback_technician_id`, groupe prioritaire). Une cible non éligible est refusée (`400 fallback_not_eligible`) plutôt qu'acceptée sans effet. |
 | `/api/technicians` | `PUT` | Éligibilité + fiche en prose par technicien. |
 | `/api/groups` | `PUT` | Éligibilité + fiche en prose par groupe. |
 | `/api/skills` | `GET` | Catalogue des 14 domaines de compétence cochables (contenu produit). |
