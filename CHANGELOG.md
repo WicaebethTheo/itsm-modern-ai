@@ -1,3 +1,76 @@
+## 2026-08-09 — 0.9.53 — Congés & remplaçants : le pool s'ajuste tout seul
+
+### Le problème
+
+Un technicien en congé restait proposable au LLM, donc assignable. Ses tickets
+attendaient son retour. Et rien, dans la console, ne permettait de le dire au moteur.
+
+### L'approche retenue, et celle qu'on a écartée
+
+| Approche | Verdict |
+|---|---|
+| Laisser le LLM proposer l'absent, puis substituer le remplaçant après coup | **Non** — crée une divergence entre ce que le Journal enregistre et ce que GLPI reçoit : exactement le trou d'audit que `whitelist.effective_assignment` a été écrit pour boucher. |
+| **Retirer l'absent du périmètre effectif** | **Oui** — déterministe, jamais proposé donc jamais assigné, et compose gratuitement avec tout l'aval (whitelist, seuil, repli). |
+
+Corollaire précieux : le périmètre étant reconstruit à **chaque cycle de poll**, un congé
+prend effet et **expire tout seul**. Personne n'a besoin de penser à réactiver quelqu'un le
+lundi matin, et il n'y a aucun cache à invalider.
+
+### Le point qui décide si ça marche ou fait semblant
+
+**Le remplaçant hérite des compétences, pas seulement du nom.** Dire au modèle « route vers
+B plutôt que vers A » sans lui dire *pourquoi* B convient, c'est lui demander d'assigner du
+réseau à quelqu'un décrit comme faisant de la bureautique : il le fera avec une confiance
+basse, et le seuil le renverra… « à trier ». On aurait déplacé le problème, pas résolu.
+
+B absorbe donc les **domaines** de A dans le prompt de routage, et gagne une ligne
+« Assure l'intérim d'Adrien Durand jusqu'au 22/08/2026 inclus. » — placée **en dernier**,
+donc avec le plus de poids, comme la prose l'est déjà après le socle coché.
+
+### Les trois pièges, traités à la saisie
+
+1. **Remplaçant non éligible** → refusé (`replacement_not_eligible`). Le moteur ne route
+   jamais vers lui : accepter produirait un filet qui n'a jamais existé.
+2. **Chaînes et cycles** (A→B, B absent →C) → **un seul saut**, et le cas est refusé à
+   l'enregistrement (`replacement_also_absent`). Aucun résolveur de graphe : le comportement
+   doit être compréhensible par un admin qui débarque, pas mathématiquement complet. Le
+   refus porte sur un **chevauchement** de périodes, pas sur « B a des congés un jour ».
+3. **Fuseau horaire** → bornes **inclusives**, granularité **jour**, évaluées dans le fuseau
+   local configuré (`LOCAL_TIMEZONE`, défaut `Europe/Paris`, modifiable dans la console).
+   Évalué en UTC, un congé se terminerait à 02 h du matin le bon jour — ou la veille selon
+   la saison. Ne se voit qu'en production, en août. Un fuseau invalide retombe sur le défaut
+   documenté plutôt que d'arrêter le triage de toute une file.
+
+Sans remplaçant désigné, l'absent sort simplement du pool : ses tickets partent vers qui
+couvre le domaine — ou « à trier », donc dans le **repli assigné** de la 0.9.52. Les deux
+fonctionnalités se complètent exactement.
+
+### RGPD — point non couvert par la demande initiale
+
+« Qui est en congé, quand » est une **donnée personnelle**. Deux garde-fous :
+
+- l'absence est conservée tant qu'elle est **en cours ou à venir** (configuration active qui
+  pilote le routage), puis **purgée** avec le Journal une fois **terminée** — le produit n'a
+  aucune raison de constituer l'historique des vacances de chacun ;
+- ce n'est **pas** une métrique par technicien (anti-mouchard, FR-18/21) : on enregistre une
+  **disponibilité déclarée par l'admin** pour router, jamais une mesure d'activité, de
+  performance ou de présence effective. `docs/dpo.md` documente la table et le fait qu'un
+  remplaçant nommé apparaît dans le prompt envoyé au fournisseur LLM.
+
+### Détails
+
+- Le filtre d'absence vit **dans** `effective_referentials`, pas chez l'appelant : un
+  nouveau point d'appel réintroduirait sinon en silence des techniciens en congé dans la
+  whitelist. La sandbox l'applique donc aussi — une sandbox qui proposerait un absent
+  mentirait sur ce que fera le vrai cycle.
+- Table dédiée `technician_absences` (un technicien a plusieurs congés dans l'année), en
+  colonnes `Date` : stocker un instant aurait fait entrer le fuseau dans la **base**, alors
+  qu'il n'a lieu d'intervenir qu'à l'**évaluation**. Migration `c7b2f4a19d55`, testée en
+  aller-retour.
+- Console : planificateur sur la page Techniciens (période, remplaçant limité aux éligibles,
+  badge « En cours », avertissement de période inversée avant l'envoi).
+- Tests : **539** pytest (+17) et **130** Vitest (+7).
+
 ## 2026-08-09 — 0.9.52 — Repli assigné : un ticket « à trier » a désormais un propriétaire
 
 ### Le problème restant

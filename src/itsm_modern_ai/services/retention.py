@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from ..persistence import journal
+from . import absences
 from .runtime_config import RuntimeConfigService
 
 
@@ -25,6 +26,7 @@ class PurgeResult(BaseModel):
     cutoff_llm_calls: datetime | None
     decisions_deleted: int
     llm_calls_deleted: int
+    absences_deleted: int = 0
 
 
 def purge_now(
@@ -44,6 +46,13 @@ def purge_now(
 
     deleted_dec = journal.purge_decisions_before(session, cutoff_dec) if cutoff_dec else 0
     deleted_llm = journal.purge_llm_calls_before(session, cutoff_llm) if cutoff_llm else 0
+    # Les ABSENCES TERMINÉES suivent la même fenêtre que le Journal : « qui était en congé
+    # du 10 au 22 août » est une donnée personnelle sans aucune utilité opérationnelle une
+    # fois l'absence passée. Le produit n'a pas à constituer l'historique des vacances de
+    # chacun — d'autant qu'il promet de ne produire AUCUNE métrique par technicien (FR-21).
+    # Seules les absences dont la FIN est antérieure au cutoff partent : une absence en
+    # cours ou à venir est de la configuration active, jamais purgée.
+    deleted_abs = absences.purge_ended_before(session, cutoff_dec.date()) if cutoff_dec else 0
 
     return PurgeResult(
         ran_at=ran_at,
@@ -53,6 +62,7 @@ def purge_now(
         cutoff_llm_calls=cutoff_llm,
         decisions_deleted=deleted_dec,
         llm_calls_deleted=deleted_llm,
+        absences_deleted=deleted_abs,
     )
 
 

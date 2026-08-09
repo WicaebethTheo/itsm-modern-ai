@@ -15,6 +15,7 @@ from ..domain import skills as domain_skills
 from ..domain.models import Referentials
 from ..domain.modes import ExecutionMode
 from ..persistence.tables import ReferentialCache
+from . import absences
 
 KIND_CATEGORY = "category"
 KIND_ENTITY = "entity"
@@ -166,17 +167,27 @@ def fallback_for_entity(
     return None, None
 
 
-def effective_referentials(session: Session) -> Referentials:
-    """Whitelist EFFECTIVE : seulement le périmètre autorisé (catégories sélectionnées,
-    techniciens/groupes éligibles, entités sélectionnées)."""
+def effective_referentials(session: Session, *, tz_name: str | None = None) -> Referentials:
+    """Whitelist EFFECTIVE : le périmètre autorisé, MOINS les techniciens absents ce jour.
+
+    Le filtre d'absence est appliqué ICI plutôt que chez l'appelant, à dessein : un nouveau
+    point d'appel réintroduirait sinon en silence des techniciens en congé dans la whitelist,
+    et personne ne s'en apercevrait avant qu'un ticket leur soit assigné pendant leurs
+    vacances. Un absent n'est donc jamais proposé — donc jamais assigné (cf. `absences`).
+    """
+    absents = absences.absent_ext_ids(session, absences.today_local(tz_name))
     cats = {r.ext_id: r.name for r in list_kind(session, KIND_CATEGORY) if r.selected}
-    techs = {r.ext_id: r.name for r in list_kind(session, KIND_TECHNICIAN) if r.eligible}
+    techs = {
+        r.ext_id: r.name
+        for r in list_kind(session, KIND_TECHNICIAN)
+        if r.eligible and r.ext_id not in absents
+    }
     groups = {r.ext_id: r.name for r in list_kind(session, KIND_GROUP) if r.eligible}
     entities = {r.ext_id: r.name for r in list_kind(session, KIND_ENTITY) if r.selected}
     return Referentials(categories=cats, technicians=techs, groups=groups, entities=entities)
 
 
-def _fiche(libelle: str, row) -> str | None:
+def _fiche(libelle: str, row, interim: list | None = None) -> str | None:
     """Description d'un acteur éligible : domaines cochés PUIS prose libre.
 
     L'ordre n'est pas cosmétique. Le socle coché donne au LLM des repères stables et
@@ -184,18 +195,31 @@ def _fiche(libelle: str, row) -> str | None:
     « ne prend plus les demandes d'accès ») prime sur le domaine générique en cas de
     contradiction — c'est la dernière information lue qui pèse le plus.
 
-    Renvoie None si l'acteur n'a NI case NI prose : l'inclure n'apprendrait rien au modèle
-    et diluerait le prompt (son nom figure déjà dans la liste des acteurs éligibles).
+    `interim` = absents que cet acteur remplace aujourd'hui, sous forme de tuples
+    `(nom, skill_tags, fin)`. Leurs domaines sont FUSIONNÉS au socle : sans cela, le
+    remplaçant serait proposé pour des tickets qu'il est censé absorber, mais décrit comme
+    ne les couvrant pas — le modèle répondrait avec une confiance basse et le seuil
+    renverrait le ticket « à trier ». On aurait déplacé le problème, pas résolu.
+
+    Renvoie None si l'acteur n'a NI case NI prose NI intérim : l'inclure n'apprendrait rien
+    au modèle et diluerait le prompt (son nom figure déjà dans la liste des éligibles).
     """
-    socle = domain_skills.describe([k for k in (row.skill_tags or "").split(",") if k])
+    tags = [k for k in (row.skill_tags or "").split(",") if k]
+    for _, tags_absent, _ in interim or []:
+        tags.extend(tags_absent)
+    socle = domain_skills.describe(tags)  # `normalize` dédoublonne et remet dans l'ordre
     prose = (row.skills or "").strip()
-    if not socle and not prose:
+    if not socle and not prose and not interim:
         return None
     lignes = [f"{libelle} {row.ext_id} ({row.name}) :"]
     if socle:
         lignes.append(f"Domaines : {socle}")
     if prose:
         lignes.append(prose)
+    # L'intérim est annoncé EN DERNIER, donc avec le plus de poids : c'est l'information la
+    # plus fraîche et la plus décisive pour la journée en cours.
+    for nom, _, fin in interim or []:
+        lignes.append(f"Assure l'intérim de {nom} jusqu'au {fin:%d/%m/%Y} inclus.")
     return "\n".join(lignes)
 
 
@@ -227,17 +251,43 @@ def skill_coverage(session: Session) -> dict[str, dict[str, int]]:
     return coverage
 
 
-def routing_prose(session: Session) -> str:
+def routing_prose(session: Session, *, tz_name: str | None = None) -> str:
     """Description des techniciens et groupes ÉLIGIBLES (pour le routage, FR-15).
 
     ⚠️ Un acteur sans description reste routable (son nom est listé dans le prompt) mais le
     modèle doit alors deviner son périmètre à partir d'un patronyme. Mesuré sur une instance
     aux fiches vides : 7 propositions sur 20 rejetées en `low_confidence`. D'où les domaines
     cochables — un socle en quelques clics, sans rédaction.
+
+    Les absents du jour sont EXCLUS (cohérent avec `effective_referentials` : décrire au
+    modèle quelqu'un qu'il n'a pas le droit de proposer ne ferait que diluer le prompt), et
+    leurs remplaçants héritent de leurs domaines.
     """
+    day = absences.today_local(tz_name)
+    absents = absences.absent_ext_ids(session, day)
+    interims = absences.interim_context(session, day)
+    actifs = absences.active_on(session, day)
+    techs = [r for r in list_kind(session, KIND_TECHNICIAN) if r.eligible]
+    par_id = {r.ext_id: r for r in techs}
+
+    def _interim_de(ext_id: int) -> list:
+        """Absents couverts par cet acteur : (nom, domaines hérités, dernier jour d'absence)."""
+        couverts = []
+        for absent_id in interims.get(ext_id, []):
+            ligne = par_id.get(absent_id)
+            fin = max(
+                (a.end_date for a in actifs if a.technician_ext_id == absent_id), default=day
+            )
+            couverts.append((
+                ligne.name if ligne else f"#{absent_id}",
+                [k for k in (ligne.skill_tags or "").split(",") if k] if ligne else [],
+                fin,
+            ))
+        return couverts
+
     blocks = [
         f for f in (
-            [_fiche("Technicien", r) for r in list_kind(session, KIND_TECHNICIAN) if r.eligible]
+            [_fiche("Technicien", r, _interim_de(r.ext_id)) for r in techs if r.ext_id not in absents]
             + [_fiche("Groupe", r) for r in list_kind(session, KIND_GROUP) if r.eligible]
         ) if f
     ]

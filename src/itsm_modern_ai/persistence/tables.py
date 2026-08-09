@@ -9,10 +9,10 @@ même pour les lignes anciennes stockées sans offset).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
-from sqlalchemy import Column, DateTime, UniqueConstraint
+from sqlalchemy import Column, Date, DateTime, UniqueConstraint
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field, SQLModel
 
@@ -169,6 +169,39 @@ class ReferentialCache(SQLModel, table=True):
     fallback_group_id: int | None = None
     fallback_technician_id: int | None = None
     updated_at: datetime = Field(default_factory=_utcnow)
+
+
+class TechnicianAbsence(SQLModel, table=True):
+    """Absence d'un technicien + remplaçant éventuel (routage, FR-15).
+
+    TABLE DÉDIÉE, pas une colonne de plus sur `referential_cache` : un technicien a
+    plusieurs absences dans l'année, et une colonne unique obligerait à écraser la
+    précédente ou à sérialiser une liste dans une chaîne.
+
+    GRANULARITÉ JOUR, bornes INCLUSES, colonnes `Date` (pas `DateTime`) : une absence est
+    posée par un humain dans un calendrier, pas mesurée à la seconde. Stocker un instant
+    aurait fait entrer le fuseau dans la BASE, alors qu'il n'a lieu d'intervenir qu'à
+    l'ÉVALUATION (« quel jour sommes-nous ici ? », cf. `services/absences.today_local`).
+
+    RGPD — c'est une donnée personnelle (qui est absent, quand). Deux garde-fous :
+    - elle est **purgée** avec le reste par la rétention une fois l'absence terminée
+      (`services/retention`) : une absence passée n'a plus aucune utilité opérationnelle ;
+    - ce n'est PAS une métrique par technicien (anti-mouchard, FR-18/21) : on enregistre
+      une DISPONIBILITÉ déclarée par l'admin pour router, jamais une mesure d'activité,
+      de performance ou de présence effective.
+    """
+
+    __tablename__ = "technician_absences"
+
+    id: int | None = Field(default=None, primary_key=True)
+    technician_ext_id: int = Field(index=True)  # id GLPI du technicien absent
+    start_date: date = Field(sa_column=Column(Date, nullable=False))
+    end_date: date = Field(sa_column=Column(Date, nullable=False))
+    # Remplaçant éligible qui absorbe l'intérim (None = personne ; l'absent sort du pool
+    # et ses tickets partent vers qui couvre le domaine, ou « à trier »).
+    replacement_ext_id: int | None = None
+    note: str = ""
+    created_at: datetime = Field(default_factory=_utcnow, sa_column=_ts_column())
 
 
 class AuditLog(SQLModel, table=True):

@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-4-6"
     anthropic_version: str = "2023-06-01"
 
+    # Fuseau horaire LOCAL de l'équipe (IANA). Sert à évaluer les absences : bornes
+    # inclusives, granularité jour — « quel jour sommes-nous ICI ? ». Évaluer en UTC ferait
+    # finir un congé à 02 h du matin le bon jour (ou la veille selon la saison) pour une
+    # équipe à Paris : un décalage qui ne se voit qu'en production, en août.
+    local_timezone: str = "Europe/Paris"
+
     # Moteur à garde-fous
     confidence_threshold: float = 0.7  # FR-8 — valeur de départ, à calibrer
     cost_cap_eur_per_day: float = 5.0  # FR-10

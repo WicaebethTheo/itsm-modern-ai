@@ -55,6 +55,8 @@ PLAIN_KEYS = frozenset(
         # Moteur
         "confidence_threshold", "cost_cap_eur_per_day", "llm_retries",
         "execution_mode_default", "auto_min_confidence_default",
+        # Fuseau local (évaluation des absences — cf. services/absences.today_local)
+        "local_timezone",
         # Masquage PII (FR-14)
         "mask_email", "mask_phone", "mask_iban", "mask_secret",
         # Qualité de la suggestion

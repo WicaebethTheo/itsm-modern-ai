@@ -15,6 +15,8 @@ vi.mock("@/lib/api", async (orig) => {
       saveTechnicians: vi.fn(),
       skillCatalog: vi.fn(),
       skillCoverage: vi.fn(),
+      absences: vi.fn(),
+      saveAbsences: vi.fn(),
     },
   };
 });
@@ -42,6 +44,7 @@ describe("Technicians (éditeur d'éligibilité)", () => {
     // `.then` sur `undefined` au montage. Catalogue vide = l'ancien comportement (prose seule).
     vi.mocked(Api.skillCatalog).mockResolvedValue([]);
     vi.mocked(Api.skillCoverage).mockResolvedValue([]);
+    vi.mocked(Api.absences).mockResolvedValue([]);
   });
 
   it("liste les techniciens scannés", async () => {
@@ -93,6 +96,7 @@ describe("Domaines de compétence cochables", () => {
   beforeEach(() => {
     vi.mocked(Api.skillCatalog).mockResolvedValue(CATALOGUE);
     vi.mocked(Api.skillCoverage).mockResolvedValue([]);
+    vi.mocked(Api.absences).mockResolvedValue([]);
     vi.mocked(Api.saveTechnicians).mockResolvedValue([]);
   });
 
@@ -115,7 +119,7 @@ describe("Domaines de compétence cochables", () => {
     ]);
     renderWithToast(<Technicians />);
     await userEvent.click(await screen.findByRole("button", { name: "Réseau & Wifi" }));
-    await userEvent.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer la sélection" }));
 
     await waitFor(() => expect(Api.saveTechnicians).toHaveBeenCalledTimes(1));
     expect(Api.saveTechnicians).toHaveBeenCalledWith([
@@ -132,7 +136,7 @@ describe("Domaines de compétence cochables", () => {
     expect(puce).toHaveAttribute("aria-pressed", "true");
 
     await userEvent.click(puce);
-    await userEvent.click(screen.getByRole("button", { name: /Enregistrer/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer la sélection" }));
     await waitFor(() => expect(Api.saveTechnicians).toHaveBeenCalled());
     expect(Api.saveTechnicians).toHaveBeenCalledWith([
       expect.objectContaining({ ext_id: 11, skill_tags: [] }),
@@ -221,6 +225,7 @@ describe("Carte de couverture des domaines", () => {
   it("ne s'affiche pas tant qu'aucun acteur n'est éligible", async () => {
     // Sur une instance qu'on vient de scanner, « 14 domaines non couverts » est du bruit.
     vi.mocked(Api.skillCoverage).mockResolvedValue(couverture());
+    vi.mocked(Api.absences).mockResolvedValue([]);
     vi.mocked(Api.discovery).mockResolvedValue([ref({ ext_id: 11, name: "Alice" })]);
     renderWithToast(<Technicians />);
 
@@ -238,6 +243,6 @@ describe("Carte de couverture des domaines", () => {
 
     expect(await screen.findByText("Alice")).toBeInTheDocument();
     expect(screen.queryByText(/Aucun acteur sur/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Enregistrer/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enregistrer la sélection" })).toBeInTheDocument();
   });
 });

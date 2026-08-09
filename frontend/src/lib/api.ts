@@ -110,7 +110,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.52";
+export const APP_VERSION = "0.9.53";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -520,6 +520,23 @@ export interface SkillCoverage {
   groups: number;
 }
 
+/** Absence déclarée d'un technicien (routage). Bornes INCLUSES, granularité jour. */
+export interface AbsenceItem {
+  technician_ext_id: number;
+  start_date: string; // ISO YYYY-MM-DD
+  end_date: string;
+  replacement_ext_id?: number | null;
+  note?: string;
+}
+
+export interface AbsenceView extends AbsenceItem {
+  id: number;
+  technician_name: string;
+  replacement_name: string;
+  /** Couvre la journée en cours, dans le fuseau local configuré côté moteur. */
+  active: boolean;
+}
+
 export interface EligibilityItem {
   ext_id: number;
   eligible: boolean;
@@ -779,6 +796,8 @@ export const Api = {
       : api.get<RefItem[]>(`/api/discovery/${kind}`),
   skillCatalog: () => api.get<SkillDomain[]>("/api/skills"),
   skillCoverage: () => api.get<SkillCoverage[]>("/api/skills/coverage"),
+  absences: () => api.get<AbsenceView[]>("/api/absences"),
+  saveAbsences: (items: AbsenceItem[]) => api.put<AbsenceView[]>("/api/absences", items),
   saveTechnicians: (items: EligibilityItem[]) =>
     DEMO ? ok(demo.technicians) : api.put<RefItem[]>("/api/technicians", items),
   saveGroups: (items: EligibilityItem[]) =>
