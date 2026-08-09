@@ -6,6 +6,25 @@
 > défaut** et la source de vérité tant que la V2 n'est pas éprouvée en production.
 > Bascule par `GLPI_API_VERSION=v2` (voir plus bas).
 
+## Différence mesurée : assignation d'acteur
+
+Les deux connecteurs assignent un acteur, mais **pas par la même primitive** — et cela change
+leur comportement au rejeu. Mesuré sur une instance GLPI 11 réelle, sur des tickets de test :
+
+| | Legacy (`apirest.php`) | V2 (`api.php/v2.3`) |
+|---|---|---|
+| Primitive | `PUT Ticket` (**mise à jour**) | `POST TeamMember` (**insertion**) |
+| Acteur déjà assigné | **accepté**, sans doublon | **`400 ERROR_INVALID_PARAMETER`** |
+| Conséquence | rien à faire | rattrapage nécessaire (relecture de l'état) |
+
+Le connecteur V2 relit donc l'équipe du ticket quand le `POST` échoue : si l'acteur visé y
+figure, l'objectif est atteint. Il ne se fie **pas** au code d'erreur, trop générique pour
+distinguer « déjà présent » d'une vraie faute (cf. `assign_actor`).
+
+Ce que les deux partagent, vérifié également : `assign_actor` **ne touche ni la catégorie ni
+la priorité** (router, jamais classer), là où `apply_decision` les modifie bien — les deux
+contrats sont réellement disjoints des deux côtés.
+
 Ce document décrit le contrat de l'API V2 tel qu'**observé sur une instance GLPI 11.0.7
 réelle** (spec OpenAPI `GET /api.php/v2.3/doc.json`, public) et confirmé par la doc
 officielle. C'est la base d'implémentation de `adapters/itsm/glpi/v2/`.

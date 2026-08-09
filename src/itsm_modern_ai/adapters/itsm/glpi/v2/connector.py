@@ -226,8 +226,10 @@ class GlpiV2Connector:
         est atteint, on rend la main. Sinon l'erreur d'origine repart telle quelle. Le chemin
         nominal, lui, ne paie aucun appel supplémentaire.
 
-        (Le connecteur legacy n'a pas ce problème : il passe par un `PUT Ticket`, une mise à
-        jour idempotente par nature — non rejouable ici, le lab de validation est en V2.)
+        (Le connecteur legacy n'a pas ce problème — VÉRIFIÉ, plus seulement raisonné : trois
+        `assign_actor` identiques contre un `apirest.php` réel passent tous, et le groupe
+        n'apparaît qu'une fois dans `Group_Ticket`. Le `PUT Ticket` est bien une mise à jour
+        idempotente, là où le `POST TeamMember` de la V2 est une insertion.)
         """
         member = mapper.teammember_payload(technician_id=technician_id, group_id=group_id)
         if member is None:
