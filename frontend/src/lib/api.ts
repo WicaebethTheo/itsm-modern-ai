@@ -110,7 +110,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.49";
+export const APP_VERSION = "0.9.54";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -474,12 +474,18 @@ export interface RefItem {
   skill_tags: string[];
   mode?: ExecutionMode | null;
   auto_min_confidence?: number | null;
+  /** Cible de repli (entités) : acteur assigné quand le garde-fou refuse une Décision. */
+  fallback_group_id?: number | null;
+  fallback_technician_id?: number | null;
 }
 
 export interface ModeItem {
   ext_id: number;
   mode: ExecutionMode | null;
   auto_min_confidence?: number | null;
+  /** Groupe PRIORITAIRE sur technicien : il encaisse une absence sans configuration. */
+  fallback_group_id?: number | null;
+  fallback_technician_id?: number | null;
 }
 
 export interface SyncResult {
@@ -499,6 +505,36 @@ export interface SkillDomain {
   label_fr: string;
   label_en: string;
   hint_fr: string;
+}
+
+/**
+ * Couverture d'un domaine par les acteurs ÉLIGIBLES — diagnostic, pas statistique.
+ * Compteurs distincts : un groupe absorbe une absence, un technicien seul non.
+ * Aucun acteur n'est nommé (anti-mouchard).
+ */
+export interface SkillCoverage {
+  key: string;
+  label_fr: string;
+  label_en: string;
+  technicians: number;
+  groups: number;
+}
+
+/** Absence déclarée d'un technicien (routage). Bornes INCLUSES, granularité jour. */
+export interface AbsenceItem {
+  technician_ext_id: number;
+  start_date: string; // ISO YYYY-MM-DD
+  end_date: string;
+  replacement_ext_id?: number | null;
+  note?: string;
+}
+
+export interface AbsenceView extends AbsenceItem {
+  id: number;
+  technician_name: string;
+  replacement_name: string;
+  /** Couvre la journée en cours, dans le fuseau local configuré côté moteur. */
+  active: boolean;
 }
 
 export interface EligibilityItem {
@@ -759,6 +795,9 @@ export const Api = {
         )
       : api.get<RefItem[]>(`/api/discovery/${kind}`),
   skillCatalog: () => api.get<SkillDomain[]>("/api/skills"),
+  skillCoverage: () => api.get<SkillCoverage[]>("/api/skills/coverage"),
+  absences: () => api.get<AbsenceView[]>("/api/absences"),
+  saveAbsences: (items: AbsenceItem[]) => api.put<AbsenceView[]>("/api/absences", items),
   saveTechnicians: (items: EligibilityItem[]) =>
     DEMO ? ok(demo.technicians) : api.put<RefItem[]>("/api/technicians", items),
   saveGroups: (items: EligibilityItem[]) =>

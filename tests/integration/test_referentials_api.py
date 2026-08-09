@@ -256,3 +256,102 @@ def test_cles_inconnues_sont_ignorees_sans_bloquer(client):
     ).status_code == 200
     r = [x for x in client.get("/api/discovery/technician").json() if x["ext_id"] == 45][0]
     assert r["skill_tags"] == ["network"]
+
+
+# ── Carte de couverture des domaines (0.9.50) ────────────────────────────────────────
+
+
+def test_couverture_compte_separement_techniciens_et_groupes(client):
+    """Un groupe absorbe une absence, un technicien seul non : les compteurs restent
+    distincts. Les fusionner effacerait la nuance qui rend l'alerte actionnable."""
+    _seed_cache()
+    client.put(
+        "/api/technicians",
+        json=[{"ext_id": 11, "eligible": True, "skills": "", "skill_tags": ["network", "printing"]}],
+    )
+    client.put(
+        "/api/groups",
+        json=[{"ext_id": 5, "eligible": True, "skills": "", "skill_tags": ["network"]}],
+    )
+
+    couverture = {d["key"]: d for d in client.get("/api/skills/coverage").json()}
+    assert len(couverture) == 14  # le catalogue ENTIER, y compris les domaines à zéro
+    assert (couverture["network"]["technicians"], couverture["network"]["groups"]) == (1, 1)
+    assert (couverture["printing"]["technicians"], couverture["printing"]["groups"]) == (1, 0)
+    # Domaine que personne ne couvre : « à trier » garanti dès qu'un ticket en relève.
+    assert (couverture["security"]["technicians"], couverture["security"]["groups"]) == (0, 0)
+
+
+def test_couverture_ignore_les_acteurs_non_eligibles(client):
+    """Cocher des domaines sur quelqu'un de NON éligible ne couvre rien : le moteur ne
+    route jamais vers lui. Le compter donnerait une carte rassurante et fausse."""
+    _seed_cache()
+    client.put(
+        "/api/technicians",
+        json=[{"ext_id": 12, "eligible": False, "skills": "", "skill_tags": ["telephony"]}],
+    )
+    couverture = {d["key"]: d for d in client.get("/api/skills/coverage").json()}
+    assert couverture["telephony"]["technicians"] == 0
+
+
+def test_couverture_ne_nomme_aucun_acteur(client):
+    """Anti-mouchard (FR-18/21) : une carte de la CONFIGURATION, pas une mesure des
+    personnes. Aucun nom, aucun identifiant d'acteur ne doit sortir par cet endpoint."""
+    _seed_cache()
+    client.put(
+        "/api/technicians",
+        json=[{"ext_id": 11, "eligible": True, "skills": "", "skill_tags": ["network"]}],
+    )
+    brut = client.get("/api/skills/coverage").text
+    assert "Sylvain" not in brut and "ext_id" not in brut
+    assert set(client.get("/api/skills/coverage").json()[0]) == {
+        "key", "label_fr", "label_en", "technicians", "groups",
+    }
+
+
+# ── Cible de repli par entité (0.9.52) ───────────────────────────────────────────────
+
+
+def test_repli_hors_perimetre_est_refuse_a_l_enregistrement(client):
+    """Accepter silencieusement produirait une configuration INOPÉRANTE : le moteur
+    revalide la cible à l'écriture et n'assignerait rien, sans que l'admin sache pourquoi."""
+    _seed_cache()
+    r = client.put(
+        "/api/modes",
+        json=[{"ext_id": 0, "mode": "full_auto", "fallback_group_id": 5}],  # groupe non éligible
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "fallback_not_eligible"
+    # Rien n'a été enregistré : l'entité garde son état antérieur.
+    entite = [e for e in client.get("/api/discovery/entity").json() if e["ext_id"] == 0][0]
+    assert entite["fallback_group_id"] is None
+
+
+def test_repli_accepte_une_fois_la_cible_eligible(client):
+    _seed_cache()
+    client.put("/api/groups", json=[{"ext_id": 5, "eligible": True, "skills": ""}])
+    assert client.put(
+        "/api/modes", json=[{"ext_id": 0, "mode": "full_auto", "fallback_group_id": 5}]
+    ).status_code == 200
+
+    entite = [e for e in client.get("/api/discovery/entity").json() if e["ext_id"] == 0][0]
+    assert entite["fallback_group_id"] == 5 and entite["fallback_technician_id"] is None
+
+
+def test_changement_de_cible_de_repli_est_audite(client):
+    """Autoriser le moteur à assigner un acteur sur un Ticket refusé est une décision de
+    gouvernance : elle doit être imputable au même titre que le mode."""
+    _seed_cache()
+    client.put("/api/groups", json=[{"ext_id": 5, "eligible": True, "skills": ""}])
+    client.put("/api/modes", json=[{"ext_id": 0, "mode": "full_auto", "fallback_group_id": 5}])
+
+    from sqlmodel import select
+
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import AuditLog
+
+    with db.session_scope() as session:
+        lignes = [a for a in session.exec(select(AuditLog)).all() if a.action == "entity_mode"]
+    assert len(lignes) == 1
+    assert "repli groupe #5" in lignes[0].new_value
+    assert "repli" not in lignes[0].old_value  # aucun repli configuré auparavant

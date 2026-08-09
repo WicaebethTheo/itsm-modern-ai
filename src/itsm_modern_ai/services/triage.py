@@ -8,6 +8,11 @@ ORDRE IMMUABLE (project-context.md invariant 1) :
 « à trier » est la SEULE échappatoire (invariant 3). Mode suggestion : on n'écrit qu'un
 Suivi interne privé, jamais un champ de Ticket (FR-17). Veto technicien implicite : rien
 n'est appliqué sans action humaine, aucun rejet humain n'est enregistré (FR-18).
+
+Un Ticket qui emprunte l'échappatoire APRÈS arbitrage (whitelist/seuil) reçoit un Suivi
+PRIVÉ « non tranché » (`render_fallback_followup`) : aucune mutation, mais le Ticket cesse
+d'être indistinguable d'un Ticket jamais examiné. L'échappatoire reste unique — c'est ce
+qu'on FAIT des Tickets qui l'empruntent qui change, pas le nombre de branches du moteur.
 """
 
 from __future__ import annotations
@@ -68,6 +73,29 @@ LLM_FAILURE_PREFIX = "[ÉCHEC LLM]"
 RETRYABLE_REASONS = frozenset(
     {TriageReason.COST_CAP_REACHED, TriageReason.LLM_ERROR, TriageReason.INVALID_OUTPUT}
 )
+
+
+def is_arbitrated_rejection(outcome: TriageOutcome) -> bool:
+    """Le garde-fou a REFUSÉ une Décision réellement rendue (vs « triage pas eu lieu »).
+
+    Distinction structurante — les confondre crée un bug d'exploitation :
+
+    - **Arbitrage rendu** (`low_confidence`, rejets de whitelist) : l'IA a répondu, le code
+      a dit non. Le poller consomme le Ticket : il ne sera **jamais** rejoué. C'est le seul
+      cas où l'on a quelque chose à annoncer au technicien dans GLPI.
+    - **Triage pas eu lieu** (`RETRYABLE_REASONS` : panne LLM, sortie invalide, plafond) :
+      le Ticket revient au cycle suivant. Y déposer un Suivi produirait une annotation par
+      cycle sur une coupure réseau de trois secondes, puis un doublon au rejeu réussi.
+
+    On dérive du complément de `RETRYABLE_REASONS` (plutôt que d'énumérer les motifs de
+    refus) pour qu'un futur motif « pas eu lieu » ne soit pas oublié ici : il devra de toute
+    façon être ajouté à `RETRYABLE_REASONS`, sans quoi le Ticket serait déjà brûlé à tort.
+    """
+    return (
+        not outcome.accepted
+        and outcome.decision is not None
+        and outcome.reason not in RETRYABLE_REASONS
+    )
 
 
 @dataclass(slots=True)
@@ -145,6 +173,126 @@ def render_followup(outcome: TriageOutcome, refs: Referentials, *, applied: bool
         "Brouillon de réponse (à valider, jamais envoyé automatiquement) :\n"
         f"{safe_draft}\n\n"
         "— Vous gardez la main : ignorer cette suggestion n'est ni bloqué ni enregistré."
+    )
+
+
+def _motif_a_trier(outcome: TriageOutcome, threshold: float) -> str:
+    """Motif du refus, écrit pour un technicien — pas un code d'erreur à décoder."""
+    d = outcome.decision
+    assert d is not None
+    match outcome.reason:
+        case TriageReason.LOW_CONFIDENCE:
+            return f"confiance insuffisante ({d.confidence:.0%}, seuil requis {threshold:.0%})"
+        case TriageReason.CATEGORY_NOT_IN_WHITELIST:
+            return (
+                "l'IA n'a pas su choisir de catégorie"
+                if d.category is None
+                else "catégorie envisagée hors du périmètre autorisé"
+            )
+        case TriageReason.PRIORITY_NOT_IN_WHITELIST:
+            return "priorité envisagée hors du périmètre autorisé"
+        case TriageReason.TECHNICIAN_NOT_IN_WHITELIST:
+            return "acteur envisagé hors du périmètre autorisé"
+        case TriageReason.NO_ELIGIBLE_ASSIGNEE:
+            return "aucun technicien ni groupe éligible ne correspond à ce ticket"
+        case _:
+            return outcome.reason.value
+
+
+def render_fallback_followup(
+    outcome: TriageOutcome,
+    refs: Referentials,
+    *,
+    threshold: float,
+    assigned: tuple[int | None, int | None] = (None, None),
+) -> str:
+    """Suivi PRIVÉ déposé sur un Ticket parti « à trier » après arbitrage (audit 2026-08).
+
+    POURQUOI. Tout le traitement vivait sous `if outcome.accepted:` : un Ticket refusé par
+    le garde-fou ne recevait dans GLPI **strictement rien** — ni champ, ni Suivi — et le
+    poller le marquait « traité » (son motif n'est pas dans `RETRYABLE_REASONS`), donc il
+    n'était jamais réexaminé. Il restait « Nouveau », indistinguable d'un Ticket que
+    personne n'a ouvert, et la seule trace vivait dans notre Journal. Mesuré en lab :
+    **7 Tickets sur 20**, sur une instance présentée comme « full-auto ».
+
+    CE QU'IL DIT, ET CE QU'IL NE DIT PAS. On rend le **motif** du refus et ce que l'IA
+    envisageait — pas une proposition à appliquer :
+
+    - **aucun champ n'est écrit** (`ItsmPort.write_followup` ne touche pas le Ticket) ;
+    - **pas de brouillon de réponse**, délibérément. Une confiance sous le seuil est basse
+      sur l'ENSEMBLE de la Décision : afficher un brouillon qu'un technicien pressé
+      copierait-collerait reviendrait à réintroduire par l'affichage la Décision que le
+      garde-fou vient de refuser. Le mode `suggestion` (Décision ACCEPTÉE) reste le seul
+      endroit où un brouillon est proposé ;
+    - toute valeur hors du périmètre admin est **étiquetée comme telle**, pour qu'elle ne
+      soit pas lue comme validée — et parce qu'elle renseigne l'admin sur ce qu'il faudrait
+      peut-être rendre éligible.
+
+    Effet de bord utile : le contenu ne reprend AUCUN texte libre du LLM ni du demandeur
+    (que des identifiants et des libellés de référentiel) — donc ni PII à re-masquer, ni
+    prompt-injection à échapper, contrairement au brouillon de `render_followup`.
+
+    `assigned` = acteur RÉELLEMENT assigné par le repli, à ne pas confondre avec
+    l'affectation *envisagée* par l'IA : c'est un aiguillage décidé par l'admin pour que le
+    Ticket ait un propriétaire, pas une proposition du modèle.
+    """
+    d = outcome.decision
+    assert d is not None
+
+    if d.category is None:
+        cat = "aucune (le modèle n'a pas tranché)"
+    elif d.category in refs.categories:
+        cat = f"{refs.categories[d.category]} (#{d.category})"
+    else:
+        cat = f"#{d.category} — hors du périmètre autorisé"
+
+    try:
+        prio = f"{Priority(d.priority).name} (#{d.priority})"
+    except ValueError:
+        prio = str(d.priority)
+    if d.priority not in refs.priorities:
+        prio += " — hors du périmètre autorisé"
+
+    # Même filtre que la mutation réelle : on ne NOMME un acteur que s'il est éligible.
+    tech_id, group_id = whitelist.effective_assignment(d, refs)
+    if tech_id is not None:
+        assignee = f"Technicien {refs.technicians[tech_id]} (#{tech_id})"
+    elif group_id is not None:
+        assignee = f"Groupe {refs.groups.get(group_id, str(group_id))} (#{group_id})"
+    elif d.technician_id is not None:
+        assignee = f"Technicien #{d.technician_id} — hors du périmètre autorisé"
+    elif d.group_id is not None:
+        assignee = f"Groupe #{d.group_id} — hors du périmètre autorisé"
+    else:
+        assignee = "aucun (le modèle n'a proposé ni technicien ni groupe)"
+
+    fb_tech, fb_group = assigned
+    if fb_tech is not None:
+        repli = f"\n• Repli : assigné à {refs.technicians.get(fb_tech, f'#{fb_tech}')} (#{fb_tech})"
+    elif fb_group is not None:
+        repli = f"\n• Repli : assigné au groupe {refs.groups.get(fb_group, f'#{fb_group}')} (#{fb_group})"
+    else:
+        repli = ""
+
+    cloture = (
+        "Ce ticket n'a pas été catégorisé automatiquement : il attend un triage humain. "
+        "Les valeurs ci-dessus sont indicatives — elles n'ont PAS passé le garde-fou et ne "
+        "doivent pas être reprises telles quelles."
+    )
+    if repli:
+        cloture += (
+            "\nSeule l'affectation de repli a été appliquée (configurée par l'administrateur "
+            "pour cette entité), afin que le ticket ne reste pas sans propriétaire."
+        )
+    return (
+        "🤖 Triage NON TRANCHÉ — ITSM Modern AI (aucun champ de triage modifié)\n"
+        f"• Motif : {_motif_a_trier(outcome, threshold)}\n"
+        f"• Catégorie envisagée : {cat}\n"
+        f"• Priorité envisagée : {prio}\n"
+        f"• Affectation envisagée : {assignee}\n"
+        f"• Confiance annoncée : {d.confidence:.0%}{repli}\n\n"
+        f"{cloture}\n"
+        "— Aucune suite donnée à ce ticket n'est enregistrée par le moteur."
     )
 
 
@@ -398,12 +546,17 @@ class TriageService:
         - suggestion → Suivi privé seul (aucune mutation) ;
         - semi/full-auto → mutation GLPI (`apply_decision`) PUIS Suivi privé (audit).
         Le garde-fou (whitelist + seuil) a déjà tranché en amont ; ici on ne fait
-        QUE dispatcher l'action d'une Décision acceptée. « à trier » ne fait rien.
+        QUE dispatcher l'action d'une Décision acceptée.
+
+        « à trier » ne pose toujours AUCUN champ de triage, mais ne passe plus sous
+        silence : un refus ARBITRÉ (cf. `is_arbitrated_rejection`) dépose un Suivi PRIVÉ
+        « non tranché » et, hors mode `suggestion`, assigne la cible de repli de l'entité.
         """
         glpi_link = _web_link(self._glpi_base_url, ticket.id)
         mode = self._default_mode
         applied = False
         wrote = False
+        fallback_applied = False  # un acteur de repli a été assigné sur un REFUS
         partial_error = ""  # message d'une mutation GLPI partielle (annotation Journal)
 
         if outcome.accepted:
@@ -477,6 +630,66 @@ class TriageService:
                         ticket.id, applied, exc,
                     )
 
+        elif is_arbitrated_rejection(outcome) and self._itsm is not None:
+            # Mode de l'entité : il commande le repli ASSIGNÉ. En `suggestion`, l'instance
+            # promet zéro mutation — or assigner EST une mutation. Le Suivi « non tranché »,
+            # lui, reste déposé dans les trois modes (il n'applique rien).
+            with self._session_factory() as session:
+                mode, _ = referentials.mode_for_entity(
+                    session,
+                    ticket.entity_id,
+                    default_mode=self._default_mode,
+                    default_auto_min_confidence=self._auto_min_confidence,
+                )
+                fb_tech, fb_group = (
+                    referentials.fallback_for_entity(session, ticket.entity_id, refs)
+                    if mode is not ExecutionMode.SUGGESTION
+                    else (None, None)
+                )
+            if fb_tech is not None or fb_group is not None:
+                try:
+                    # ROUTER, JAMAIS CLASSER : `assign_actor` ne touche ni la catégorie ni
+                    # la priorité. Une confiance sous le seuil est basse sur l'ENSEMBLE de
+                    # la Décision — une mauvaise catégorie est pire qu'aucune, elle serait
+                    # crue par les stats, les règles GLPI et le technicien.
+                    await self._itsm.assign_actor(
+                        ticket.id, technician_id=fb_tech, group_id=fb_group
+                    )
+                    fallback_applied = True
+                except Exception as exc:
+                    # Un repli raté ne doit pas dégrader l'existant : on retombe sur le
+                    # comportement « Suivi seul », qui reste meilleur que rien.
+                    fb_tech = fb_group = None
+                    logger.warning(
+                        "triage: repli non assigné (ticket=%s): %s", ticket.id, exc
+                    )
+            # « à trier » ARBITRÉ : le garde-fou a refusé, et le poller ne rejouera JAMAIS
+            # ce Ticket. Sans ce Suivi, GLPI ne reçoit RIEN et le Ticket devient invisible
+            # (cf. `render_fallback_followup`). Il INFORME, il n'applique pas :
+            # `write_followup` ne touche aucun champ, et le contenu ne porte ni brouillon
+            # ni texte libre du LLM. Il vaut donc dans les TROIS modes — y compris
+            # `suggestion`, qui promet zéro mutation et où le trou existait aussi.
+            try:
+                await self._itsm.write_followup(
+                    ticket.id,
+                    render_fallback_followup(
+                        outcome,
+                        refs,
+                        threshold=self._confidence_threshold,
+                        assigned=(fb_tech, fb_group),
+                    ),
+                    private=True,
+                )
+                wrote = True
+            except Exception as exc:
+                # Acte SECONDAIRE, comme le Suivi d'une Décision acceptée : son échec ne
+                # doit ni remonter (le Ticket ne serait jamais marqué → appel LLM re-facturé
+                # à chaque cycle) ni empêcher la journalisation de la Décision juste après.
+                logger.warning(
+                    "triage: Suivi « à trier » non déposé (ticket=%s, motif=%s): %s",
+                    ticket.id, outcome.reason.value, exc,
+                )
+
         # Journal TOUJOURS écrit (FR-19/20) — y compris si le Suivi a échoué après une
         # mutation : la trace d'audit doit refléter l'acte réellement appliqué à GLPI.
         # L'écriture est PROTÉGÉE au même titre que le Suivi juste au-dessus : une panne
@@ -489,7 +702,7 @@ class TriageService:
             with self._session_factory() as session:
                 decision_id = journal.record_decision(
                     session, ticket.id, outcome, glpi_link=glpi_link, mode=mode.value,
-                    applied=applied, subject=ticket.title,
+                    applied=applied, subject=ticket.title, fallback_applied=fallback_applied,
                 )
                 if partial_error:
                     # Seule trace lisible par l'admin de l'état réellement atteint dans

@@ -2,9 +2,21 @@
 # C'est l'image PUBLIQUE consommee par le deploiement orchestrateur (Portainer,
 # docker run, one-liner curl|bash) et par docker-compose.portainer.yml.
 #
-# Declencheurs :
-#   - push sur `main`            -> tags `latest` + `sha-<court>` (suit l'etat de main) ;
-#   - release publiee (tag vX.Y.Z) -> tags semver `X.Y.Z`, `X.Y`, et `latest`.
+# Declencheurs et TAGS — `main` ne deplace PLUS `latest` :
+#   - push sur `main`              -> `edge` + `sha-<court>` (etat de developpement) ;
+#   - release publiee (tag vX.Y.Z) -> `X.Y.Z`, `X.Y`, et `latest`.
+#
+# POURQUOI ce decouplage (change en 0.9.54). `latest` est ce que tire tout exploitant qui
+# fait `docker compose pull` : tant qu'il suivait `main`, chaque merge partait directement
+# en production chez les utilisateurs, sans qu'aucune release ne soit decidee. `main`
+# redevient donc une branche d'integration, et PUBLIER est un acte explicite : creer la
+# release. Qui veut suivre la pointe tire `:edge` en connaissance de cause.
+#
+# Corollaire : ne jamais remettre `enable={{is_default_branch}}` sur `latest`. Cette
+# condition est fausse sur une ref de tag — c'est d'ailleurs pour ca qu'avant ce
+# changement, une release ne posait PAS `latest` malgre ce que disait ce commentaire ;
+# seul le push de `main` qui la precedait le faisait.
+#
 # (On declenche sur l'evenement `release` plutot que `push: tags` : les releases de ce
 # depot sont creees via l'API GitHub, qui n'emet pas toujours un push de tag.)
 #
@@ -96,7 +108,12 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            # `latest` UNIQUEMENT sur une release publiee : c'est le tag que tire
+            # `docker compose pull`, il ne doit bouger que sur une decision de publication.
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            # La pointe de `main`, pour qui veut suivre le developpement en connaissance
+            # de cause (jamais tiree par defaut par un deploiement).
+            type=raw,value=edge,enable={{is_default_branch}}
             type=sha,format=short,enable={{is_default_branch}}
 
       # Smoke test AVANT publication : on construit l'image amd64 et on la charge

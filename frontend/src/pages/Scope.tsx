@@ -78,6 +78,12 @@ export function Scope() {
   const [modes, setModes] = useState<Map<number, ExecutionMode | "">>(new Map());
   // Seuil de confiance du mode semi-auto, par entité ("" = défaut global).
   const [thresholds, setThresholds] = useState<Map<number, number | "">>(new Map());
+  // Cible de repli par entité, encodée `g:<id>` / `t:<id>` ("" = aucun repli). Un seul
+  // contrôle plutôt que deux listes : les deux cibles s'excluent, et la ligne est déjà dense.
+  const [fallbacks, setFallbacks] = useState<Map<number, string>>(new Map());
+  // Acteurs ÉLIGIBLES : seuls candidats légitimes au repli (le backend refuse les autres).
+  const groups = useResource(useCallback(() => Api.discovery("group"), []));
+  const technicians = useResource(useCallback(() => Api.discovery("technician"), []));
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -89,6 +95,18 @@ export function Scope() {
       setEnts(new Set(entities.data.filter((e) => e.selected).map((e) => e.ext_id)));
       setModes(new Map(entities.data.map((e) => [e.ext_id, e.mode ?? ""])));
       setThresholds(new Map(entities.data.map((e) => [e.ext_id, e.auto_min_confidence ?? ""])));
+      setFallbacks(
+        new Map(
+          entities.data.map((e) => [
+            e.ext_id,
+            e.fallback_group_id != null
+              ? `g:${e.fallback_group_id}`
+              : e.fallback_technician_id != null
+                ? `t:${e.fallback_technician_id}`
+                : "",
+          ]),
+        ),
+      );
     }
   }, [entities.data]);
 
@@ -103,6 +121,12 @@ export function Scope() {
     const next = new Map(modes);
     next.set(id, mode);
     setModes(next);
+  }
+
+  function setFallback(id: number, value: string) {
+    const next = new Map(fallbacks);
+    next.set(id, value);
+    setFallbacks(next);
   }
 
   function setThreshold(id: number, value: number | "") {
@@ -120,12 +144,15 @@ export function Scope() {
       await Api.saveModes(
         [...modes].map(([ext_id, mode]) => {
           const thr = thresholds.get(ext_id);
+          const repli = fallbacks.get(ext_id) ?? "";
           return {
             ext_id,
             mode: mode || null,
             // Seuil envoyé uniquement en semi-auto (sinon null = défaut global).
             auto_min_confidence:
               mode === "semi_auto" && thr !== "" && thr != null ? Number(thr) : null,
+            fallback_group_id: repli.startsWith("g:") ? Number(repli.slice(2)) : null,
+            fallback_technician_id: repli.startsWith("t:") ? Number(repli.slice(2)) : null,
           };
         }),
       );
@@ -308,6 +335,35 @@ export function Scope() {
                       </option>
                     ))}
                   </select>
+                  {m !== "suggestion" && (
+                    <select
+                      aria-label={t(`Repli pour ${it.name}`, `Fallback for ${it.name}`)}
+                      title={t(
+                        "Acteur assigné quand le garde-fou refuse une décision — le ticket n'est ni catégorisé ni priorisé, seulement routé. Sans effet en mode suggestion.",
+                        "Actor assigned when the guardrail rejects a decision — the ticket is neither categorised nor prioritised, only routed. No effect in suggestion mode.",
+                      )}
+                      value={fallbacks.get(it.ext_id) ?? ""}
+                      onChange={(e) => setFallback(it.ext_id, e.target.value)}
+                      className="max-w-40 rounded-md border border-input bg-card px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    >
+                      <option value="">{t("Repli : aucun", "Fallback: none")}</option>
+                      {/* Groupes d'abord : un groupe encaisse une absence, pas une personne. */}
+                      {(groups.data ?? [])
+                        .filter((g) => g.eligible)
+                        .map((g) => (
+                          <option key={`g:${g.ext_id}`} value={`g:${g.ext_id}`}>
+                            {t("Groupe", "Group")} {g.name}
+                          </option>
+                        ))}
+                      {(technicians.data ?? [])
+                        .filter((x) => x.eligible)
+                        .map((x) => (
+                          <option key={`t:${x.ext_id}`} value={`t:${x.ext_id}`}>
+                            {x.name}
+                          </option>
+                        ))}
+                    </select>
+                  )}
                   {m === "semi_auto" && (
                     <input
                       type="number"

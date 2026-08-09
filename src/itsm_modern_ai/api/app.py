@@ -60,7 +60,13 @@ async def _run_poll_cycle(app: FastAPI) -> None:
         from ..services import referentials as _refs
 
         with _db.session_scope() as session:
-            return _refs.effective_referentials(session)
+            # Fuseau LOCAL pour l'évaluation des absences : reconstruit à chaque cycle,
+            # donc un congé commence et se TERMINE tout seul, sans redémarrage ni cache
+            # à invalider — personne n'a à penser à réactiver quelqu'un le lundi matin.
+            from ..services.runtime_config import RuntimeConfigService as _Cfg
+
+            tz = _Cfg(session, app.state.secrets_box, settings).get("local_timezone")
+            return _refs.effective_referentials(session, tz_name=tz or settings.local_timezone)
 
     poller = TriagePoller(
         connector,
@@ -172,6 +178,7 @@ async def lifespan(app: FastAPI):
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     from .. import __version__
+    from .routes import absences as absences_routes
     from .routes import auth as auth_routes
     from .routes import automations as automations_routes
     from .routes import config as config_routes
@@ -264,6 +271,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(export_routes.router)
     app.include_router(insights_routes.router)
     app.include_router(referentials_routes.router)
+    app.include_router(absences_routes.router)
     app.include_router(glpi_routes.router)
     app.include_router(debug_routes.router)
     app.include_router(automations_routes.router)

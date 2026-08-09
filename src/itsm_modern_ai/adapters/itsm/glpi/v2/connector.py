@@ -204,6 +204,20 @@ class GlpiV2Connector:
                     f"mais assignation de l'acteur échouée: {exc}"
                 ) from exc
 
+    async def assign_actor(
+        self, ticket_id: int, *, technician_id: int | None = None, group_id: int | None = None
+    ) -> None:
+        """Repli de triage : POST TeamMember SEUL, sans PATCH des champs.
+
+        Un seul appel réseau, donc AUCUN état partiel possible — contrairement à
+        `apply_decision` qui doit composer avec un PATCH réussi suivi d'un POST échoué.
+        """
+        member = mapper.teammember_payload(technician_id=technician_id, group_id=group_id)
+        if member is None:
+            return
+        async with self._client() as gc:
+            await gc.post(f"Assistance/Ticket/{ticket_id}/TeamMember", json=member)
+
     async def healthcheck(self) -> bool:
         if not self._creds.is_configured:
             return False

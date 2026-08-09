@@ -137,7 +137,8 @@ Par conception (PRD §9.4) :
 Une **purge RGPD automatique** est implémentée (`services/retention.py`). Elle supprime définitivement, en base locale, les lignes plus anciennes que des fenêtres de conservation **configurables** :
 
 - **Journal de décision** : `retention_decisions_days` (défaut **365 jours**) ;
-- **Appels LLM** (masqués) : `retention_llm_calls_days` (défaut **90 jours**).
+- **Appels LLM** (masqués) : `retention_llm_calls_days` (défaut **90 jours**) ;
+- **Absences TERMINÉES** (`technician_absences`) : même fenêtre que le Journal.
 
 Une fenêtre **`<= 0` désactive** la purge de la table concernée (défaut sûr : on ne supprime jamais sans réglage explicite).
 
@@ -149,6 +150,17 @@ Une fenêtre **`<= 0` désactive** la purge de la table concernée (défaut sûr
 > | `processed_tickets` | identifiant GLPI de chaque ticket traité + horodatage | c'est le **registre d'idempotence** : le purger ferait re-trier (et re-facturer) d'anciens tickets. Aucun contenu, mais un identifiant et une date. |
 > | `referential_cache` | **noms** des techniciens/groupes, profils GLPI, **fiches en prose** | c'est le périmètre autorisé, rafraîchi par scan GLPI ; le purger désarmerait le moteur. Ces fiches méritent une **revue périodique** par l'admin. |
 > | `audit_log` | actions d'administration, avec l'**IP** de l'auteur | donnée d'**imputabilité** (art. 5.1.f / 32). La purger sur la fenêtre « tickets » offrirait un effacement de traces trivial : régler la rétention à 0 est justement une action auditée. |
+>
+> **Absences (`technician_absences`) — donnée personnelle, purgée.** « Qui est en congé,
+> quand » est une donnée personnelle. Elle est conservée **tant que l'absence est en cours
+> ou à venir** (c'est de la configuration active : elle pilote le routage), puis purgée avec
+> le Journal une fois **terminée** — le produit n'a aucune raison de constituer l'historique
+> des vacances de chacun. Ce n'est pas une métrique par technicien : on enregistre une
+> **disponibilité déclarée par l'admin** pour router, jamais une mesure d'activité, de
+> performance ou de présence effective (anti-mouchard, FR-18/21). Un remplaçant désigné est
+> nommé dans le **prompt de routage** (« assure l'intérim de X jusqu'au … »), donc transmis
+> au fournisseur LLM : à signaler au registre si les noms de techniciens ne l'étaient pas déjà
+> — ils le sont, la liste des acteurs éligibles étant déjà dans le prompt.
 >
 > `audit_log` porte une IP, donc une donnée personnelle : une fenêtre de conservation
 > dédiée (12 mois est l'usage courant) devra être décidée **explicitement**, et jamais

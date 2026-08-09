@@ -99,12 +99,21 @@ async def test_accepted_writes_private_followup_and_journals(temp_db):
     assert decisions[0].subject == "Connexion impossible"  # titre du ticket journalisé
 
 
-async def test_low_confidence_goes_a_trier_no_write(temp_db):
+async def test_low_confidence_goes_a_trier_without_mutating(temp_db):
+    """« à trier » ne MUTE rien — mais dépose désormais un Suivi privé « non tranché ».
+
+    Historiquement ce test exigeait `followups == []`. C'était précisément le trou corrigé
+    en 0.9.50 : le Ticket ne recevait RIEN dans GLPI et n'était jamais rejoué. L'invariant
+    réel — aucune écriture de CHAMP sans garde-fou — est ce qui est vérifié ici."""
     itsm = FakeItsm()
     d = Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.4)
     svc = _service(FakeLlm(d), itsm)
     wrote = (await svc.handle(Ticket(id=11, content="flou"), REFS)).followup_written
-    assert wrote is False and itsm.followups == []
+    assert wrote is True
+    assert itsm.applied == []  # AUCUNE mutation : le garde-fou a refusé
+    ticket_id, content, private = itsm.followups[0]
+    assert (ticket_id, private) == (11, True)  # privé, jamais visible du demandeur
+    assert "NON TRANCHÉ" in content
     with db.session_scope() as s:
         assert journal.list_decisions(s)[0].reason == "low_confidence"
 
@@ -114,21 +123,28 @@ async def test_runtime_confidence_threshold_is_honored(temp_db):
 
     Décision à 0.9 : acceptée au seuil par défaut, mais doit partir « à trier » si l'admin
     relève le seuil à 0.95 depuis la console (régression : le moteur lisait le .env figé)."""
-    svc = _service(FakeLlm(_accepted_decision()), confidence_threshold=0.95)
-    wrote = (await svc.handle(Ticket(id=77, content="x"), REFS)).followup_written
-    assert wrote is False
+    itsm = FakeItsm()
+    svc = _service(FakeLlm(_accepted_decision()), itsm, confidence_threshold=0.95)
+    await svc.handle(Ticket(id=77, content="x"), REFS)
+    assert itsm.applied == []
     with db.session_scope() as s:
         assert journal.list_decisions(s)[0].reason == "low_confidence"
+    # Le seuil RUNTIME (0.95), pas celui du .env, doit apparaître dans le Suivi : c'est ce
+    # qui permet au technicien de comprendre pourquoi 90 % n'a pas suffi.
+    assert "90%, seuil requis 95%" in itsm.followups[0][1]
 
 
-async def test_out_of_whitelist_technician_no_write(temp_db):
+async def test_out_of_whitelist_technician_not_applied(temp_db):
     itsm = FakeItsm()
     d = Decision(category=1, priority=3, technician_id=999, draft="x", confidence=0.95)
     svc = _service(FakeLlm(d), itsm)
-    wrote = (await svc.handle(Ticket(id=12, content="x"), REFS)).followup_written
-    assert wrote is False and itsm.followups == []
+    await svc.handle(Ticket(id=12, content="x"), REFS)
+    assert itsm.applied == []  # l'acteur hors périmètre n'est JAMAIS assigné (FR-7)
     with db.session_scope() as s:
         assert journal.list_decisions(s)[0].reason == "technician_not_in_whitelist"
+    # Le Suivi NOMME l'ID refusé et l'étiquette : c'est ce qui dit à l'admin quel acteur
+    # rendre éligible — mais il ne doit jamais passer pour une affectation validée.
+    assert "Technicien #999 — hors du périmètre autorisé" in itsm.followups[0][1]
 
 
 async def test_invalid_llm_output_goes_a_trier(temp_db):
@@ -591,3 +607,237 @@ async def test_partial_glpi_mutation_is_journaled_and_not_replayed(temp_db):
         row = journal.list_decisions(s)[0]
     assert row.applied is True  # OBSERVABLE : GLPI a bougé, le Journal le dit
     assert "PARTIELLE" in row.annotation
+
+
+# ── Suivi « non tranché » sur « à trier » (0.9.50) ───────────────────────────────────
+# Le trou corrigé : un Ticket refusé par le garde-fou ne recevait RIEN dans GLPI et n'était
+# jamais rejoué — il restait « Nouveau », indistinguable d'un Ticket jamais examiné.
+
+
+async def test_fallback_followup_never_carries_the_llm_draft(temp_db):
+    """Le brouillon est EXCLU du Suivi « non tranché » — choix de conception, pas un oubli.
+
+    Une confiance sous le seuil est basse sur l'ENSEMBLE de la Décision. Afficher un
+    brouillon qu'un technicien pressé copierait-collerait réintroduirait par l'affichage
+    la Décision que le garde-fou vient de refuser."""
+    itsm = FakeItsm()
+    d = Decision(
+        category=1, priority=3, technician_id=11,
+        draft="Bonjour, réinitialisez votre mot de passe SECRET-BROUILLON.", confidence=0.4,
+    )
+    await _service(FakeLlm(d), itsm).handle(Ticket(id=300, content="x"), REFS)
+    content = itsm.followups[0][1]
+    assert "SECRET-BROUILLON" not in content
+    assert "Brouillon" not in content
+
+
+@pytest.mark.parametrize(
+    "error, attendu",
+    [
+        (LlmTransportError("réseau"), "llm_error"),
+        (LlmResponseError("json"), "invalid_output"),
+    ],
+)
+async def test_retryable_reasons_write_no_followup(temp_db, error, attendu):
+    """Le piège à éviter : le triage N'A PAS EU LIEU → le Ticket revient au cycle suivant.
+
+    Y déposer un Suivi produirait une annotation par cycle sur une coupure réseau de trois
+    secondes, puis un doublon au rejeu réussi."""
+    itsm = FakeItsm()
+    res = await _service(FakeLlm(error=error), itsm).handle(Ticket(id=301, content="x"), REFS)
+    assert itsm.followups == [] and itsm.applied == []
+    assert res.retryable is True  # le Ticket n'est PAS consommé
+    with db.session_scope() as s:
+        assert journal.list_decisions(s)[0].reason == attendu
+
+
+async def test_cost_cap_writes_no_followup(temp_db):
+    """Même famille : plafond atteint = aucun arbitrage rendu, le Ticket est rejouable."""
+    itsm = FakeItsm()
+    svc = _service(FakeLlm(_accepted_decision()), itsm, cost_cap_eur_per_day=0.0000001)
+    with db.session_scope() as s:
+        journal.record_llm_call(
+            s, ticket_id=1, model="m", prompt_sent="p", response_received="r",
+            prompt_tokens=1, completion_tokens=1, cost_eur=10.0,
+        )
+    res = await svc.handle(Ticket(id=302, content="x"), REFS)
+    assert itsm.followups == [] and res.retryable is True
+
+
+async def test_fallback_followup_is_written_in_full_auto_too(temp_db):
+    """Le trou existait dans les TROIS modes : c'est en full-auto qu'il est le plus grave
+    (une instance présentée comme automatique laissait 35 % du flux sans aucune trace)."""
+    itsm = FakeItsm()
+    d = Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.4)
+    svc = _service(FakeLlm(d), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=303, content="x"), REFS)
+    assert itsm.applied == []  # full-auto ne contourne pas le garde-fou
+    assert itsm.followups[0][2] is True  # PRIVÉ : le demandeur ne voit jamais un non-arbitrage
+    assert "NON TRANCHÉ" in itsm.followups[0][1]
+
+
+async def test_fallback_followup_labels_out_of_scope_category(temp_db):
+    """Une valeur hors périmètre est rendue, mais ÉTIQUETÉE : elle ne doit pas être lue
+    comme validée par le garde-fou."""
+    itsm = FakeItsm()
+    d = Decision(category=999, priority=3, technician_id=11, draft="x", confidence=0.95)
+    await _service(FakeLlm(d), itsm).handle(Ticket(id=304, content="x"), REFS)
+    content = itsm.followups[0][1]
+    assert "#999 — hors du périmètre autorisé" in content
+    assert "catégorie envisagée hors du périmètre autorisé" in content
+
+
+async def test_fallback_followup_when_llm_proposed_nothing(temp_db):
+    """`category=None` (le modèle exprime son doute) ne doit pas casser le rendu."""
+    itsm = FakeItsm()
+    d = Decision(category=None, priority=3, technician_id=None, draft="x", confidence=0.9)
+    await _service(FakeLlm(d), itsm).handle(Ticket(id=305, content="x"), REFS)
+    content = itsm.followups[0][1]
+    assert "aucune (le modèle n'a pas tranché)" in content
+    assert "aucun (le modèle n'a proposé ni technicien ni groupe)" in content
+
+
+async def test_fallback_followup_failure_still_journals_and_consumes(temp_db):
+    """Le Suivi est un acte SECONDAIRE : un GLPI en panne ne doit ni faire remonter une
+    exception, ni empêcher la journalisation, ni rendre le Ticket rejouable (il serait
+    re-facturé à chaque cycle)."""
+    class BrokenItsm(FakeItsm):
+        async def write_followup(self, ticket_id, content, *, private=True) -> int:
+            raise RuntimeError("GLPI 500")
+
+    itsm = BrokenItsm()
+    d = Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.4)
+    res = await _service(FakeLlm(d), itsm).handle(Ticket(id=306, content="x"), REFS)
+    assert res.followup_written is False and res.retryable is False and res.db_error is False
+    with db.session_scope() as s:
+        assert journal.list_decisions(s)[0].reason == "low_confidence"
+
+
+# ── Repli assigné sur « à trier » (0.9.52) ───────────────────────────────────────────
+# Le repli ROUTE (assigne un acteur) mais ne CLASSE jamais : une confiance sous le seuil
+# est basse sur l'ENSEMBLE de la Décision, une mauvaise catégorie est pire qu'aucune.
+
+
+class FallbackItsm(FakeItsm):
+    def __init__(self):
+        super().__init__()
+        self.assigned = []  # (ticket_id, technician_id, group_id)
+
+    async def assign_actor(self, ticket_id, *, technician_id=None, group_id=None) -> None:
+        self.assigned.append((ticket_id, technician_id, group_id))
+
+
+REFS_REPLI = Referentials(
+    categories={1: "Compte"}, technicians={11: "Syl"}, groups={5: "Support N1"}
+)
+
+
+def _entite_avec_repli(*, mode="full_auto", group_id=None, technician_id=None, ext_id=0):
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import ReferentialCache
+
+    with db.session_scope() as s:
+        s.add(
+            ReferentialCache(
+                kind="entity", ext_id=ext_id, name="Racine", selected=True, mode=mode,
+                fallback_group_id=group_id, fallback_technician_id=technician_id,
+            )
+        )
+        s.commit()
+
+
+def _refuse() -> Decision:
+    return Decision(category=1, priority=3, technician_id=11, draft="x", confidence=0.3)
+
+
+async def test_repli_assigne_un_groupe_sans_toucher_aux_champs(temp_db):
+    """Router, jamais classer : `assign_actor` ne pose ni catégorie ni priorité."""
+    _entite_avec_repli(group_id=5)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=400, content="x", entity_id=0), REFS_REPLI)
+
+    assert itsm.assigned == [(400, None, 5)]
+    assert itsm.applied == []  # AUCUNE mutation de champ sur une Décision refusée
+    assert "Repli : assigné au groupe Support N1 (#5)" in itsm.followups[0][1]
+    with db.session_scope() as s:
+        row = journal.list_decisions(s)[0]
+    assert row.accepted is False  # la vérité d'audit reste INTACTE : le garde-fou a refusé
+    assert row.applied is False and row.fallback_applied is True
+
+
+async def test_pas_de_repli_assigne_en_mode_suggestion(temp_db):
+    """Le mode suggestion promet ZÉRO mutation — or assigner EST une mutation.
+    Le Suivi « non tranché », lui, reste déposé (il n'applique rien)."""
+    _entite_avec_repli(mode="suggestion", group_id=5)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.SUGGESTION)
+    await svc.handle(Ticket(id=401, content="x", entity_id=0), REFS_REPLI)
+
+    assert itsm.assigned == []
+    assert "NON TRANCHÉ" in itsm.followups[0][1]
+    assert "Repli" not in itsm.followups[0][1]
+    with db.session_scope() as s:
+        assert journal.list_decisions(s)[0].fallback_applied is False
+
+
+async def test_cible_de_repli_revalidee_contre_la_whitelist(temp_db):
+    """La cible était légitime à l'enregistrement — rien ne garantit qu'elle le soit encore.
+    Sans revalidation, le repli serait le seul chemin par lequel un acteur non validé reçoit
+    un Ticket : un contournement de FR-7 par la porte de service."""
+    _entite_avec_repli(group_id=999)  # groupe décoché depuis (absent du périmètre effectif)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=402, content="x", entity_id=0), REFS_REPLI)
+
+    assert itsm.assigned == []  # rien n'est assigné à un acteur hors périmètre
+    assert itsm.followups and "Repli" not in itsm.followups[0][1]
+
+
+async def test_repli_prefere_le_groupe_au_technicien(temp_db):
+    """Un technicien nommé comme filet de toute l'instance est un point de défaillance
+    unique, et entre en collision avec les congés. Un groupe encaisse l'absence."""
+    _entite_avec_repli(group_id=5, technician_id=11)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=403, content="x", entity_id=0), REFS_REPLI)
+    assert itsm.assigned == [(403, None, 5)]
+
+
+async def test_repli_technicien_si_aucun_groupe_configure(temp_db):
+    _entite_avec_repli(technician_id=11)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    await svc.handle(Ticket(id=404, content="x", entity_id=0), REFS_REPLI)
+    assert itsm.assigned == [(404, 11, None)]
+    assert "Repli : assigné à Syl (#11)" in itsm.followups[0][1]
+
+
+async def test_echec_du_repli_ne_degrade_pas_le_suivi(temp_db):
+    """Un repli raté doit retomber sur le comportement « Suivi seul » — meilleur que rien —
+    et surtout ne pas annoncer une affectation qui n'a pas eu lieu."""
+    class ReplRate(FallbackItsm):
+        async def assign_actor(self, ticket_id, *, technician_id=None, group_id=None):
+            raise RuntimeError("GLPI 500")
+
+    _entite_avec_repli(group_id=5)
+    itsm = ReplRate()
+    svc = _service(FakeLlm(_refuse()), itsm, default_mode=ExecutionMode.FULL_AUTO)
+    res = await svc.handle(Ticket(id=405, content="x", entity_id=0), REFS_REPLI)
+
+    assert res.retryable is False  # le Ticket reste consommé, pas de boucle facturée
+    assert "NON TRANCHÉ" in itsm.followups[0][1]
+    assert "Repli" not in itsm.followups[0][1]  # ne pas annoncer une affectation ratée
+    with db.session_scope() as s:
+        assert journal.list_decisions(s)[0].fallback_applied is False
+
+
+async def test_aucun_repli_sur_un_motif_rejouable(temp_db):
+    """Assigner un humain sur une coupure réseau de trois secondes, puis re-triager au rejeu
+    un Ticket désormais assigné : le piège que la distinction des deux familles évite."""
+    _entite_avec_repli(group_id=5)
+    itsm = FallbackItsm()
+    svc = _service(FakeLlm(error=LlmTransportError("réseau")), itsm,
+                   default_mode=ExecutionMode.FULL_AUTO)
+    res = await svc.handle(Ticket(id=406, content="x", entity_id=0), REFS_REPLI)
+    assert itsm.assigned == [] and itsm.followups == [] and res.retryable is True

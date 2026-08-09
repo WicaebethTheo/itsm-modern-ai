@@ -127,6 +127,22 @@ def ticket_update_payload(
     return {"input": inp}
 
 
+def assignment_payload(*, technician_id: int | None = None, group_id: int | None = None) -> dict:
+    """Payload `PUT Ticket/:id` assignant un acteur SEUL (repli de triage).
+
+    Ni `itilcategories_id` ni `priority`/`urgency` : un repli ROUTE, il ne classe pas. Poser
+    la catégorie d'une Décision refusée par le garde-fou serait pire que de n'en poser
+    aucune — elle serait crue par les stats et les règles GLPI. Technicien préféré, groupe
+    en repli, comme `ticket_update_payload`.
+    """
+    inp: dict = {}
+    if technician_id is not None:
+        inp["_users_id_assign"] = technician_id
+    elif group_id is not None:
+        inp["_groups_id_assign"] = group_id
+    return {"input": inp}
+
+
 def followup_payload(ticket_id: int, content: str, *, private: bool, legacy_9x: bool) -> dict:
     """Payload d'écriture d'un Suivi. Aucun champ du Ticket n'est touché (mode suggestion)."""
     is_private = 1 if private else 0

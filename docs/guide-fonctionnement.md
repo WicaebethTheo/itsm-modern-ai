@@ -50,15 +50,15 @@ flowchart TD
     A["Ticket GLPI<br/>(nouveau / mis à jour)"] --> B{"Règles GLPI<br/>déjà appliquées ?"}
     B -- oui --> Z["⏭️ Ignoré"]
     B -- non --> C{"Plafond de coût<br/>du jour atteint ?"}
-    C -- oui --> T["⚠️ « À trier »<br/>(repli sûr, aucune action)"]
+    C -- oui --> T["⚠️ « À trier » — triage pas eu lieu<br/>(rien écrit, ticket rejoué au cycle suivant)"]
     C -- non --> D["🛡️ Masquage PII<br/>(AVANT tout appel LLM)"]
     D --> E["🧠 Appel LLM<br/>(mode JSON + retry)"]
     E --> F{"Réponse JSON<br/>valide ?"}
     F -- non --> T
     F -- oui --> G{"Cible dans la<br/>liste blanche ?"}
-    G -- non --> T
+    G -- non --> TA["⚠️ « À trier » — refus arbitré<br/>📝 Suivi PRIVÉ « non tranché »<br/>(motif + valeurs envisagées, aucun champ modifié)"]
     G -- oui --> H{"Confiance ≥ seuil ?"}
-    H -- non --> T
+    H -- non --> TA
     H -- oui --> M{"Mode de l'entité ?"}
     M -- suggestion --> S["📝 Suivi interne PRIVÉ<br/>(brouillon, aucun champ modifié)"]
     M -- semi_auto --> H2{"Confiance ≥<br/>2ᵉ seuil ?"}
@@ -67,6 +67,7 @@ flowchart TD
     M -- full_auto --> P["✅ Champs GLPI appliqués<br/>+ réponse PUBLIQUE au demandeur"]
 
     style T fill:#fde68a,stroke:#b45309
+    style TA fill:#fde68a,stroke:#b45309
     style S fill:#bfdbfe,stroke:#1d4ed8
     style P fill:#bbf7d0,stroke:#15803d
 ```
@@ -75,6 +76,7 @@ flowchart TD
 - **Liste blanche déterministe** : une cible hors de l'ensemble autorisé est rejetée → « à trier ».
 - **Seuil de confiance** : sous le seuil, rien n'est appliqué.
 - **« À trier »** est la **seule** échappatoire : en cas de doute, le moteur ne fait rien de risqué.
+- Un refus **arbitré** (liste blanche / seuil) dépose un **Suivi privé « non tranché »** : le technicien voit le motif et ce que l'IA envisageait, sans qu'aucun champ n'ait bougé et sans brouillon à recopier. Le ticket cesse d'être indistinguable d'un ticket que personne n'a ouvert. Une **panne** (LLM injoignable, plafond atteint) n'écrit rien : le ticket est simplement rejoué.
 - Le brouillon LLM est **échappé (HTML)** et **re-masqué** avant toute publication publique.
 
 > **Masquage PII selon la licence :** sans licence, on masque **e-mail + téléphone**. Une

@@ -124,8 +124,12 @@ def build_triage_service(
     from ..domain import prompting
 
     with db.session_scope() as session:
-        prose = referentials.routing_prose(session)
         cfg = RuntimeConfigService(session, secrets, settings)
+        # Même fuseau que la whitelist : décrire au modèle un technicien qu'il n'a pas le
+        # droit de proposer (parce qu'absent) diluerait le prompt pour rien.
+        prose = referentials.routing_prose(
+            session, tz_name=cfg.get("local_timezone") or settings.local_timezone
+        )
         guidance = prompting.build_guidance(
             response_tone=cfg.get("response_tone") or "",
             assistant_name=cfg.get("assistant_name") or "",

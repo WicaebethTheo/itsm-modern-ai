@@ -71,7 +71,11 @@ async def sandbox(body: SandboxRequest, request: Request) -> SandboxResponse:
         # éligibles), comme le moteur réel (cf. app.py:_effective_refs). On NE lit PAS le cache
         # mémoire `whitelist_cache.referentials`, qui n'est peuplé que par le poller : si le
         # polling est off, ce cache serait vide et la sandbox renverrait « à trier » à tort.
-        refs = referentials.effective_referentials(session)
+        # Même filtre d'absence que le moteur : une sandbox qui proposerait un technicien
+        # en congé mentirait sur ce que fera le vrai cycle.
+        refs = referentials.effective_referentials(
+            session, tz_name=cfg.get("local_timezone") or settings.local_timezone
+        )
     outcome, result = await triage.evaluate_text(0, raw, refs)
     # Journalise l'appel LLM (FR-19) même en sandbox → visible dans /api/cost et compté
     # dans le cost cap. ticket_id=0 marque une décision hors-ticket (sandbox).

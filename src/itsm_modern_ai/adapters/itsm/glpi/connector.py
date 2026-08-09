@@ -253,6 +253,16 @@ class GlpiConnector:
         async with self._client() as gc:
             await gc.put(f"Ticket/{ticket_id}", json=payload)
 
+    async def assign_actor(
+        self, ticket_id: int, *, technician_id: int | None = None, group_id: int | None = None
+    ) -> None:
+        """Repli de triage : assigne un acteur, sans toucher catégorie ni priorité."""
+        payload = mapper.assignment_payload(technician_id=technician_id, group_id=group_id)
+        if not payload["input"]:
+            return  # aucun acteur à poser : ne pas émettre un PUT vide
+        async with self._client() as gc:
+            await gc.put(f"Ticket/{ticket_id}", json=payload)
+
     async def healthcheck(self) -> bool:
         if not self._creds.is_configured:
             return False

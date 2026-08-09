@@ -31,6 +31,9 @@ class RefItem(BaseModel):
     skill_tags: list[str] = Field(default_factory=list)  # domaines cochés (cf. domain.skills)
     mode: str | None = None  # mode d'exécution (entités) — None = défaut global
     auto_min_confidence: float | None = None  # 2e seuil semi-auto (entités)
+    # Cible de repli (entités) : acteur assigné quand le garde-fou refuse une Décision.
+    fallback_group_id: int | None = None
+    fallback_technician_id: int | None = None
 
 
 class SyncResult(BaseModel):
@@ -57,6 +60,9 @@ class ModeItem(BaseModel):
     ext_id: int
     mode: str | None = Field(default=None, pattern="^(suggestion|semi_auto|full_auto)$")
     auto_min_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Cible de REPLI pour cette entité. Groupe prioritaire sur technicien (cf. `set_modes`).
+    fallback_group_id: int | None = None
+    fallback_technician_id: int | None = None
 
 
 def _item(row) -> RefItem:
@@ -65,6 +71,8 @@ def _item(row) -> RefItem:
         eligible=row.eligible, skills=row.skills,
         skill_tags=[k for k in (getattr(row, "skill_tags", "") or "").split(",") if k],
         mode=getattr(row, "mode", None), auto_min_confidence=getattr(row, "auto_min_confidence", None),
+        fallback_group_id=getattr(row, "fallback_group_id", None),
+        fallback_technician_id=getattr(row, "fallback_technician_id", None),
     )
 
 
@@ -97,6 +105,34 @@ def skill_catalog() -> list[SkillDomainView]:
     les deux listes ferait cocher des clés que le moteur ignorerait ensuite en silence.
     """
     return [SkillDomainView(**vars(d)) for d in domain_skills.SKILL_CATALOG]
+
+
+class SkillCoverageView(BaseModel):
+    key: str
+    label_fr: str
+    label_en: str
+    technicians: int  # techniciens ÉLIGIBLES ayant coché ce domaine
+    groups: int  # groupes ÉLIGIBLES ayant coché ce domaine
+
+
+@router.get("/skills/coverage", response_model=list[SkillCoverageView])
+def skill_coverage(session: Session = Depends(get_session)) -> list[SkillCoverageView]:
+    """Carte de couverture des domaines : où le routage va casser, AVANT qu'il casse.
+
+    Un domaine à 0 acteur garantit un « à trier » dès qu'un ticket en relève ; un domaine
+    tenu par un seul technicien (et aucun groupe) tombe le jour de son congé. La console
+    en fait un bandeau de diagnostic au-dessus de la liste — même écran que celui où l'on
+    coche, pour que la panne se corrige là où elle se voit.
+
+    Cardinalités seulement : aucun acteur n'est nommé (anti-mouchard, FR-18/21).
+    """
+    coverage = referentials.skill_coverage(session)
+    return [
+        SkillCoverageView(
+            key=d.key, label_fr=d.label_fr, label_en=d.label_en, **coverage[d.key]
+        )
+        for d in domain_skills.SKILL_CATALOG
+    ]
 
 
 @router.get("/discovery/{kind}", response_model=list[RefItem])
@@ -151,8 +187,12 @@ def save_modes(
     ligne ci-dessous, seul le défaut GLOBAL était imputable, et basculer une entité en
     `full_auto` ne laissait aucune trace.
     """
+    _reject_ineligible_fallbacks(session, body)
     entites = referentials.list_kind(session, referentials.KIND_ENTITY)
-    avant = {r.ext_id: (r.mode, r.auto_min_confidence) for r in entites}
+    avant = {
+        r.ext_id: (r.mode, r.auto_min_confidence, r.fallback_group_id, r.fallback_technician_id)
+        for r in entites
+    }
     referentials.set_modes(session, [b.model_dump() for b in body])
     apres = [_item(r) for r in referentials.list_kind(session, referentials.KIND_ENTITY)]
 
@@ -160,7 +200,7 @@ def save_modes(
     # changer ne doit pas noyer le journal (l'UI renvoie toujours toutes les entités).
     for r in referentials.list_kind(session, referentials.KIND_ENTITY):
         ancien = avant.get(r.ext_id)
-        nouveau = (r.mode, r.auto_min_confidence)
+        nouveau = (r.mode, r.auto_min_confidence, r.fallback_group_id, r.fallback_technician_id)
         if ancien is not None and ancien != nouveau:
             cfg.record_action(
                 "entity_mode",
@@ -171,6 +211,51 @@ def save_modes(
     return apres
 
 
-def _mode_repr(mode: str | None, seuil: float | None) -> str:
-    """Représentation lisible d'un mode d'entité pour le journal d'audit."""
-    return f"{mode or 'défaut global'}" + (f" (seuil auto {seuil})" if seuil is not None else "")
+def _reject_ineligible_fallbacks(session: Session, body: list[ModeItem]) -> None:
+    """Refuse une cible de repli hors périmètre — À L'ENREGISTREMENT, avec un message clair.
+
+    Accepter silencieusement produirait une configuration INOPÉRANTE : le moteur revalide la
+    cible au moment d'écrire (`fallback_for_entity`) et n'assignerait donc rien, sans que
+    l'admin comprenne pourquoi son repli ne fonctionne pas. Mieux vaut refuser tout de suite
+    que promettre un filet qui n'existe pas.
+    """
+    eligibles = {
+        "group": {r.ext_id for r in referentials.list_kind(session, referentials.KIND_GROUP) if r.eligible},
+        "technician": {
+            r.ext_id for r in referentials.list_kind(session, referentials.KIND_TECHNICIAN) if r.eligible
+        },
+    }
+    for item in body:
+        for kind, ext_id in (
+            ("group", item.fallback_group_id),
+            ("technician", item.fallback_technician_id),
+        ):
+            if ext_id is not None and ext_id not in eligibles[kind]:
+                raise HTTPException(
+                    400,
+                    {
+                        "code": "fallback_not_eligible",
+                        "message": (
+                            f"Cible de repli hors périmètre ({kind} #{ext_id}) : rendez-la "
+                            "éligible d'abord, sinon le repli resterait sans effet."
+                        ),
+                    },
+                )
+
+
+def _mode_repr(
+    mode: str | None, seuil: float | None, repli_groupe: int | None = None,
+    repli_tech: int | None = None,
+) -> str:
+    """Représentation lisible d'un mode d'entité pour le journal d'audit.
+
+    La cible de repli y figure : elle autorise le moteur à assigner un acteur sur un Ticket
+    refusé, donc à muter GLPI — c'est une décision de gouvernance, elle doit être imputable
+    au même titre que le mode.
+    """
+    repr_ = f"{mode or 'défaut global'}" + (f" (seuil auto {seuil})" if seuil is not None else "")
+    if repli_groupe is not None:
+        repr_ += f" [repli groupe #{repli_groupe}]"
+    elif repli_tech is not None:
+        repr_ += f" [repli technicien #{repli_tech}]"
+    return repr_
