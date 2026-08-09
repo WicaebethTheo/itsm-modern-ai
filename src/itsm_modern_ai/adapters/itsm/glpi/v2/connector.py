@@ -209,14 +209,59 @@ class GlpiV2Connector:
     ) -> None:
         """Repli de triage : POST TeamMember SEUL, sans PATCH des champs.
 
-        Un seul appel réseau, donc AUCUN état partiel possible — contrairement à
-        `apply_decision` qui doit composer avec un PATCH réussi suivi d'un POST échoué.
+        Un seul appel réseau sur le chemin nominal, donc AUCUN état partiel possible —
+        contrairement à `apply_decision` qui doit composer avec un PATCH réussi suivi d'un
+        POST échoué.
+
+        IDEMPOTENCE (défaut trouvé en validation contre un GLPI 11 réel, pas par les mocks).
+        `POST TeamMember` sur un acteur DÉJÀ assigné répond `400 ERROR_INVALID_PARAMETER`.
+        Le cas est courant en production : une règle GLPI pré-affecte un groupe par défaut
+        sans poser de catégorie, le Ticket n'est donc pas « déjà traité » (`rules_fully_handled`
+        exige les deux), il part au moteur, se fait refuser — et le repli tente d'assigner un
+        groupe qui y est déjà. Sans ce rattrapage, chaque Ticket de ce type produisait un
+        WARNING et un `fallback_applied=False` alors que l'état visé était ATTEINT.
+
+        On ne se fie pas au code d'erreur (`ERROR_INVALID_PARAMETER` est générique et
+        couvrirait d'autres fautes) : on relit l'ÉTAT. Si l'acteur visé est présent, l'objectif
+        est atteint, on rend la main. Sinon l'erreur d'origine repart telle quelle. Le chemin
+        nominal, lui, ne paie aucun appel supplémentaire.
+
+        (Le connecteur legacy n'a pas ce problème : il passe par un `PUT Ticket`, une mise à
+        jour idempotente par nature — non rejouable ici, le lab de validation est en V2.)
         """
         member = mapper.teammember_payload(technician_id=technician_id, group_id=group_id)
         if member is None:
             return
         async with self._client() as gc:
-            await gc.post(f"Assistance/Ticket/{ticket_id}/TeamMember", json=member)
+            try:
+                await gc.post(f"Assistance/Ticket/{ticket_id}/TeamMember", json=member)
+            except Exception:
+                if not await self._acteur_deja_assigne(gc, ticket_id, member):
+                    raise
+                logger.info(
+                    "assign_actor V2: %s #%s déjà assigné au ticket %s — état visé atteint",
+                    member.get("type"), member.get("id"), ticket_id,
+                )
+
+    async def _acteur_deja_assigne(self, gc, ticket_id: int, member: dict) -> bool:
+        """L'acteur visé figure-t-il déjà dans l'équipe du Ticket ?
+
+        Best-effort et DÉFENSIF : si la relecture échoue (réseau, droits), on renvoie False
+        pour que l'erreur d'origine — la vraie information — remonte intacte. Avaler un échec
+        d'assignation en le déguisant en succès serait bien pire que le signaler à tort.
+        """
+        try:
+            equipe = (await gc.get(f"Assistance/Ticket/{ticket_id}/TeamMember")).json()
+        except Exception:
+            return False
+        if not isinstance(equipe, list):
+            return False
+        return any(
+            isinstance(m, dict)
+            and m.get("type") == member.get("type")
+            and m.get("id") == member.get("id")
+            for m in equipe
+        )
 
     async def healthcheck(self) -> bool:
         if not self._creds.is_configured:

@@ -1,3 +1,41 @@
+## 2026-08-09 — 0.9.55 — Le repli n'échoue plus sur un acteur déjà assigné
+
+**Défaut trouvé en validant la 0.9.54 contre un GLPI 11 réel — invisible pour les mocks.**
+
+`POST TeamMember` sur un acteur **déjà assigné** répond `400 ERROR_INVALID_PARAMETER`. Le cas
+est courant en production : une règle GLPI pré-affecte un groupe par défaut **sans** poser de
+catégorie ; le ticket n'est donc pas « déjà traité » (`rules_fully_handled` exige les deux), il
+part au moteur, se fait refuser — et le repli tente d'assigner un groupe qui y figure déjà.
+
+Conséquence avant correctif : un `WARNING` par ticket concerné, un `fallback_applied=False` au
+Journal, et un Suivi qui **omettait la ligne « Repli »** — alors que l'état visé était atteint,
+le groupe étant bien assigné. Rien de corrompu, mais un moteur qui sous-déclare ce qu'il a fait.
+
+### Le correctif
+
+On ne se fie **pas** au code d'erreur — `ERROR_INVALID_PARAMETER` est générique et couvrirait
+d'autres fautes. On relit l'**état** : si l'acteur visé est présent dans l'équipe du ticket,
+l'objectif est atteint et on rend la main ; sinon l'erreur d'origine repart intacte. Le chemin
+nominal ne paie **aucun appel supplémentaire**, et une relecture impossible (réseau, droits)
+fait remonter l'erreur d'origine plutôt que de la déguiser en succès.
+
+Le connecteur legacy n'est pas concerné : il passe par un `PUT Ticket`, idempotent par nature.
+
+### Ce que la validation lab a confirmé par ailleurs
+
+Contre un GLPI 11 réel (API V2, OAuth), sur des tickets de test isolés du poller :
+
+- **« Router, jamais classer »** — après repli, catégorie et priorité **inchangées**, groupe
+  assigné avec le rôle `assigned` ;
+- **le Suivi « non tranché » est bien PRIVÉ** (`is_private: true`), accents et emoji rendus ;
+- **pipeline complet** (refus → Suivi + repli → Journal) : `accepted=False`, `applied=False`,
+  `fallback_applied=True` ;
+- **congés** : l'absent sort du périmètre effectif, le remplaçant hérite de ses domaines et
+  gagne la ligne « Assure l'intérim de … jusqu'au … » dans le prompt de routage.
+
+Tests : **543** pytest (+4, dont les quatre branches du rattrapage : acteur déjà présent,
+acteur absent, chemin nominal sans relecture, relecture en échec).
+
 ## 2026-08-09 — 0.9.54 — « À trier » cesse d'être un trou noir : suivi, repli assigné, congés
 
 > Cette version regroupe le travail des incréments **0.9.50 à 0.9.54**, qui n'ont jamais été
