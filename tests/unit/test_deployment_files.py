@@ -55,15 +55,29 @@ def test_resources_are_bounded(compose):
     assert limits["cpus"] and limits["memory"]
 
 
-def test_backup_target_is_wal_safe_and_verified():
-    """`cp data/itsm.db` seul est une sauvegarde MUETTE en mode WAL (le fichier principal
-    peut être vide, tout le journal étant dans `-wal`). On exige une copie cohérente et
-    vérifiée, et surtout aucun `|| true` qui annoncerait un succès imaginaire."""
+def test_la_sauvegarde_est_livree_DANS_le_paquet():
+    """L'invariant qui compte pour un exploitant : pouvoir sauvegarder **sans les sources**.
+
+    La voie recommandée est *pull-only* (image GHCR, Portainer, `docker run`, one-liner) :
+    tant que la logique ne vivait que dans le `Makefile`, quiconque suivait la documentation
+    n'avait AUCUN moyen de sauvegarder — sur un volume contenant les données RGPD ET la
+    `master.key` sans laquelle la base est définitivement illisible.
+    """
+    module = ROOT / "src" / "itsm_modern_ai" / "backup.py"
+    assert module.is_file(), "la sauvegarde doit être livrée dans l'image, pas dans le Makefile"
+    code = module.read_text(encoding="utf-8")
+    assert "VACUUM INTO" in code  # copie cohérente, WAL inclus
+    assert "integrity_check" in code  # … et VÉRIFIÉE
+    assert "master.key" in code  # sans elle, la base restaurée est illisible
+
+
+def test_le_makefile_delegue_au_paquet_sans_dupliquer():
+    """Deux implémentations de la sauvegarde divergeraient — et c'est celle de l'exploitant,
+    la moins testée, qui casserait. La cible Make n'est qu'un raccourci."""
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     backup = makefile.split("\nbackup:", 1)[1].split("\nlint:", 1)[0]
-    assert "VACUUM INTO" in makefile
-    assert "integrity_check" in makefile
-    assert "cp -a data/itsm.db " not in backup  # la copie à chaud du seul .db est bannie
+    assert "itsm_modern_ai.backup" in backup
+    assert "cp -a data/itsm.db " not in backup  # la copie à chaud du seul .db reste bannie
     assert "|| true" not in backup  # un échec de sauvegarde doit être BRUYANT
 
 

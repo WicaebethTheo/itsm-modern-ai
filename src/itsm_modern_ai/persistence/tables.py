@@ -64,9 +64,25 @@ class ProcessedTicket(SQLModel, table=True):
     - `semi_auto` / `full_auto` → seconde mutation GLPI du Ticket ET seconde réponse
       PUBLIQUE au demandeur.
 
-    Fermer cette fenêtre suppose une re-vérification côté GLPI avant mutation (relire les
-    Suivis / l'état du Ticket pour détecter un passage déjà effectué) : **non implémentée
-    à ce jour** dans `services/triage.py`.
+    FENÊTRE REFERMÉE (0.9.56) par un marquage en DEUX TEMPS, sans aucun appel GLPI
+    supplémentaire :
+
+    1. le poller **RÉSERVE** le Ticket (`claim`) AVANT d'appeler le handler → une ligne
+       existe déjà quand l'écriture GLPI part ;
+    2. `mark_processed` **libère** la réservation (`claimed_at = None`) une fois le cycle
+       mené à son terme ;
+    3. un triage non abouti et rejouable (panne LLM, plafond) **annule** la réservation
+       (`release`) — sans quoi une coupure passagère brûlerait le Ticket définitivement.
+
+    Une ligne `claimed_at IS NOT NULL` signifie donc : « un traitement a été interrompu APRÈS
+    avoir potentiellement écrit dans GLPI ». Le Ticket n'est **pas** rejoué — c'est un choix
+    délibéré : une **seconde réponse publique au demandeur** est bien pire qu'un Ticket laissé
+    au triage humain. L'interruption est signalée en ERROR au cycle suivant (`interrupted`),
+    jamais avalée.
+
+    Ce que cela ne couvre pas : le crash entre l'écriture GLPI et le `commit` de la
+    réservation elle-même. La fenêtre passe de « tout le traitement » à « une écriture SQLite
+    locale », sans le coût d'une relecture GLPI par Ticket.
     """
 
     __tablename__ = "processed_tickets"
@@ -75,6 +91,10 @@ class ProcessedTicket(SQLModel, table=True):
     state_fingerprint: str = ""
     followup_written: bool = False
     processed_at: datetime = Field(default_factory=_utcnow, sa_column=_ts_column(index=True))
+    # Réservation en cours : posée AVANT le handler, effacée par `mark_processed`. Non-NULL
+    # = traitement interrompu en vol (cf. docstring). Nullable À DESSEIN : l'absence de
+    # valeur est l'état nominal, et c'est bien la présence qui porte l'information.
+    claimed_at: datetime | None = Field(default=None, sa_column=Column(UtcDateTime, nullable=True))
 
 
 class LlmCall(SQLModel, table=True):

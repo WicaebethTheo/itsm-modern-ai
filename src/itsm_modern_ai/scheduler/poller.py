@@ -103,6 +103,11 @@ def _bump_attempt(ticket_id: int) -> int:
     return count
 
 
+def _attempts_count(ticket_id: int) -> int:
+    """Nombre de tentatives déjà comptées, SANS incrémenter (lecture seule)."""
+    return _attempts.get(ticket_id, 0)
+
+
 def _clear_attempt(ticket_id: int) -> None:
     """Le Ticket a été arbitré (ou consommé) : son compteur n'a plus de raison d'être."""
     _attempts.pop(ticket_id, None)
@@ -227,6 +232,23 @@ class TriagePoller:
             stats.error_message = _short_reason(f"Lecture des tickets GLPI impossible: {exc}")
             return
 
+        # Traitements INTERROMPUS au cycle précédent (arrêt brutal après une écriture GLPI).
+        # Ces Tickets ne seront PAS rejoués — une seconde réponse publique au demandeur est
+        # bien pire qu'un Ticket laissé au triage humain. Mais le silence serait pire encore :
+        # on le dit en ERROR, avec les identifiants, pour que l'admin puisse vérifier GLPI.
+        try:
+            with self._session_factory() as session:
+                orphelins = idempotency.interrupted(session)
+            if orphelins:
+                logger.error(
+                    "poll: %d Ticket(s) au traitement INTERROMPU (arrêt brutal après une "
+                    "écriture GLPI ?) : %s — ils ne seront pas rejoués (aucun doublon de "
+                    "réponse). Vérifier leur état dans GLPI.",
+                    len(orphelins), ", ".join(str(t) for t in sorted(orphelins)[:20]),
+                )
+        except Exception:  # observabilité seulement : ne doit jamais empêcher un cycle
+            logger.exception("poll: lecture des traitements interrompus impossible")
+
         stats.fetched = len(tickets)
         scope_entities = self._cache.referentials.entities  # vide = toutes (défaut sûr)
         db_failures = 0  # échecs d'écriture CONSÉCUTIFS (circuit-breaker)
@@ -243,12 +265,42 @@ class TriagePoller:
                         stats.skipped_already_done += 1
                         continue
 
+                # RÉSERVATION avant toute écriture GLPI (fenêtre de doublon, cf.
+                # `ProcessedTicket`). Un arrêt brutal après l'écriture laisse désormais une
+                # trace locale : le Ticket ne sera pas rejoué, donc pas de seconde réponse
+                # publique au demandeur. Un échec de réservation NE DOIT PAS faire agir :
+                # on préfère reporter le Ticket plutôt que d'écrire dans GLPI à l'aveugle.
+                try:
+                    with self._session_factory() as session:
+                        idempotency.claim(session, ticket.id)
+                except Exception as exc:
+                    db_failures += 1
+                    stats.errors += 1
+                    logger.exception(
+                        "poll: réservation impossible pour le Ticket %s — aucun traitement "
+                        "lancé (le Ticket reste en file): %s", ticket.id, exc,
+                    )
+                    if db_failures >= MAX_CONSECUTIVE_DB_FAILURES:
+                        self._trip_breaker(stats, db_failures)
+                        return
+                    continue
+
                 outcome = HandlerOutcome()
                 if self._handler is not None:
                     outcome = _as_outcome(await self._handler(ticket, self._cache.referentials))
 
                 if not self._consume_ticket(ticket, outcome):
-                    # Triage non abouti et essais restants : on laisse le Ticket en file.
+                    # Triage non abouti et essais restants : on laisse le Ticket en file — il
+                    # faut donc RENDRE la réservation, sinon une panne LLM de trois secondes
+                    # brûlerait le Ticket définitivement (régression pire que le défaut visé).
+                    try:
+                        with self._session_factory() as session:
+                            idempotency.release(session, ticket.id)
+                    except Exception:
+                        logger.exception(
+                            "poll: réservation non rendue pour le Ticket %s — il ne sera pas "
+                            "rejoué tant qu'elle subsiste", ticket.id,
+                        )
                     if outcome.db_error:
                         db_failures += 1
                         if db_failures >= MAX_CONSECUTIVE_DB_FAILURES:
@@ -291,7 +343,24 @@ class TriagePoller:
                 # échoue en boucle, bug d'adaptateur) est elle aussi RE-FACTURÉE à chaque
                 # cycle : elle consomme donc un essai, exactement comme un triage non
                 # abouti. Sans ça, le Ticket resterait éternellement dans la file.
-                if self._handler is not None and _bump_attempt(ticket.id) >= MAX_TRIAGE_ATTEMPTS:
+                # RÉSERVATION : on la REND tant qu'il reste des essais, pour ne pas
+                # dégrader le rejeu borné existant. La distinction est délibérée —
+                #   * exception ATTRAPÉE ici = le processus est VIVANT, le comportement
+                #     historique (rejeu borné) reste le bon compromis ;
+                #   * arrêt BRUTAL (OOM, reboot, kill) = aucun code ne s'exécute, la
+                #     réservation survit en base et fait son office. C'est CETTE fenêtre-là
+                #     que le marquage en deux temps referme.
+                # Une fois les essais épuisés, la réservation est au contraire CONSERVÉE :
+                # le Ticket est abandonné, et son état GLPI reste incertain.
+                if self._handler is not None and _bump_attempt(ticket.id) < MAX_TRIAGE_ATTEMPTS:
+                    try:
+                        with self._session_factory() as session:
+                            idempotency.release(session, ticket.id)
+                    except Exception:
+                        logger.exception(
+                            "poll: réservation non rendue pour le Ticket %s", ticket.id
+                        )
+                if self._handler is not None and _attempts_count(ticket.id) >= MAX_TRIAGE_ATTEMPTS:
                     logger.error(
                         "poll: ticket %s abandonné après %d erreurs de traitement → marqué "
                         "« traité » pour ne plus être re-facturé.",
