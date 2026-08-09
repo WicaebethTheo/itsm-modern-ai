@@ -15,7 +15,7 @@ import respx
 from itsm_modern_ai.adapters.itsm.glpi.v2.client import token_endpoint
 from itsm_modern_ai.adapters.itsm.glpi.v2.connector import GlpiV2Connector
 from itsm_modern_ai.config.credentials import GlpiV2Credentials
-from itsm_modern_ai.domain.errors import ItsmAuthError, ItsmUnavailableError
+from itsm_modern_ai.domain.errors import ItsmAuthError, ItsmError, ItsmUnavailableError
 
 BASE = "https://glpi.test/api.php/v2.3"
 TOKEN = "https://glpi.test/api.php/token"
@@ -327,3 +327,67 @@ async def test_assign_actor_v2_sans_acteur_n_emet_rien():
         return_value=httpx.Response(200, json={}))
     await _connector().assign_actor(13)
     assert not team.called
+
+
+# ── Idempotence de assign_actor (défaut trouvé contre un GLPI 11 RÉEL) ────────────────
+# `POST TeamMember` sur un acteur déjà assigné répond 400 ERROR_INVALID_PARAMETER. Le cas
+# est courant : une règle GLPI pré-affecte un groupe sans poser de catégorie, le Ticket part
+# donc au moteur, se fait refuser, et le repli vise un groupe déjà présent.
+
+
+@respx.mock
+async def test_assign_actor_tolere_un_acteur_deja_assigne():
+    """L'état visé est ATTEINT : on rend la main, sans warning ni faux négatif."""
+    _token_route()
+    respx.post(f"{BASE}/Assistance/Ticket/12/TeamMember").mock(
+        return_value=httpx.Response(400, json={"status": "ERROR_INVALID_PARAMETER"})
+    )
+    respx.get(f"{BASE}/Assistance/Ticket/12/TeamMember").mock(
+        return_value=httpx.Response(200, json=[
+            {"role": "assigned", "id": 1, "type": "Group", "display_name": "SUPPORT N1"},
+        ])
+    )
+    await _connector().assign_actor(12, group_id=1)  # ne doit PAS lever
+
+
+@respx.mock
+async def test_assign_actor_releve_une_vraie_erreur():
+    """Si l'acteur n'est PAS présent, le 400 était une vraie faute : elle repart intacte.
+    Avaler un échec d'assignation en le déguisant en succès serait bien pire."""
+    _token_route()
+    respx.post(f"{BASE}/Assistance/Ticket/13/TeamMember").mock(
+        return_value=httpx.Response(400, json={"status": "ERROR_INVALID_PARAMETER"})
+    )
+    respx.get(f"{BASE}/Assistance/Ticket/13/TeamMember").mock(
+        return_value=httpx.Response(200, json=[{"role": "assigned", "id": 9, "type": "Group"}])
+    )
+    with pytest.raises(ItsmError):
+        await _connector().assign_actor(13, group_id=1)
+
+
+@respx.mock
+async def test_assign_actor_ne_relit_rien_sur_le_chemin_nominal():
+    """Le rattrapage ne doit coûter AUCUN appel supplémentaire quand tout va bien."""
+    _token_route()
+    respx.post(f"{BASE}/Assistance/Ticket/14/TeamMember").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    relecture = respx.get(f"{BASE}/Assistance/Ticket/14/TeamMember").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    await _connector().assign_actor(14, technician_id=11)
+    assert not relecture.called
+
+
+@respx.mock
+async def test_assign_actor_remonte_l_erreur_si_la_relecture_echoue():
+    """Relecture impossible (réseau, droits) → l'erreur d'origine, la vraie information."""
+    _token_route()
+    respx.post(f"{BASE}/Assistance/Ticket/15/TeamMember").mock(
+        return_value=httpx.Response(400, json={"status": "ERROR_INVALID_PARAMETER"})
+    )
+    respx.get(f"{BASE}/Assistance/Ticket/15/TeamMember").mock(
+        return_value=httpx.Response(500, text="boom")
+    )
+    with pytest.raises(ItsmError):
+        await _connector().assign_actor(15, group_id=1)
