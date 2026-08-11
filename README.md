@@ -9,11 +9,11 @@
 *The LLM proposes, the code decides — GLPI ticket triage with deterministic guardrails.*
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.9.57-blueviolet)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.10.0-blueviolet)](pyproject.toml)
 [![GHCR image](https://img.shields.io/badge/GHCR-image_publique-2496ED?logo=github&logoColor=white)](https://github.com/WicaebethTheo/itsm-modern-ai/pkgs/container/itsm-modern-ai)
 [![Docker multi-arch](https://img.shields.io/badge/docker-amd64_·_arm64-2496ED?logo=docker&logoColor=white)](docker-compose.portainer.yml)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-555_pytest_·_153_vitest-success)](https://docs.itsm-modern-ai.com)
+[![Tests](https://img.shields.io/badge/tests-596_pytest_·_153_vitest-success)](https://docs.itsm-modern-ai.com)
 [![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_par_défaut-6B46C1)](https://docs.itsm-modern-ai.com)
 
 [Déploiement](#déploiement) · [Comment ça marche](#comment-ça-marche) · [Documentation](https://docs.itsm-modern-ai.com) · [Site produit](https://itsm-modern-ai.com)
@@ -54,27 +54,52 @@ canal qui permet d'attraper un problème avant qu'il n'atteigne `latest`.
 curl -fsSL https://itsm-modern-ai.com/install | bash
 ```
 
-**Ou via Docker Compose** (à coller dans Portainer ou `docker compose up -d`) :
+**Ou via Docker Compose** (à coller dans Portainer ou `docker compose up -d`) — **deux services** : le moteur et sa base **PostgreSQL**, seule base supportée.
 
 ```yaml
 services:
   itsm:
     image: ghcr.io/wicaebeththeo/itsm-modern-ai:latest
+    depends_on:
+      postgres: { condition: service_healthy }   # une base qui démarre n'accepte pas encore de connexion
     ports: ["8000:8000"]
     environment:
-      ITSM_ADMIN_PASSWORD: change-me-min-8   # ≥ 8 car. — amorce l'admin au 1er boot
-      SESSION_HTTPS_ONLY: "false"            # true derrière un reverse proxy TLS
-    volumes: ["itsm_data:/app/data"]
+      ITSM_ADMIN_PASSWORD: change-me-min-8       # ≥ 8 car. — amorce l'admin au 1er boot
+      SESSION_HTTPS_ONLY: "false"                # true derrière un reverse proxy TLS
+      DATABASE_URL: postgresql+psycopg://itsm:change-me-too@postgres:5432/itsm
+    volumes: ["itsm_data:/app/data"]             # master.key + sauvegardes
+    restart: unless-stopped
+  postgres:
+    image: postgres:17-alpine                    # majeure ÉPINGLÉE — un bump n'est pas anodin
+    environment:
+      POSTGRES_USER: itsm
+      POSTGRES_PASSWORD: change-me-too           # doit correspondre à DATABASE_URL ci-dessus
+      POSTGRES_DB: itsm
+    volumes: ["itsm_pgdata:/var/lib/postgresql/data"]   # les données
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itsm -d itsm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 volumes:
   itsm_data:
+  itsm_pgdata:
 ```
 
-Console : **`http://HOST:8000`** · **Mise à jour :** `docker compose pull && docker compose up -d`.
+Console : **`http://HOST:8000`** · **Mise à jour :** `docker compose pull && docker compose up -d` (migrations Alembic appliquées au démarrage).
 
-**Sauvegarde** (avant toute mise à jour) : `docker compose exec itsm python -m itsm_modern_ai.backup` — copie à chaud, **vérifiée**, de la base **et** de la `master.key` sans laquelle une restauration est illisible.
+**Sauvegarde** (avant toute mise à jour) : `docker compose exec itsm python -m itsm_modern_ai.backup` — dump `pg_dump` **à chaud** et **relu intégralement** (structure + comptage des lignes), accompagné de la `master.key` sans laquelle une restauration est illisible. Ne copiez jamais le répertoire de données d'un serveur en marche : le cluster obtenu est incohérent.
 
-> ⚠️ Jamais `docker compose down -v` — `-v` supprime le volume `itsm_data` (données + clé de chiffrement).
+> ⚠️ Jamais `docker compose down -v` — `-v` supprime `itsm_data` (clé de chiffrement) **et** `itsm_pgdata` (toutes les données).
+
+**Ce que la base coûte, dit franchement :** un **second conteneur** à superviser et à mettre à
+jour, **~250 Mio de RAM** réservés pour lui (plafonné à 1 Gio par la stack durcie, contre 512 Mio
+pour le moteur), un **second volume** sans lequel une sauvegarde ne restaure rien, et une
+**majeure PostgreSQL épinglée** (17) dont la montée exigera un `pg_dump`/`pg_restore` — le
+répertoire de données d'une majeure n'est pas lisible par la suivante. Détail du coût, du gain et
+de la procédure : **[doc PostgreSQL](https://docs.itsm-modern-ai.com)**.
 
 Stack **durci** (caps, read-only, healthcheck) → [`docker-compose.portainer.yml`](docker-compose.portainer.yml) · `docker run`, **build local / hors-ligne (air-gap)** via [`install.sh`](install.sh) → **[doc déploiement](https://docs.itsm-modern-ai.com/production-deployment/)**.
 
@@ -87,7 +112,9 @@ Toutes optionnelles **sauf `ITSM_ADMIN_PASSWORD` au 1er boot**. Les clés LLM et
 | `ITSM_ADMIN_PASSWORD` | — | Mot de passe admin **amorcé au 1er boot** (≥ 8 car. ; alias accepté : `ADMIN_PASSWORD`). Idempotent, jamais écrasé, retirable ensuite. Sans lui : console **verrouillée** (*fail-closed*). |
 | `SESSION_HTTPS_ONLY` | `true` | Cookie de session `Secure`. Défaut code `true` ; les artefacts livrés (`.env` de l'installeur, compose Portainer) posent `false` pour le pilote HTTP (sinon login impossible). Repasser à `true` derrière un TLS. |
 | `ITSM_HOST_PORT` | `8000` | Port hôte publié (installeur / `docker-compose.portainer.yml`). |
-| `DATABASE_URL` | SQLite (volume) | Base. PostgreSQL : `postgresql+psycopg://user:pwd@host:5432/itsm`. |
+| `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` | `itsm` · `itsm` · `itsm` | Identifiants créés à l'**initialisation du cluster** (premier démarrage seulement — ensuite, `ALTER USER`). |
+| `ITSM_DATABASE_URL` | `postgresql+psycopg://itsm:itsm@postgres:5432/itsm` | URL de la base **sous compose** : les composes livrés la posent dans `environment:` sous le nom `DATABASE_URL`. Doit rester **cohérente** avec les trois variables ci-dessus. |
+| `DATABASE_URL` | `postgresql+psycopg://itsm:itsm@localhost:5432/itsm` | Lue directement par le moteur (hors compose : `docker run`, `make run`, `make migrate`). ⚠️ Sous compose, la valeur de `.env` est **écrasée** par le bloc `environment:` — utilisez `ITSM_DATABASE_URL`. |
 | `LICENSE_KEY` | *(vide)* | Clé Supporter (vide = Community ; collable aussi dans l'UI). |
 | `MASTER_KEY` | *(auto)* | Clé Fernet de chiffrement au repos ; générée dans le volume au 1er boot si vide. |
 | `TRUST_PROXY_HEADERS` | `false` | Lit `X-Forwarded-For` derrière un reverse proxy. |
@@ -122,7 +149,7 @@ Le pipeline est **immuable** : aucune action n'est appliquée à GLPI sans avoir
 - **Console DPO / RGPD** — catalogue des PII masquées, testeur de masquage, **export d'un rapport DPO** (Markdown).
 - **Coûts & quotas** — dépense LLM glissante sur 24 h vs plafond journalier.
 - **Multi-entités** — modes de triage par entité GLPI.
-- **Persistance** — SQLite par défaut, **PostgreSQL** prêt (profil compose dédié).
+- **Persistance** — **PostgreSQL** (seule base supportée), livrée comme service de la stack : sauvegarde à chaud vérifiée, migrations Alembic appliquées au démarrage.
 - **Sécurité par défaut** — conteneur non-root, fail-closed sur l'admin, rate-limit login, secrets chiffrés au repos.
 
 ---
@@ -156,20 +183,29 @@ Les features Supporter se déverrouillent **en place** par une **clé de licence
 
 | Couche | Technologies |
 |---|---|
-| **Backend** | Python 3.13+, FastAPI, SQLModel (SQLite → PostgreSQL-ready), Alembic, Pydantic v2, APScheduler, cryptography (Fernet), httpx |
+| **Backend** | Python 3.13+, FastAPI, SQLModel + **PostgreSQL 17** (psycopg 3), Alembic, Pydantic v2, APScheduler, cryptography (Fernet), httpx |
 | **Frontend** | React 19, Vite 6, Tailwind v4, React Router 7, i18n FR/EN |
 | **Qualité** | ruff, Biome, pytest + respx, Vitest + Testing Library, Playwright |
-| **Infra** | Docker multi-stage, image GHCR multi-arch, conteneur non-root, volume nommé `itsm_data` |
+| **Infra** | Docker multi-stage, image GHCR multi-arch, conteneur non-root, service `postgres:17-alpine`, volumes nommés `itsm_data` + `itsm_pgdata` |
 
 ---
 
 ## Développement local
 
+**Il faut un PostgreSQL joignable** — pour lancer le moteur *et* pour lancer les tests (la suite
+crée un schéma jetable par test). Le plus simple, un serveur jetable sur un port décalé :
+
 ```bash
-make install     # venv (uv) + deps Python
-make migrate     # alembic upgrade head
+docker run -d --name itsm-test-pg -p 55432:5432 \
+  -e POSTGRES_USER=itsm -e POSTGRES_PASSWORD=itsm -e POSTGRES_DB=itsm postgres:17-alpine
+```
+
+```bash
+make install     # venv (uv) + deps Python (psycopg inclus — plus d'extra à ajouter)
+make migrate     # alembic upgrade head   (lit DATABASE_URL, défaut localhost:5432)
 make ui          # build de la SPA (requiert Node 24 LTS)
 make run         # uvicorn + scheduler → http://localhost:8000
+make test        # pytest (exige un serveur ; TEST_DATABASE_URL, défaut localhost:55432)
 
 make ui-dev      # frontend hot-reload (proxy /api → :8000) → http://localhost:5173
 ```
@@ -182,7 +218,7 @@ make ui-dev      # frontend hot-reload (proxy /api → :8000) → http://localho
 
 📖 **Toute la documentation est en ligne : [docs.itsm-modern-ai.com](https://docs.itsm-modern-ai.com)**
 
-Déploiement on-prem, architecture (pipeline immuable), connecteurs GLPI (legacy + V2), fournisseurs LLM & souveraineté, portage PostgreSQL, modes d'exécution, fiche DPO/RGPD, référence API, et guide **[Supporter](https://docs.itsm-modern-ai.com/supporter/)**.
+Déploiement on-prem, architecture (pipeline immuable), connecteurs GLPI (legacy + V2), fournisseurs LLM & souveraineté, base PostgreSQL (exploitation, sauvegarde, bump de majeure), modes d'exécution, fiche DPO/RGPD, référence API, et guide **[Supporter](https://docs.itsm-modern-ai.com/supporter/)**.
 
 ---
 

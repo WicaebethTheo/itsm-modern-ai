@@ -18,10 +18,10 @@ from itsm_modern_ai.config.settings import Settings
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(db_url, tmp_path):
     settings = Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'i.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=True,

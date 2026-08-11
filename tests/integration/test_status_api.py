@@ -27,11 +27,11 @@ ENRICHED_FIELDS = {
 }
 
 
-def _settings(tmp_path, **kw) -> Settings:
+def _settings(db_url, **kw) -> Settings:
     kw.setdefault("session_https_only", False)  # TestClient = http → cookie non-Secure
     return Settings(
         _env_file=None,  # isole du .env ambiant
-        database_url=f"sqlite:///{tmp_path / 'st.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         **kw,
@@ -39,8 +39,8 @@ def _settings(tmp_path, **kw) -> Settings:
 
 
 @pytest.fixture
-def secured_client(tmp_path):
-    with TestClient(create_app(_settings(tmp_path, admin_password="s3cret-pilote"))) as c:
+def secured_client(db_url):
+    with TestClient(create_app(_settings(db_url, admin_password="s3cret-pilote"))) as c:
         yield c
 
 
@@ -65,10 +65,10 @@ def test_authenticated_status_is_enriched(secured_client):
     assert body["cost_cap_eur_per_day"] == 5.0
 
 
-def test_status_stays_200_when_fail_closed(tmp_path):
+def test_status_stays_200_when_fail_closed(db_url):
     """Fail-closed (pas de mot de passe, pas de dev_open) : l'installeur doit toujours
     obtenir un 200 public — seul l'enrichissement est refusé."""
-    with TestClient(create_app(_settings(tmp_path, dev_open_admin=False))) as c:
+    with TestClient(create_app(_settings(db_url, dev_open_admin=False))) as c:
         r = c.get("/api/status")
         assert r.status_code == 200
         assert ENRICHED_FIELDS.isdisjoint(r.json().keys())
@@ -91,13 +91,13 @@ def test_status_reflects_runtime_polling_overrides(secured_client):
     assert body["polling_interval_seconds"] == 120
 
 
-def test_status_and_metrics_reflect_runtime_cost_cap(tmp_path):
+def test_status_and_metrics_reflect_runtime_cost_cap(db_url):
     """Le plafond affiché (status + /api/metrics) est la valeur RUNTIME lue par le moteur
     (api/runtime.py), pas la seule valeur d'environnement."""
     from itsm_modern_ai.persistence import db
     from itsm_modern_ai.services.runtime_config import RuntimeConfigService
 
-    with TestClient(create_app(_settings(tmp_path, dev_open_admin=True))) as c:
+    with TestClient(create_app(_settings(db_url, dev_open_admin=True))) as c:
         with db.session_scope() as s:
             RuntimeConfigService(s, c.app.state.secrets_box, c.app.state.settings).set(
                 "cost_cap_eur_per_day", "9.5"

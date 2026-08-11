@@ -25,12 +25,12 @@ def _use_test_publisher_key(monkeypatch):
     monkeypatch.setattr(licensing, "PUBLISHER_PUBLIC_KEY_HEX", TEST_PUBLIC_KEY_HEX)
 
 
-def _settings(tmp_path, **kw) -> Settings:
+def _settings(db_url, **kw) -> Settings:
     kw.setdefault("dev_open_admin", True)
     kw.setdefault("session_https_only", False)
     return Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'lic.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         **kw,
@@ -38,8 +38,8 @@ def _settings(tmp_path, **kw) -> Settings:
 
 
 @pytest.fixture
-def client(tmp_path):
-    with TestClient(create_app(_settings(tmp_path))) as c:
+def client(db_url):
+    with TestClient(create_app(_settings(db_url))) as c:
         yield c
 
 
@@ -93,9 +93,9 @@ def test_delete_license_returns_to_community(client):
 
 # ── M10 : DELETE doit re-verrouiller MÊME quand LICENSE_KEY est en env ────────
 @pytest.fixture
-def client_env_licensed(tmp_path):
+def client_env_licensed(db_url):
     # Instance pré-licenciée via l'env LICENSE_KEY (image pré-licenciée).
-    with TestClient(create_app(_settings(tmp_path, license_key=VALID))) as c:
+    with TestClient(create_app(_settings(db_url, license_key=VALID))) as c:
         yield c
 
 

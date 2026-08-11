@@ -90,7 +90,10 @@ jobs:
       #
       #   --frozen          : lit uv.lock tel quel, sans le régénérer (échoue si le
       #                       lock a dérivé de pyproject → on audite bien ce qui ship) ;
-      #   --all-extras      : inclut `postgres` et `dev`, comme ci.yml et GitLab ;
+      #   --all-extras      : inclut `dev`, comme ci.yml et GitLab. (Il n'y a plus d'extra
+      #                       `postgres` : PostgreSQL étant la seule base supportée, le
+      #                       driver psycopg est une dépendance de base, donc audité
+      #                       d'office — l'audit ne perd rien à la disparition de l'extra) ;
       #   --no-emit-project : exclut le paquet local `itsm-modern-ai` lui-même (il n'a
       #                       pas d'avis PyPI ; sans ce drapeau pip-audit s'étrangle
       #                       sur une distribution introuvable) ;

@@ -15,6 +15,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import Depends, FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
+from ..adapters.secrets.encrypted import MasterKeyGuardError
 from ..config.settings import Settings, get_settings
 from ..persistence import db
 from ..scheduler.poller import TriagePoller
@@ -116,12 +117,8 @@ async def _run_purge_cycle(app: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings: Settings = app.state.settings
-    db.init_engine(
-        settings.database_url,
-        pool_size=settings.db_pool_size,
-        max_overflow=settings.db_max_overflow,
-        pool_pre_ping=settings.db_pool_pre_ping,
-    )
+    # Le moteur est déjà ouvert par `create_app` (cf. le commentaire d'ordre d'amorçage
+    # là-bas) : il ne reste qu'à matérialiser les tables d'un premier démarrage.
     db.create_all()  # Alembic reste la source de vérité pour les évolutions
     app.state.secrets_box = make_secrets_box(settings)
     app.state.whitelist_cache = WhitelistCache()
@@ -219,6 +216,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
 
+    # ⚠️ ORDRE D'AMORÇAGE — NE PAS DÉPLACER SOUS LA BOÎTE À SECRETS.
+    # La toute première boîte à secrets est construite quelques lignes plus bas (secret de
+    # session). Or `FernetSecretsBox` refuse de générer une clé maître par-dessus des secrets
+    # déjà chiffrés (`MasterKeyLostError`), et il ne peut le savoir qu'en INTERROGEANT la base
+    # (`db.has_encrypted_secrets`). Moteur fermé = réponse « indéterminé » = garde-fou muet :
+    # on regénérerait une clé et l'exploitant perdrait DÉFINITIVEMENT hash admin, tokens GLPI
+    # et clé LLM, en démarrant « au vert ». `create_engine` n'ouvre aucune connexion ici, ce
+    # n'est donc pas un accès base au moment de la construction de l'app.
+    db.init_engine(
+        settings.database_url,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_pre_ping=settings.db_pool_pre_ping,
+    )
+
     # Limiteur anti brute-force du login (en mémoire, par IP — FR-24 durci).
     app.state.login_limiter = LoginRateLimiter(
         max_attempts=settings.login_max_attempts,
@@ -234,6 +246,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # (clé éphémère) si la dérivation échoue, jamais le cas nominal.
     try:
         session_secret = make_secrets_box(settings).derive_key(b"session-signing").hex()
+    except MasterKeyGuardError:
+        # Le garde-fou de la clé maître doit rester FAIL-FAST : l'avaler ici ferait démarrer
+        # l'instance sur un secret éphémère, en masquant précisément le diagnostic (et les
+        # remèdes) que l'exception porte. Vaut pour ses DEUX cas — clé perdue par-dessus des
+        # secrets existants (`MasterKeyLostError`) ET base injoignable, donc question sans
+        # réponse (`MasterKeyUndeterminedError`). Attraper seulement le premier laissait le
+        # second tomber dans le `except Exception` ci-dessous, qui démarrait quand même.
+        raise
     except Exception:  # pragma: no cover - filet défensif
         logger.warning("dérivation du secret de session échouée — secret éphémère (sessions volatiles)")
         session_secret = _secrets.token_urlsafe(32)

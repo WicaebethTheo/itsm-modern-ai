@@ -95,7 +95,7 @@
       "groupName": "GitHub Actions"
     },
     {
-      "description": "GROUPE 5 — images de base Docker (node:24-slim, postgres:16-alpine, ghcr.io/astral-sh/uv) en non majeur. Les MAJEURES sortent en PR individuelles, car aucune n'est un simple bump : node ne doit passer qu'à une ligne LTS (26 ne l'est qu'au 2026-10-28) et en même temps que `actions/setup-node` ; postgres impose une migration de cluster (`pg_dump`/restauration, cf. l'avertissement dans docker-compose.yml).",
+      "description": "GROUPE 5 — images de base Docker (node:24-slim, postgres:17-alpine, ghcr.io/astral-sh/uv) en non majeur. Les MAJEURES sortent en PR individuelles, car aucune n'est un simple bump : node ne doit passer qu'à une ligne LTS (26 ne l'est qu'au 2026-10-28) et en même temps que `actions/setup-node` ; postgres impose une migration de cluster (`pg_dump`/restauration, cf. l'avertissement dans docker-compose.yml).",
       "matchDatasources": ["docker"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "Docker base images"

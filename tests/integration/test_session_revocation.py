@@ -20,12 +20,12 @@ from itsm_modern_ai.config.settings import Settings
 PASSWORD = "s3cret-pilote"
 
 
-def _settings(tmp_path, **kw) -> Settings:
+def _settings(db_url, tmp_path, **kw) -> Settings:
     kw.setdefault("session_https_only", False)  # TestClient = http → cookie non-Secure
     kw.setdefault("dev_open_admin", False)
     return Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'sess.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         frontend_dist=str(tmp_path / "dist"),
@@ -34,8 +34,8 @@ def _settings(tmp_path, **kw) -> Settings:
 
 
 @pytest.fixture
-def secured(tmp_path):
-    with TestClient(create_app(_settings(tmp_path, admin_password=PASSWORD))) as c:
+def secured(db_url, tmp_path):
+    with TestClient(create_app(_settings(db_url, tmp_path, admin_password=PASSWORD))) as c:
         yield c
 
 
@@ -62,7 +62,7 @@ def test_cookie_replay_after_logout_is_rejected(secured):
     assert secured.get("/api/auth/status").json()["authenticated"] is False
 
 
-def test_cookie_replay_after_password_change_is_rejected(secured, tmp_path):
+def test_cookie_replay_after_password_change_is_rejected(secured):
     """Changer le mot de passe admin invalide les sessions déjà émises."""
     from itsm_modern_ai.admin_setup import set_admin_password
     from itsm_modern_ai.persistence import db
@@ -86,33 +86,33 @@ def test_cookie_replay_after_password_change_is_rejected(secured, tmp_path):
     assert secured.get("/api/decisions").status_code == 200
 
 
-def test_anonymous_logout_does_not_revoke_admin_session(tmp_path):
+def test_anonymous_logout_does_not_revoke_admin_session(db_url, tmp_path):
     """`/api/auth/logout` est public : un anonyme ne doit pas pouvoir déconnecter l'admin.
 
     Sinon la révocation devient un déni de service trivial (marteler le POST).
     """
-    app = create_app(_settings(tmp_path, admin_password=PASSWORD))
+    app = create_app(_settings(db_url, tmp_path, admin_password=PASSWORD))
     with TestClient(app) as admin, TestClient(app) as anon:
         assert admin.post("/api/auth/login", json={"password": PASSWORD}).status_code == 200
         assert anon.post("/api/auth/logout").status_code == 200  # sans session
         assert admin.get("/api/decisions").status_code == 200  # l'admin reste connecté
 
 
-def test_dev_open_admin_still_works_without_session(tmp_path):
+def test_dev_open_admin_still_works_without_session(db_url, tmp_path):
     """Non-régression : le mode labo (aucun mot de passe + dev_open_admin) reste ouvert."""
-    with TestClient(create_app(_settings(tmp_path, dev_open_admin=True))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path, dev_open_admin=True))) as c:
         assert c.get("/api/decisions").status_code == 200
         assert c.get("/api/auth/status").json()["authenticated"] is True
 
 
 # ── 2. Politique de mot de passe appliquée à l'amorçage paresseux ──────────────
-def test_short_admin_password_is_refused_and_leaves_fail_closed(tmp_path):
+def test_short_admin_password_is_refused_and_leaves_fail_closed(db_url, tmp_path):
     """Un ADMIN_PASSWORD trop court est REFUSÉ : admin non configuré → accès refusé.
 
     (Le log ERROR associé est vérifié en unitaire — `tests/unit/test_admin_setup.py` —
     car `create_app` reconfigure le logging et détache le handler de capture pytest.)
     """
-    with TestClient(create_app(_settings(tmp_path, admin_password="x"))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path, admin_password="x"))) as c:
         # Le mot de passe d'un caractère n'ouvre RIEN (il ouvrait un 200 avant).
         assert c.post("/api/auth/login", json={"password": "x"}).status_code == 401
         body = c.get("/api/auth/status").json()
@@ -121,23 +121,23 @@ def test_short_admin_password_is_refused_and_leaves_fail_closed(tmp_path):
         assert c.get("/api/decisions").status_code == 401
 
 
-def test_refused_password_is_not_stored_as_hash(tmp_path):
+def test_refused_password_is_not_stored_as_hash(db_url, tmp_path):
     """Rien ne doit être écrit en base : sinon le mot de passe court deviendrait permanent."""
     from itsm_modern_ai.api.security import HASH_KEY
     from itsm_modern_ai.persistence import db
     from itsm_modern_ai.services.runtime_config import RuntimeConfigService
 
-    with TestClient(create_app(_settings(tmp_path, admin_password="court"))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path, admin_password="court"))) as c:
         c.post("/api/auth/login", json={"password": "court"})
         with db.session_scope() as s:
             cfg = RuntimeConfigService(s, c.app.state.secrets_box, c.app.state.settings)
             assert cfg.is_secret_set(HASH_KEY) is False
 
 
-def test_password_at_minimum_length_is_accepted(tmp_path):
+def test_password_at_minimum_length_is_accepted(db_url, tmp_path):
     """Borne exacte : MIN_ADMIN_CHARS caractères passent (pas de décalage d'un cran)."""
     from itsm_modern_ai.api.security import MIN_ADMIN_CHARS
 
     pw = "a" * MIN_ADMIN_CHARS
-    with TestClient(create_app(_settings(tmp_path, admin_password=pw))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path, admin_password=pw))) as c:
         assert c.post("/api/auth/login", json={"password": pw}).status_code == 200

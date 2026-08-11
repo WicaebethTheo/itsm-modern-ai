@@ -6,8 +6,9 @@ ITSM Modern AI est un **moteur de triage IA des tickets GLPI**, *on-premise* et 
 Principe non négociable : **le LLM propose, le code valide et décide.** Le modèle ne reçoit
 jamais les clés de votre GLPI ; chaque action est bornée par du code déterministe.
 
-- **Mono-conteneur** : Python/FastAPI sert l'API **et** l'UI React sur le port `8000`.
-- **Aucune dépendance lourde** : base **SQLite** + secrets chiffrés (Fernet) dans le volume `./data`. Pas de Postgres, pas de Redis requis.
+- **Un seul conteneur applicatif** : Python/FastAPI sert l'API **et** l'UI React sur le port `8000`. Aucun serveur Node au runtime.
+- **Deux services, pas un** : le moteur **et** sa base **PostgreSQL**, seule base supportée. C'est le coût assumé de l'abandon de SQLite (mono-writer, sauvegarde à chaud incertaine) : un conteneur de plus à superviser, **~250 Mio de RAM** réservés pour lui (dimensionner à ~1,5 Gio pour la stack), **deux volumes** à sauvegarder ensemble, et une **majeure PostgreSQL épinglée** (17) qu'il faudra migrer un jour par `pg_dump`/`pg_restore`. Rien d'autre en revanche : pas de Redis, pas de broker, pas de service externe. Ce que ça coûte et ce que ça apporte : [`docs/postgresql.md`](postgresql.md).
+- **Secrets chiffrés** (Fernet) : la `master.key` vit dans le volume applicatif, les données dans celui de la base.
 - **Open-core (édition unique)** : tout le code est livré dans une **seule image** (MIT) ; une **licence Supporter** (Ed25519 hors-ligne) débloque **en place** des fonctions avancées — **sans réinstallation ni swap d'image**.
 
 ---
@@ -17,25 +18,32 @@ jamais les clés de votre GLPI ; chaque action est bornée par du code détermin
 ```mermaid
 flowchart LR
     U["👤 Opérateur ITSM<br/>(navigateur)"] -->|HTTPS| RP["Reverse proxy + TLS<br/>(nginx / Caddy / Traefik)"]
-    RP -->|"HTTP 127.0.0.1:8000"| C
+    RP -->|"HTTP 127.0.0.1:8000"| API
 
-    subgraph C["Conteneur ITSM Modern AI (port 8000)"]
-        API["FastAPI<br/>API + SPA React"]
-        SCH["Planificateur<br/>(polling)"]
-        DB[("SQLite + secrets<br/>chiffrés Fernet")]
-        API --- DB
-        SCH --- DB
+    subgraph STACK["Stack Docker — réseau privé"]
+        subgraph C["Conteneur moteur (port 8000)"]
+            API["FastAPI<br/>API + SPA React"]
+            SCH["Planificateur<br/>(polling)"]
+        end
+        subgraph P["Conteneur PostgreSQL 17<br/>(aucun port publié)"]
+            DB[("Base itsm<br/>+ secrets chiffrés Fernet")]
+        end
+        API -->|"SQL (psycopg)"| DB
+        SCH -->|"SQL (psycopg)"| DB
     end
 
     SCH <-->|"API REST<br/>(App+User-Token / OAuth2)"| GLPI["🎫 GLPI<br/>(votre instance)"]
     SCH -->|"texte masqué (PII)"| LLM["🧠 Fournisseur LLM<br/>Mistral EU · OpenAI · Anthropic · Ollama (local)"]
 
-    V[("Volume ./data<br/>(persistant)")] -.-> DB
+    VD[("Volume itsm_data<br/>master.key + sauvegardes")] -.-> C
+    VP[("Volume itsm_pgdata<br/>données du cluster")] -.-> P
 ```
 
 **À retenir :**
-- Le conteneur n'est **jamais** exposé directement : on le place derrière un reverse proxy qui termine le TLS (le conteneur écoute en loopback / réseau privé).
-- Les secrets (tokens GLPI, clé API LLM) sont saisis **dans la console**, jamais dans `.env`, et stockés **chiffrés** dans `./data`.
+- Le moteur n'est **jamais** exposé directement : on le place derrière un reverse proxy qui termine le TLS (le conteneur écoute en loopback / réseau privé).
+- La **base ne publie aucun port** : elle n'est joignable que depuis le réseau de la stack. L'exposer sur l'hôte n'offrirait qu'un service d'authentification de plus à un attaquant.
+- **Deux volumes, deux rôles.** `itsm_data` porte la `master.key` (et les sauvegardes) ; `itsm_pgdata` porte les données. **L'un sans l'autre ne restaure rien** : sans la clé, la base est illisible. Depuis les sources, ces deux volumes sont deux dossiers — `./data` et `./data/postgres`.
+- Les secrets (tokens GLPI, clé API LLM) sont saisis **dans la console**, jamais dans `.env`, et stockés **chiffrés en base**.
 - Avec **Ollama**, aucune donnée ne quitte votre réseau.
 
 ---
@@ -90,7 +98,8 @@ flowchart TD
 - **Docker Engine** + **Compose v2** (`docker compose version`).
 - Une instance **GLPI** joignable (API REST legacy `apirest.php` activée, ou API V2 OAuth2 en Beta).
 - Une clé **Mistral** (défaut souverain UE), une autre clé cloud supportée, **ou** **Ollama** local.
-- ~1 Go de disque libre.
+- **~1,5 Gio de RAM** et ~2 Gio de disque libre (réservations : 128 Mio pour le moteur, 256 Mio pour la base ; plafonds : 512 Mio et 1 Gio).
+- **Rien à installer côté base** : le service PostgreSQL fait partie de la stack. En airgap, penser à transférer **aussi** l'image `postgres:17-alpine` (cf. [`install.md`](install.md#depuis-les-sources--hors-ligne-airgap-build-local)).
 
 ### Procédure (voie recommandée : image GHCR « pull-only »)
 
@@ -105,7 +114,8 @@ curl -fsSL https://itsm-modern-ai.com/install | bash
 # (b) Portainer / orchestrateur : coller docker-compose.portainer.yml
 #     + définir ITSM_ADMIN_PASSWORD (≥ 8 car.) dans le stack.
 
-# (c) docker run durci : volume nommé itsm_data + ITSM_ADMIN_PASSWORD.
+# (c) docker run durci : réseau dédié + conteneur postgres:17-alpine +
+#     deux volumes (itsm_data, itsm_pgdata) + ITSM_ADMIN_PASSWORD.
 ```
 
 Le **mot de passe admin** est **amorcé au premier démarrage** depuis `ITSM_ADMIN_PASSWORD`
@@ -126,14 +136,18 @@ sequenceDiagram
     actor Op as Opérateur
     participant Sh as install.sh
     participant Dk as Docker Compose
-    participant Ct as Conteneur ITSM
+    participant Pg as Conteneur PostgreSQL
+    participant Ct as Conteneur moteur
     participant Data as ./data
 
     Op->>Sh: ./install.sh
-    Sh->>Sh: préflight (docker, ports, RAM)
+    Sh->>Sh: préflight (docker, compose, port, disque)
     Sh->>Sh: cp .env.example .env + chmod 600
     Sh->>Dk: docker compose up -d --build
-    Dk->>Ct: démarre le mono-conteneur
+    Dk->>Pg: démarre la base (initdb au 1er boot)
+    Pg->>Data: crée le cluster dans ./data/postgres
+    Dk->>Ct: démarre le moteur (une fois la base « healthy »)
+    Ct->>Pg: attente bornée, puis alembic upgrade head
     Ct->>Data: génère MASTER_KEY (1er démarrage)
     Sh->>Op: demande le mot de passe admin (saisie masquée)
     Op-->>Sh: mot de passe
@@ -163,9 +177,12 @@ flowchart LR
 > sans **aucune** écriture GLPI, utilisez le **Bac à sable** (`/api/sandbox`).
 
 ### Mise en production
-- Toujours derrière un **reverse proxy + TLS** (le conteneur n'est pas exposé en direct).
-- Sauvegarder le volume **`./data`** (config, journal, secrets chiffrés) **et** `MASTER_KEY` séparément. *Perdre `MASTER_KEY` ou `./data` = secrets irrécupérables.*
-- Mise à jour (image GHCR) : `docker compose pull && docker compose up -d` (migrations auto, volume `itsm_data` préservé — **jamais `docker compose down -v`**). Voie sources : relancer `./install.sh` (menu **Mettre à jour / Réinstaller**, sauvegarde `./data` incluse) ; non-interactif : `./install.sh --update`.
+- Toujours derrière un **reverse proxy + TLS** (le moteur n'est pas exposé en direct).
+- **Changer le mot de passe de la base avant le tout premier démarrage** (`POSTGRES_PASSWORD` **et** `ITSM_DATABASE_URL`, mêmes valeurs). Ensuite, il faudrait un `ALTER USER`.
+- **Sauvegarder avec la commande livrée**, pas en copiant des fichiers : `docker compose exec itsm python -m itsm_modern_ai.backup` produit un dump `pg_dump` **vérifié** + la `master.key`, et sort en erreur plutôt que de laisser une sauvegarde douteuse. Copier `data/postgres` d'un serveur **en marche** produit un cluster incohérent, qu'on ne découvre irrécupérable que le jour de la restauration. *Perdre `MASTER_KEY` = secrets irrécupérables, même avec la base.*
+- **Sortir les sauvegardes de l'hôte** : elles sont écrites dans le volume, qu'un incident emporte avec elles.
+- Mise à jour (image GHCR) : `docker compose pull && docker compose up -d` (migrations auto, volumes `itsm_data` **et** `itsm_pgdata` préservés — **jamais `docker compose down -v`**). Voie sources : relancer `./install.sh` (menu **Mettre à jour / Réinstaller**, sauvegarde automatique et bloquante incluse) ; non-interactif : `./install.sh --update` ; retour arrière complet : `./install.sh --rollback [horodatage]` (il **écrase** la base : il faut **taper** l'horodatage pour confirmer — `Entrée` et `--yes` ne suffisent pas, et sans terminal il faut le déclarer par `ITSM_ROLLBACK_CONFIRME=<horodatage>`).
+- ⚠️ **Ne bumpez jamais la majeure PostgreSQL « pour être à jour ».** Le tag `postgres:17-alpine` reçoit les correctifs mineurs et de sécurité : la laisser figée n'est **pas** rester sans correctifs. En revanche, le répertoire de données d'un cluster 17 est **illisible** par une majeure supérieure : le conteneur refuserait de démarrer et boucherait en restart. Passer à 18+ est une **opération planifiée** — dumper, recréer le cluster, restaurer, et faire suivre le client `postgresql-client-17` de l'image du moteur (les deux majeures bougent ensemble). Procédure : [`docs/postgresql.md`](postgresql.md#7-la-majeure-17-est-épinglée--ne-la-bumpez-pas-à-la-légère).
 
 ---
 
@@ -202,7 +219,7 @@ flowchart TD
 ## 5. Devenir Supporter (depuis la page Supporter)
 
 Édition unique : pas de second déploiement, **pas de swap d'image**. On garde **la même
-image** et **le même `./data`** ; on **colle simplement une clé de licence dans la page
+image**, la **même base** et la **même `master.key`** ; on **colle simplement une clé de licence dans la page
 Supporter** de la console. Réversible : retirer la clé sur cette même page revient à Community.
 
 1. Ouvrez la console et allez sur la page **Supporter**.
@@ -214,7 +231,7 @@ sequenceDiagram
     actor Op as Opérateur
     participant UI as Page Supporter (console)
     participant Eng as Moteur (vérif Ed25519)
-    participant Data as ./data (inchangé)
+    participant DB as Base PostgreSQL (config runtime)
 
     Op->>UI: colle la clé de licence
     UI->>Eng: vérifie la licence HORS-LIGNE
@@ -222,13 +239,13 @@ sequenceDiagram
     alt clé invalide
         Eng-->>Op: ❌ refusée (rien n'est stocké, rien ne change)
     else clé valide
-        Eng->>Data: stocke la clé (config chiffrée)
+        Eng->>DB: stocke la clé dans la config runtime (chiffrée Fernet)
         Eng-->>Op: ✅ Supporter actif (fonctions débloquées en place)
     end
 ```
 
 **Garanties :**
-- **Données conservées** : même volume `./data` → aucune reconfiguration, aucun secret à ressaisir.
+- **Données conservées** : même base, même `master.key`, mêmes volumes → aucune reconfiguration, aucun secret à ressaisir. Aucune migration de schéma : les fonctions Supporter n'ajoutent aucune table.
 - **Sûre** : la licence est validée **avant** stockage ; une clé invalide n'est pas enregistrée.
 - **Réversible** : retirez la clé sur la page Supporter → re-verrouillage immédiat (retour Community).
 
@@ -239,7 +256,7 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> Community
-    Community --> Supporter: coller la clé (page Supporter)<br/>(même image, même ./data)
+    Community --> Supporter: coller la clé (page Supporter)<br/>(même image, même base, mêmes volumes)
     Supporter --> Community: retirer la clé (page Supporter)
     note right of Supporter
         Masquage avancé débloqué
@@ -251,7 +268,7 @@ stateDiagram-v2
 
 ## 6. Souveraineté & confidentialité (résumé)
 
-- **Hébergement** : 100 % chez vous (mono-conteneur). Aucun backend éditeur dont vous dépendez.
+- **Hébergement** : 100 % chez vous (moteur + base, rien d'autre). Aucun backend éditeur dont vous dépendez.
 - **Données** : avec Ollama, le contenu ne quitte **jamais** votre réseau ; avec Mistral, il reste sur une infrastructure **UE**.
 - **Masquage PII** appliqué **avant** tout appel LLM (portée selon la licence).
 - **Sorties réseau** : le fournisseur LLM configuré, votre GLPI, et — seule sortie

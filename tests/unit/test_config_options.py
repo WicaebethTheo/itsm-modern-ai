@@ -41,10 +41,10 @@ def test_guidance_injected_in_prompt():
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(db_url):
     settings = Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'cfg.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=True,  # admin sans mot de passe (test) — fail-closed désactivé

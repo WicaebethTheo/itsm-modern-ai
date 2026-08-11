@@ -14,12 +14,12 @@ from itsm_modern_ai.api.app import create_app
 from itsm_modern_ai.config.settings import Settings
 
 
-def _settings(tmp_path, **kw) -> Settings:
+def _settings(db_url, **kw) -> Settings:
     kw.setdefault("dev_open_admin", True)
     kw.setdefault("session_https_only", False)  # posture pilote HTTP (livrée par défaut)
     return Settings(
         _env_file=None,  # isole du .env ambiant
-        database_url=f"sqlite:///{tmp_path / 'hdr.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         **kw,
@@ -35,8 +35,8 @@ def _fake_dist(tmp_path):
 
 
 @pytest.fixture
-def client(tmp_path):
-    settings = _settings(tmp_path, frontend_dist=str(_fake_dist(tmp_path)))
+def client(db_url, tmp_path):
+    settings = _settings(db_url, frontend_dist=str(_fake_dist(tmp_path)))
     with TestClient(create_app(settings)) as c:
         yield c
 
@@ -70,17 +70,17 @@ def test_hsts_absent_on_http_pilot(client):
     assert "Strict-Transport-Security" not in client.get("/").headers
 
 
-def test_hsts_present_behind_tls(tmp_path):
-    settings = _settings(tmp_path, session_https_only=True)
+def test_hsts_present_behind_tls(db_url):
+    settings = _settings(db_url, session_https_only=True)
     with TestClient(create_app(settings)) as c:
         hsts = c.get("/api/status").headers.get("Strict-Transport-Security", "")
         assert "max-age=" in hsts
 
 
-def test_docs_html_exempt_from_csp(tmp_path):
+def test_docs_html_exempt_from_csp(db_url):
     # /docs (Swagger, monté en dev via EXPOSE_API_DOCS) charge un CDN + script inline :
     # la CSP SPA le casserait — exempté, mais les autres en-têtes restent posés.
-    settings = _settings(tmp_path, expose_api_docs=True)
+    settings = _settings(db_url, expose_api_docs=True)
     with TestClient(create_app(settings)) as c:
         r = c.get("/docs")
         assert r.status_code == 200
@@ -88,8 +88,8 @@ def test_docs_html_exempt_from_csp(tmp_path):
         assert r.headers["X-Content-Type-Options"] == "nosniff"
 
 
-def test_metrics_endpoint_not_broken(tmp_path):
-    settings = _settings(tmp_path, metrics_enabled=True)
+def test_metrics_endpoint_not_broken(db_url):
+    settings = _settings(db_url, metrics_enabled=True)
     with TestClient(create_app(settings)) as c:
         r = c.get("/metrics")
         assert r.status_code == 200

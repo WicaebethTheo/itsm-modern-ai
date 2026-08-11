@@ -11,10 +11,10 @@ from itsm_modern_ai.config.settings import Settings
 from itsm_modern_ai.domain.models import Referentials
 
 
-def _settings(tmp_path, **kw) -> Settings:
+def _settings(db_url, **kw) -> Settings:
     return Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 't.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=True,  # admin sans mot de passe (test) — fail-closed désactivé
@@ -23,8 +23,8 @@ def _settings(tmp_path, **kw) -> Settings:
 
 
 @pytest.fixture
-def client(tmp_path):
-    with TestClient(create_app(_settings(tmp_path))) as c:
+def client(db_url):
+    with TestClient(create_app(_settings(db_url))) as c:
         yield c
 
 
@@ -97,17 +97,17 @@ def test_operational_metrics_unavailable_without_glpi(client):
     assert body["available"] is False and body["metrics"] is None
 
 
-def test_root_reports_ui_not_built_when_no_dist(tmp_path):
-    settings = _settings(tmp_path, frontend_dist=str(tmp_path / "nodist"))
+def test_root_reports_ui_not_built_when_no_dist(db_url, tmp_path):
+    settings = _settings(db_url, frontend_dist=str(tmp_path / "nodist"))
     with TestClient(create_app(settings)) as c:
         r = c.get("/")
         assert r.status_code == 200 and r.json()["code"] == "ui_not_built"
 
 
-def test_referentials_protected_when_auth_configured(tmp_path):
+def test_referentials_protected_when_auth_configured(db_url):
     # ≥ MIN_ADMIN_CHARS : l'amorçage paresseux applique désormais la même politique de
     # longueur que `admin_setup` — un "pw" de 2 caractères laisserait l'admin NON configuré.
-    settings = _settings(tmp_path, admin_password="pw-assez-long")
+    settings = _settings(db_url, admin_password="pw-assez-long")
     with TestClient(create_app(settings)) as c:
         assert c.get("/api/discovery/technician").status_code == 401
         assert c.get("/api/metrics").status_code == 401

@@ -1,10 +1,12 @@
 """Tables SQLModel. Noms `snake_case` pluriel, PK `id`, colonnes `snake_case`.
 
-Note timezone : les colonnes `ts` du Journal et des appels LLM sont **timezone-aware**
-(UTC) via `UtcDateTime`. Indispensable pour le portage Postgres futur (audit cybersécu) :
-sans ça, comparer `ts < cutoff` casse avec `TypeError: can't compare offset-naive and
-offset-aware`. Sur SQLite (TEXT), `UtcDateTime` normalise à la lecture (force aware UTC
-même pour les lignes anciennes stockées sans offset).
+Note timezone : **TOUTES** les colonnes horodatées sont **timezone-aware** (UTC) via
+`UtcDateTime` / `_ts_column`, qui posent un `timestamptz` PostgreSQL. Sans ça, comparer
+`ts < cutoff` casse avec `TypeError: can't compare offset-naive and offset-aware`
+(purge RGPD, fenêtres du dashboard), et surtout PostgreSQL interprète une écriture naïve
+dans le fuseau de la SESSION, pas en UTC — l'horodatage enregistré est alors faux.
+Aucune exception : `tests/unit/test_tz_aware_ts.py` balaie les métadonnées et refuse toute
+colonne datée qui ne serait pas un `timestamptz`.
 """
 
 from __future__ import annotations
@@ -22,10 +24,13 @@ def _utcnow() -> datetime:
 
 
 class UtcDateTime(TypeDecorator):
-    """`DateTime(timezone=True)` qui garantit `tzinfo=UTC` à la lecture.
+    """`timestamptz` PostgreSQL, avec un filet contre les `datetime` naïfs.
 
-    Anciennes lignes SQLite stockées en naive (avant ce typage) → réhydratées en aware
-    UTC, transparent pour le moteur. Sur Postgres, équivaut à `timestamp with time zone`.
+    PostgreSQL rend toujours un `datetime` aware : côté LECTURE ce décorateur est donc
+    inerte en usage normal. Il reste pour le côté ÉCRITURE — rien n'empêche un appelant de
+    lier un naive (un `datetime.now()` oublié), et PostgreSQL l'interpréterait alors dans
+    le fuseau de la session, pas en UTC. On l'étiquette explicitement UTC, cohérent avec
+    `_utcnow`. Garder ce type coûte zéro ; le retirer toucherait toutes les tables.
     """
 
     impl = DateTime(timezone=True)
@@ -38,14 +43,22 @@ class UtcDateTime(TypeDecorator):
         return value
 
     def process_result_value(self, value: Any, dialect: Any) -> Any:
-        # À la lecture : si SQLite a relu en naive (anciennes lignes), on force UTC.
+        # À la lecture : filet si la valeur remonte naive (rien ne le produit sur
+        # `timestamptz`, mais l'invariant « aware UTC partout » ne doit dépendre d'aucun driver).
         if isinstance(value, datetime) and value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value
 
 
 def _ts_column(*, index: bool = False) -> Column:
-    """Colonne `ts` partagée Journal / appels LLM (audit UTC strict)."""
+    """Colonne horodatée non-nulle, en `timestamptz` (audit UTC strict).
+
+    À utiliser pour TOUTE colonne datée du modèle (`ts`, `processed_at`, `created_at`,
+    `updated_at`) : un `Field(default_factory=_utcnow)` seul laisserait SQLModel poser un
+    `timestamp WITHOUT time zone`, où PostgreSQL interpréterait l'écriture dans le fuseau de
+    la SESSION et non en UTC. `tests/unit/test_tz_aware_ts.py` refuse toute colonne datée qui
+    n'en vient pas.
+    """
     return Column(UtcDateTime, nullable=False, default=_utcnow, index=index)
 
 
@@ -81,8 +94,8 @@ class ProcessedTicket(SQLModel, table=True):
     jamais avalée.
 
     Ce que cela ne couvre pas : le crash entre l'écriture GLPI et le `commit` de la
-    réservation elle-même. La fenêtre passe de « tout le traitement » à « une écriture SQLite
-    locale », sans le coût d'une relecture GLPI par Ticket.
+    réservation elle-même. La fenêtre passe de « tout le traitement » à « un COMMIT sur la
+    base locale », sans le coût d'une relecture GLPI par Ticket.
     """
 
     __tablename__ = "processed_tickets"
@@ -188,7 +201,7 @@ class ReferentialCache(SQLModel, table=True):
     # les absences. Un groupe GLPI encaisse l'absence sans configuration.
     fallback_group_id: int | None = None
     fallback_technician_id: int | None = None
-    updated_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow, sa_column=_ts_column())
 
 
 class TechnicianAbsence(SQLModel, table=True):
@@ -288,4 +301,4 @@ class RuntimeConfig(SQLModel, table=True):
     key: str = Field(primary_key=True)
     value: str = ""
     is_secret: bool = False
-    updated_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow, sa_column=_ts_column())

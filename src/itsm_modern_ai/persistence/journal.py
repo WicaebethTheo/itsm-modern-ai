@@ -259,11 +259,11 @@ _LLM_CALLS_CSV_HEADER = [
 def _pages_antechronologiques(session: Session, modele) -> Iterator:
     """Parcourt une table de journal (ts décroissant) PAR PAGES, sans jamais tout charger.
 
-    Pagination par CURSEUR (keyset) sur `(ts, id)` plutôt que `yield_per` : sur SQLite —
-    la base du pilote — le driver n'a pas de curseur serveur, donc `yield_per` retombe sur
-    un fetch intégral et NE borne rien (vérifié à la mesure : 10 Mo de pic pour 8 Mo de
-    données, soit exactement le comportement qu'on veut supprimer). Un `LIMIT` explicite,
-    lui, borne la mémoire sur tous les moteurs. `id` départage les `ts` égaux : sans ce
+    Pagination par CURSEUR (keyset) sur `(ts, id)` plutôt que `yield_per` : ce dernier ne
+    borne la mémoire que si le driver ouvre un curseur serveur, ce qui dépend de la
+    configuration du connecteur (psycopg ne le fait pas par défaut) — une borne qui tient
+    par accident n'est pas une borne. Un `LIMIT` explicite, lui, borne la mémoire
+    inconditionnellement. `id` départage les `ts` égaux : sans ce
     second critère, deux lignes à la même microseconde feraient boucler la pagination (ou
     en sauteraient). `expunge_all()` vide l'identity map entre deux pages : sinon la
     session garderait une référence par ligne déjà lue et la borne serait fictive.

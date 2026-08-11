@@ -15,10 +15,10 @@ LLM_BASE = "https://llm.test/v1"
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(db_url):
     settings = Settings(
         _env_file=None,  # isole du .env ambiant
-        database_url=f"sqlite:///{tmp_path / 'sbx.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         llm_base_url=LLM_BASE,
         polling_enabled=False,

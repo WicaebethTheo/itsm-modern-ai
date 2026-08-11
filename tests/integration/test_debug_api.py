@@ -10,10 +10,10 @@ from itsm_modern_ai.api.app import create_app
 from itsm_modern_ai.config.settings import Settings
 
 
-def _client(tmp_path, **kw):
+def _client(db_url, **kw):
     settings = Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'd.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=True,  # admin sans mot de passe (test) — fail-closed désactivé
@@ -22,8 +22,8 @@ def _client(tmp_path, **kw):
     return TestClient(create_app(settings))
 
 
-def test_disabled_by_default(tmp_path):
-    with _client(tmp_path) as c:
+def test_disabled_by_default(db_url):
+    with _client(db_url) as c:
         assert c.get("/api/debug/status").json() == {"enabled": False}
         # Endpoints d'action inertes quand le flag est off.
         assert c.get("/api/debug/diagnostics").status_code == 403
@@ -32,8 +32,8 @@ def test_disabled_by_default(tmp_path):
 
 
 @pytest.fixture
-def enabled(tmp_path):
-    with _client(tmp_path, debug_tools_enabled=True) as c:
+def enabled(db_url):
+    with _client(db_url, debug_tools_enabled=True) as c:
         yield c
 
 

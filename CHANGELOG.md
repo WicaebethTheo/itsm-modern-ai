@@ -1,3 +1,108 @@
+## 2026-08-11 — 0.10.0 — PostgreSQL exclusif : SQLite est retiré du produit
+
+> ⚠️ **Version de rupture.** Le moteur ne sait plus lire une base SQLite. Une instance
+> existante **ne peut pas être mise à jour en place** : la base repart vierge. Aucun outil de
+> migration SQLite → PostgreSQL n'est fourni, et il n'y en aura pas — la seule chose à
+> conserver est la `master.key`, sans laquelle les secrets déjà chiffrés seraient perdus.
+> La montée de version mineure marque cette rupture.
+
+### Pourquoi
+
+SQLite tenait le pilote, mais son mono-écrivain et son typage laxiste plafonnaient tout le
+reste : pas de second worker, pas de sauvegarde chaude réellement vérifiable, un typage
+temporel qui a déjà coûté deux migrations correctives. Le portage PostgreSQL existait depuis
+plusieurs versions en « Beta » et n'était **testé nulle part** — la CI tournait en SQLite.
+Deux bases supportées dont une non testée, ce n'est pas un choix offert à l'exploitant, c'est
+une dette qui attend. PostgreSQL devient la seule base, et elle est testée pour de bon.
+
+### Ce que ça coûte, dit franchement
+
+La stack passe **d'un service à deux**. Le `docker run` d'un seul conteneur disparaît au
+profit d'un réseau et de deux volumes (`itsm_data` pour la `master.key`, un volume dédié au
+PGDATA). Compter environ **250 Mio réservés** pour la base en plus des 128 Mio du moteur.
+Et il faut désormais **suivre une majeure PostgreSQL** : le répertoire de données n'est pas
+compatible d'une majeure à l'autre.
+
+Le produit est livré en **PostgreSQL 17**, épinglé de façon solidaire entre l'image, les deux
+composes et la CI — un client désaligné casse la restauration, ce qui est vérifié par un test.
+
+### Sauvegarde : réécrite, et vérifiée en deux temps
+
+`VACUUM INTO` et `PRAGMA integrity_check` laissent la place à `pg_dump --format=custom`. La
+garantie de 0.9.56 — une sauvegarde est **produite ET vérifiée** — est conservée, avec deux
+contrôles distincts et tous deux nécessaires :
+
+1. **structure** : `pg_restore --list` relit l'en-tête et le sommaire, et l'on exige une
+   entrée `TABLE DATA` pour chaque table de la base vive ;
+2. **contenu** : `pg_restore --data-only` relit l'archive **en entier** et recompte les lignes
+   table par table contre la base.
+
+Le second n'est pas du luxe : une archive `--schema-only` passe le premier contrôle, et une
+archive tronquée aussi — le sommaire est en tête de fichier. Le mot de passe passe par
+`PGPASSWORD` et jamais par la ligne de commande, où `ps` le lirait.
+
+La `master.key` reste jointe à la sauvegarde, ou son absence explicitement signalée. Le client
+`pg_dump` est embarqué dans l'image : la voie *pull-only* reste sauvegardable sans les sources.
+
+### Restauration : elle restaure enfin
+
+`install.sh --rollback` se contentait, sur PostgreSQL, d'**afficher** une marche à suivre. Elle
+est désormais réellement automatisée — et corrigée d'un piège qui l'aurait rendue nuisible :
+une restauration par `pg_restore --clean` ne supprime que les objets **présents dans
+l'archive**, donc une table créée par une migration postérieure survivait pendant que le
+numéro de révision, lui, était rembobiné. Le retour arrière semblait réussir, et c'est la
+**mise à jour suivante** qui mourait sur un `DuplicateTable`. Le schéma est maintenant remis à
+plat après que le dump de sécurité a été pris et vérifié.
+
+Cette opération étant destructive, elle exige désormais une confirmation **explicite** : taper
+l'horodatage de la sauvegarde. Elle ne s'auto-confirme plus hors terminal, et elle refuse de
+s'exécuter plutôt que de demander quand l'état courant n'est pas sauvegardable.
+
+### Garde-fou `master.key` durci
+
+Le garde-fou qui empêche de générer une clé neuve par-dessus des secrets déjà chiffrés lisait
+le fichier de base voisin ; il interroge désormais le moteur. En le portant, deux trous sont
+apparus :
+
+- le moteur était ouvert **après** la construction de la boîte à secrets, si bien que le
+  garde-fou répondait toujours « indéterminé » et ne protégeait plus rien ;
+- une base injoignable était confondue avec une base vide — l'instance écrivait alors une clé
+  neuve, et comme le fichier existait au démarrage suivant, **plus aucun boot n'avertissait**.
+  L'instance tournait « au vert » avec des secrets définitivement muets.
+
+Les deux sont corrigés : le moteur est ouvert en premier, et « je n'ai pas pu poser la
+question » est désormais distinct de « la base est vide ». Dans le doute, on refuse de démarrer
+plutôt que d'écrire un fichier irréversible.
+
+### Deux migrations publiées corrigées
+
+`c1a7e4b2` et `d2f8a9c5` convertissaient les colonnes temporelles en `timestamptz` sans clause
+`USING`. Sur un serveur dont le fuseau n'est pas UTC, PostgreSQL interprète alors les valeurs
+existantes dans **son** fuseau : mesuré, un horodatage à 12:00 UTC devenait 11:00. Le journal
+d'audit est la donnée concernée. Concerne une base PostgreSQL non-UTC **pas encore** passée par
+ces révisions ; une base déjà migrée a subi le décalage et il n'est pas rattrapable.
+
+Deux colonnes `updated_at` étaient par ailleurs restées sans fuseau : une révision les aligne.
+
+### Exploitation
+
+Le moteur **attend la base** avant de migrer, avec un plafond de tentatives et un échec
+explicite — sans quoi le premier `up` partait en crash-loop. Un garde refuse de démarrer sur un
+répertoire de données d'une autre majeure, en donnant la procédure, plutôt que de laisser
+l'exploitant face à un `FATAL` de PostgreSQL en boucle. Le service de base entre dans le
+contrat d'exploitation testé : limites de ressources, rotation des journaux, durcissement.
+
+Correction d'une anomalie plus ancienne : sous Compose, `environment:` l'emporte sur
+`env_file:`, si bien que poser `DATABASE_URL` dans le `.env` — ce que la documentation
+demandait — **n'avait aucun effet**. La molette est `ITSM_DATABASE_URL`, et c'est écrit.
+
+### Tests
+
+**555 → 596**, couverture 88 %. La fixture de test crée un **schéma PostgreSQL jetable par
+test** : lancer la suite exige donc un serveur (`TEST_DATABASE_URL`), et `docs/testing.md`
+explique comment le monter. La CI installe le client aligné sur le serveur — sans quoi les
+tests de sauvegarde se **sautaient en silence** sans rien faire rougir.
+
 ## 2026-08-11 — 0.9.57 — « Congés & remplaçants » remonte en tête + rétroéclairage du châssis
 
 Trois corrections d'ergonomie et d'interface, sans aucun changement de comportement moteur.

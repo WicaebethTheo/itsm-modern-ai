@@ -500,7 +500,7 @@ wheels = [
 
 [[package]]
 name = "itsm-modern-ai"
-version = "0.9.54"
+version = "0.9.57"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -511,6 +511,7 @@ dependencies = [
     { name = "httpx" },
     { name = "itsdangerous" },
     { name = "prometheus-client" },
+    { name = "psycopg", extra = ["binary"] },
     { name = "pwdlib", extra = ["argon2"] },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -528,9 +529,6 @@ dev = [
     { name = "respx" },
     { name = "ruff" },
 ]
-postgres = [
-    { name = "psycopg", extra = ["binary"] },
-]
 
 [package.metadata]
 requires-dist = [
@@ -543,7 +541,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "itsdangerous", specifier = ">=2.2" },
     { name = "prometheus-client", specifier = ">=0.20" },
-    { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.1" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.1" },
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.2" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
@@ -556,7 +554,7 @@ requires-dist = [
     { name = "sqlmodel", specifier = ">=0.0.22" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["postgres", "dev"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "mako"

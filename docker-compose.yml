@@ -1,5 +1,6 @@
-# ITSM Modern AI - deploiement on-prem (1 service + volume SQLite).
-# La config (GLPI, cles LLM, perimetre) vit dans ./data (DB + master.key).
+# ITSM Modern AI - deploiement on-prem : moteur + base PostgreSQL.
+# Tout vit dans ./data : la base (./data/postgres) et la master.key sans laquelle les
+# secrets chiffres sont illisibles.
 # NE JAMAIS faire `docker compose down -v` (-v supprime ./data). Fixez MASTER_KEY dans .env.
 services:
   itsm:
@@ -11,9 +12,22 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    # La base n'est plus optionnelle : le moteur ne demarre pas sans elle. `service_healthy`
+    # (et pas `service_started`) car un conteneur postgres qui vient de demarrer n'accepte
+    # pas encore les connexions : sans la condition, l'entrypoint attendrait pour rien
+    # (il a sa propre attente bornee, filet pour `docker run` et les bases externes).
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
-      # Defaut SQLite. PostgreSQL (Beta) : ITSM_DATABASE_URL dans .env + profile postgres.
-      DATABASE_URL: ${ITSM_DATABASE_URL:-sqlite:////app/data/itsm.db}
+      # ⚠️ PRECEDENCE COMPOSE : ce bloc `environment:` ECRASE ce que `env_file: .env`
+      # apporte. Ecrire DATABASE_URL dans .env n'a donc AUCUN effet ici (c'etait le cas
+      # avant, silencieusement). La molette de surcharge sous compose est
+      # ITSM_DATABASE_URL - documentee comme telle dans .env.example.
+      # ⚠️ COHERENCE : le defaut ci-dessous porte le couple itsm/itsm. Changer
+      # POSTGRES_USER/POSTGRES_PASSWORD OBLIGE donc a definir ITSM_DATABASE_URL avec les
+      # memes valeurs, sinon le moteur ne se connecte plus a sa propre base.
+      DATABASE_URL: ${ITSM_DATABASE_URL:-postgresql+psycopg://itsm:itsm@postgres:5432/itsm}
       # Licence Supporter (vide = Community) ; aussi collable via l'UI (page Supporter).
       LICENSE_KEY: ${LICENSE_KEY:-}
       # Amorcage admin au 1er boot (deploiement non-interactif / orchestrateur) :
@@ -64,30 +78,46 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # PostgreSQL (Beta) - service optionnel (profile `postgres`) ; sinon SQLite par defaut.
-  # Activer : docker compose --profile postgres up -d --build (+ ITSM_DATABASE_URL dans .env).
+  # PostgreSQL - SEULE base supportee, donc service a part entiere de la stack (plus de
+  # profile optionnel : sans lui, le moteur ne demarre pas).
   #
   # ############################################################################
   # #  ATTENTION - NE JAMAIS CHANGER LE CHIFFRE MAJEUR DE CE TAG A LA LEGERE.  #
   # ############################################################################
-  # Le tag reste volontairement sur la majeure 16 (le suffixe `16-alpine` continue
-  # de recevoir les correctifs mineurs/securite ; PG 16 est supporte jusqu'en 2028).
-  # Passer a 17/18/... N'EST PAS un simple bump d'image, pour DEUX raisons :
+  # Le tag reste volontairement sur la majeure 17 (le suffixe `17-alpine` continue de
+  # recevoir les correctifs mineurs/securite ; PG 17 est supporte jusqu'en 2029).
+  # Passer a 18/19/... N'EST PAS un simple bump d'image, pour TROIS raisons :
   #
-  #   1) FORMAT DES DONNEES. Les fichiers d'un cluster PG 16 sont illisibles par une
+  #   1) FORMAT DES DONNEES. Les fichiers d'un cluster PG 17 sont illisibles par une
   #      majeure superieure. Sur un ./data/postgres existant, le conteneur refuse de
   #      demarrer (« database files are incompatible with server ») et boucle en
-  #      restart. Migration OBLIGATOIRE avant le bump, instance a l'arret cote app :
-  #        docker compose exec -T postgres pg_dump -U itsm itsm > dump.sql
-  #        docker compose --profile postgres down       # SANS -v
-  #        mv data/postgres data/postgres.pg16.bak      # on garde l'ancien cluster
+  #      restart. Migration OBLIGATOIRE avant le bump, moteur a l'arret :
+  #        docker compose stop itsm
+  #        docker compose exec -T postgres pg_dump -U itsm -Fc itsm > avant-bump.dump
+  #        docker compose down                          # SANS -v
+  #        mv data/postgres data/postgres.pg17.bak      # on garde l'ancien cluster
   #        # ... changer le tag ici, puis :
-  #        docker compose --profile postgres up -d postgres
-  #        docker compose exec -T postgres psql -U itsm itsm < dump.sql
+  #        docker compose up -d postgres
+  #        docker compose exec -T postgres pg_restore -U itsm -d itsm --no-owner < avant-bump.dump
+  #        docker compose up -d itsm
   #      (`pg_upgrade` est l'alternative, mais exige les binaires des DEUX majeures
   #      dans la meme image - non fourni par l'image officielle.)
+  #      GARDE-FOU : install.sh lit ./data/postgres/PG_VERSION AVANT tout `up -d` et
+  #      refuse de continuer si la majeure differe de celle de ce tag, en affichant la
+  #      procedure ci-dessus. Il fallait bien l'ecrire quelque part que le commentaire ne
+  #      suffit pas : c'est un `docker compose pull && up -d` qui declenche le probleme,
+  #      pas une relecture de ce fichier. (Repli dans docker/entrypoint.sh ; sous compose
+  #      il ne joue pas, `depends_on: service_healthy` empechant le moteur de demarrer
+  #      tant que la base boucle.)
   #
-  #   2) PIEGE PROPRE A PG 18+ : l'image officielle a DEPLACE son PGDATA de
+  #   2) LE CLIENT DE L'IMAGE MOTEUR DOIT SUIVRE. Le Dockerfile installe
+  #      `postgresql-client-17` : c'est lui qui produit les sauvegardes
+  #      (`python -m itsm_modern_ai.backup`). Un client d'une AUTRE majeure que ce serveur
+  #      fabrique des archives que le couple restaurant ne sait pas relire - on ne le
+  #      decouvre que le jour de la restauration. Les deux majeures bougent ENSEMBLE ;
+  #      tests/unit/test_deployment_files.py verrouille cette egalite.
+  #
+  #   3) PIEGE PROPRE A PG 18+ : l'image officielle a DEPLACE son PGDATA de
   #      /var/lib/postgresql/data vers /var/lib/postgresql/<major>/docker, et son
   #      VOLUME de /var/lib/postgresql/data vers /var/lib/postgresql. Le montage
   #      ci-dessous deviendrait donc HORS-SUJET : PG initialiserait un cluster VIDE
@@ -96,14 +126,23 @@ services:
   #      vers 18+ impose donc AUSSI de changer la cible du montage volumes: en
   #      `- ./data/postgres:/var/lib/postgresql`.
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: itsm-postgres
-    profiles: ["postgres"]
     restart: unless-stopped
     environment:
+      # ⚠️ Ces valeurs ne servent qu'a l'INITIALISATION du cluster (premier demarrage,
+      # ./data/postgres vide). Les changer ensuite n'a aucun effet : il faut un
+      # `ALTER USER itsm PASSWORD '...'`. Et elles doivent rester coherentes avec
+      # ITSM_DATABASE_URL (cf. .env.example).
       POSTGRES_USER: ${POSTGRES_USER:-itsm}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-itsm}
       POSTGRES_DB: ${POSTGRES_DB:-itsm}
+    # Bind mount dans ./data, au meme endroit que la master.key : une seule arborescence
+    # a sauvegarder/copier pour l'exploitant. L'entrypoint du moteur EXCLUT ce dossier de
+    # son chown (PG refuse de demarrer si son PGDATA ne lui appartient pas).
+    # Aucun `ports:` : la base n'est joignable que depuis le reseau compose. L'exposer
+    # sur l'hote offrirait un service d'authentification de plus a un attaquant, pour
+    # rien - `docker compose exec postgres psql` suffit a l'exploitation.
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -111,6 +150,41 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      # La PREMIERE initialisation (initdb) prend quelques secondes : sans start_period,
+      # les echecs de cette phase comptent dans `retries` et peuvent marquer la base
+      # `unhealthy` avant meme qu'elle ait fini de naitre.
+      start_period: 20s
+    # Durcissement aligne sur le service `itsm` : pas d'escalade de privileges, et les
+    # SEULES capabilities dont l'entrypoint officiel a besoin (chown/chmod du PGDATA au
+    # premier boot, puis abandon des privileges root via su-exec vers l'utilisateur
+    # postgres). Verifie sur un initdb complet, pas seulement sur un redemarrage.
+    # Pas de `read_only: true` ici, contrairement au moteur : PostgreSQL ecrit hors de son
+    # PGDATA (socket /var/run/postgresql, fichiers temporaires) et le rendre lisible seul
+    # demanderait de monter ces chemins en tmpfs - complexite pour un gain nul, la surface
+    # ecrivable etant deja limitee au volume de donnees.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+    # Bornage CPU/memoire (anti-emballement sur hote mutualise). Plus genereux que le
+    # moteur : PostgreSQL alloue shared_buffers (128 Mo par defaut) PLUS work_mem par
+    # connexion, et un VACUUM/une requete de tableau de bord sous 512 Mo se fait tuer par
+    # l'OOM killer - une base tuee en pleine ecriture, c'est le pire des scenarios.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+    # Rotation des logs OBLIGATOIRE : sans elle, json-file est NON borne. PostgreSQL logue
+    # chaque checkpoint, chaque connexion refusee, chaque requete lente.
     logging:
       driver: json-file
       options:

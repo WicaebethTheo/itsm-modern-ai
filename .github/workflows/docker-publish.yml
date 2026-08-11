@@ -53,11 +53,48 @@ jobs:
   # par tous les deploiements (Portainer, docker run, one-liner curl|bash).
   test:
     runs-on: ubuntu-latest
+    # PostgreSQL est la SEULE base supportee : sans serveur, la suite entiere echoue des la
+    # premiere fixture. Meme majeure que l'image livree (cf. docker-compose.yml), pour que
+    # la CI exerce ce que l'exploitant fait tourner. Port 55432 = defaut de tests/conftest.py.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: itsm
+          POSTGRES_PASSWORD: itsm
+          POSTGRES_DB: itsm
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U itsm -d itsm"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://itsm:itsm@localhost:55432/itsm
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
+      # `pg_dump` sert aux tests de sauvegarde (tests/unit/test_backup.py), qui dumpent une
+      # vraie base. Le client doit etre au moins aussi recent que le serveur, sinon pg_dump
+      # refuse de le dumper — d'ou la majeure explicite plutot que le client de la distro
+      # (ubuntu-latest livre du 16), et d'ou le depot PGDG.
+      # ⚠️ BLOQUANT, plus de `continue-on-error`. Il rendait cette etape decorative : si le
+      # paquet manquait, les tests de sauvegarde s'ignoraient et la CI restait verte sans
+      # avoir verifie une seule fois le contrat le plus cher a rater. Un garde-fou qui peut
+      # s'auto-neutraliser n'en est pas un — et `tests/unit/test_backup.py` refuse desormais
+      # de s'ignorer quand la variable CI est presente.
+      - name: Client PostgreSQL 17 (aligne sur l'image livree)
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc]" \
+            "https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          pg_dump --version
       # setup-uv plutot que `pip install uv` : version geree par l'action + cache uv
       # automatique (cle sur uv.lock). Coherent avec ci.yml.
       # Version EXACTE obligatoire (`@v9.0.0`, pas `@v9`) : cette action ne publie
@@ -132,11 +169,28 @@ jobs:
       # Ce que le build seul ne prouve pas : migrations Alembic OK, uvicorn repond,
       # amorcage admin au boot effectif (contrat du deploiement pull-only — sans lui,
       # la console demarre verrouillee). Si ca casse, rien n'est publie.
-      - name: Smoke test (boot + /health + /api/status + amorcage admin)
+      # L'image ne boote plus SANS BASE : on lui en fournit une, sur un reseau dedie et a
+      # la majeure exacte de celle des composes.
+      - name: Smoke test (boot + /health + /api/status + amorcage admin + sauvegarde)
         run: |
           set -euo pipefail
-          docker run -d --name itsm-smoke \
+          nettoyer() { docker rm -f itsm-smoke itsm-smoke-pg >/dev/null 2>&1 || true
+                       docker network rm itsm-smoke-net >/dev/null 2>&1 || true; }
+          trap nettoyer EXIT
+
+          docker network create itsm-smoke-net
+          docker run -d --name itsm-smoke-pg --network itsm-smoke-net \
+            -e POSTGRES_USER=itsm -e POSTGRES_PASSWORD=itsm -e POSTGRES_DB=itsm \
+            --health-cmd "pg_isready -U itsm -d itsm" --health-interval 3s --health-retries 20 \
+            postgres:17-alpine
+          for _ in $(seq 1 40); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' itsm-smoke-pg)" = healthy ] && break
+            sleep 2
+          done
+
+          docker run -d --name itsm-smoke --network itsm-smoke-net \
             -e ITSM_ADMIN_PASSWORD=smoke-ci-password \
+            -e DATABASE_URL=postgresql+psycopg://itsm:itsm@itsm-smoke-pg:5432/itsm \
             -p 8000:8000 itsm-smoke:ci
           # Attente max ~90 s (45 x 2 s) : migrations + demarrage uvicorn.
           ok=""
@@ -152,16 +206,20 @@ jobs:
           docker logs itsm-smoke || true
           if [ -z "$ok" ]; then
             echo "::error::smoke test KO : /health ou /api/status injoignable apres ~90 s"
-            docker rm -f itsm-smoke
             exit 1
           fi
           # L'amorcage admin doit avoir eu lieu (ou etre idempotent-skippe).
           if ! docker logs itsm-smoke 2>&1 | grep -Eq "compte admin amorcé|admin déjà configuré"; then
             echo "::error::smoke test KO : aucun amorcage admin dans les logs"
-            docker rm -f itsm-smoke
             exit 1
           fi
-          docker rm -f itsm-smoke
+          # La sauvegarde est le contrat le plus facile a casser sans s'en apercevoir :
+          # elle depend de `pg_dump`/`pg_restore` PRESENTS DANS L'IMAGE. On la lance donc
+          # pour de vrai — c'est aussi la seule verification du chemin pull-only.
+          if ! docker exec itsm-smoke python -m itsm_modern_ai.backup; then
+            echo "::error::smoke test KO : la sauvegarde livree dans l'image a echoue"
+            exit 1
+          fi
 
       # Publication : uniquement si test + smoke sont passes. Le cache gha rempli
       # par le smoke rend la part amd64 quasi instantanee.

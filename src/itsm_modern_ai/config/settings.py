@@ -18,18 +18,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # Persistance (SQLite en pilote ; PostgreSQL en option — Beta, cf. https://docs.itsm-modern-ai.com/).
-    # Postgres : DATABASE_URL=postgresql+psycopg://user:pwd@host:5432/itsm (driver psycopg 3,
-    # extra `postgres`). Le code est Postgres-ready (UtcDateTime tz-aware, migrations batch).
-    database_url: str = "sqlite:///./data/itsm.db"
-    # Pool de connexions — appliqué UNIQUEMENT aux bases réseau (non-SQLite). Ignorés en SQLite.
+    # Persistance : PostgreSQL est la SEULE base supportée (driver psycopg 3, embarqué).
+    # DATABASE_URL=postgresql+psycopg://user:pwd@host:5432/itsm
+    database_url: str = "postgresql+psycopg://itsm:itsm@localhost:5432/itsm"
+    # Pool de connexions du moteur (poller + UI en parallèle).
     db_pool_size: int = 5
     db_max_overflow: int = 10
     db_pool_pre_ping: bool = True
-
-    @property
-    def is_sqlite(self) -> bool:
-        return self.database_url.startswith("sqlite")
 
     # Chiffrement des secrets au repos (FR-25). Si absent, une clé est générée et
     # persistée dans data/master.key (durci en Epic 4 : secret monté).

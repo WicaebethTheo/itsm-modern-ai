@@ -12,13 +12,13 @@ from itsm_modern_ai.api.routes.version import is_newer
 from itsm_modern_ai.config.settings import Settings
 
 
-def _settings(tmp_path, **kw) -> Settings:
+def _settings(db_url, **kw) -> Settings:
     kw.setdefault("dev_open_admin", True)
     kw.setdefault("session_https_only", False)
     kw.setdefault("update_check_url", "")  # tests hors-ligne ; la prod active le check par défaut
     return Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'v.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         **kw,
@@ -26,8 +26,8 @@ def _settings(tmp_path, **kw) -> Settings:
 
 
 @pytest.fixture
-def client(tmp_path):
-    with TestClient(create_app(_settings(tmp_path))) as c:
+def client(db_url):
+    with TestClient(create_app(_settings(db_url))) as c:
         yield c
 
 

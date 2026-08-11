@@ -11,10 +11,10 @@ from itsm_modern_ai.config.settings import Settings
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(db_url):
     settings = Settings(
         _env_file=None,  # isole du .env ambiant
-        database_url=f"sqlite:///{tmp_path / 'api.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=True,  # admin sans mot de passe (test) — fail-closed désactivé
@@ -140,7 +140,7 @@ def test_negative_price_rejected(client):
 
 
 # ── Journal d'audit des actions d'administration (durcissement audit 2026-08) ──
-def test_config_write_is_audited_with_client_ip(tmp_path):
+def test_config_write_is_audited_with_client_ip(db_url, tmp_path):
     """Toute écriture passant par l'API doit être imputable à une adresse (RSSI)."""
     from cryptography.fernet import Fernet
     from fastapi.testclient import TestClient
@@ -153,7 +153,7 @@ def test_config_write_is_audited_with_client_ip(tmp_path):
 
     settings = Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'audit-api.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=True,
