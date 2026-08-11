@@ -20,7 +20,11 @@ export function FloatingActions() {
   const isSupporter = (lic.data?.features ?? []).some((f) => f.active);
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2">
+    // Les décalages DOIVENT rester supérieurs au padding du backdrop (`p-3 sm:p-5` dans
+    // Layout.tsx, soit 12 px puis 20 px) : en dessous, le widget se pose à cheval sur la
+    // bordure du châssis — moitié dedans, moitié dehors. 24 px puis 36 px le placent
+    // franchement À L'INTÉRIEUR du panneau, avec une marge visuelle dans les deux cas.
+    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 sm:bottom-9 sm:right-9">
       <a
         href={GITHUB_URL}
         target="_blank"

@@ -77,6 +77,58 @@ describe("Technicians (éditeur d'éligibilité)", () => {
   });
 });
 
+describe("Congés vus depuis la ligne du technicien", () => {
+  const absence = {
+    id: 1,
+    technician_ext_id: 11,
+    start_date: "2026-08-01",
+    end_date: "2026-08-22",
+    replacement_ext_id: 12,
+    note: "",
+    technician_name: "Sylvain Martin",
+    replacement_name: "Nadia Bouaziz",
+    active: true,
+  };
+
+  beforeEach(() => {
+    vi.mocked(Api.skillCatalog).mockResolvedValue([]);
+    vi.mocked(Api.skillCoverage).mockResolvedValue([]);
+    vi.mocked(Api.saveTechnicians).mockResolvedValue([]);
+    vi.mocked(Api.discovery).mockResolvedValue(TECHS);
+  });
+
+  it("porte l'état d'absence sur la ligne de la personne concernée", async () => {
+    // Une absence est un attribut d'une PERSONNE : elle se lit sur sa ligne, pas dans une
+    // table qu'il faudrait aller chercher plus bas.
+    vi.mocked(Api.absences).mockResolvedValue([absence]);
+    renderWithToast(<Technicians />);
+    expect(await screen.findByText(/Absent jusqu'au 22 août/)).toBeInTheDocument();
+    expect(screen.getByText(/remplacé par Nadia Bouaziz/)).toBeInTheDocument();
+  });
+
+  it("n'offre le bouton congés qu'aux techniciens éligibles", async () => {
+    vi.mocked(Api.absences).mockResolvedValue([]);
+    renderWithToast(<Technicians />);
+    expect(
+      await screen.findByRole("button", { name: "Déclarer une absence pour Sylvain Martin" }),
+    ).toBeInTheDocument();
+    // Nadia n'est pas éligible : elle n'est pas dans le pool, il n'y a rien à en retirer.
+    expect(
+      screen.queryByRole("button", { name: "Déclarer une absence pour Nadia Bouaziz" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("le bouton de la ligne ouvre la planification déjà remplie à ce nom", async () => {
+    vi.mocked(Api.absences).mockResolvedValue([]);
+    renderWithToast(<Technicians />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Déclarer une absence pour Sylvain Martin" }),
+    );
+    const select = await screen.findByRole("combobox", { name: "Technicien absent" });
+    expect((select as HTMLSelectElement).value).toBe("11");
+  });
+});
+
 describe("Domaines de compétence cochables", () => {
   const CATALOGUE = [
     {

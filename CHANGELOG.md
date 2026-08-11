@@ -1,3 +1,56 @@
+## 2026-08-11 — 0.9.57 — « Congés & remplaçants » remonte en tête + rétroéclairage du châssis
+
+Trois corrections d'ergonomie et d'interface, sans aucun changement de comportement moteur.
+
+### 1. Les congés ne sont plus enterrés en bas de page
+
+La carte « Congés & remplaçants » vivait **sous** la liste des techniciens : pour déclarer une
+absence il fallait dérouler tout le référentiel. Or c'est le geste le plus fréquent et le plus
+urgent de la page — un technicien absent qu'on oublie de déclarer reste dans le périmètre et
+continue de se voir assigner des tickets.
+
+La carte remonte donc **en tête**, juste sous la barre du haut, avec :
+
+- une **ligne de résumé permanente** qui dit l'état du jour d'un coup d'œil (« Toute l'équipe
+  est disponible aujourd'hui », ou la liste des absents et de leurs remplaçants) ;
+- un bouton primaire **« Déclarer une absence »** ;
+- la table repliée derrière, pour ne pas repousser le référentiel plus bas qu'avant ;
+- un **bouton calendrier sur chaque ligne de technicien** éligible, qui ouvre la table avec la
+  ligne déjà pré-remplie pour l'intéressé — on part de la personne, plus du formulaire.
+
+Le calcul des **domaines perdus** (compétences que plus personne ne couvre pendant l'absence)
+ignore volontairement deux cas : les domaines tenus par un **groupe** (le repli groupe joue son
+rôle) et ceux que **personne ne tenait déjà** — signaler un trou structurel comme une
+conséquence de l'absence serait un faux positif. L'héritage par le remplaçant est pris en
+compte sur un saut.
+
+### 2. Rétroéclairage du châssis
+
+Le panneau applicatif reçoit une **lumière tenue derrière lui**, jamais au-dessus : trois
+nappes portant la même géométrie de lobes mais des arrangements de teintes décalés, dont le
+barycentre se déplace lentement. Rien ne tourne, seuls les dosages varient — deux horloges
+indépendantes (dérive 19/23/29 s, fondu 7/11/13 s), toutes périodes premières entre elles pour
+qu'aucun motif ne se répète de façon perceptible.
+
+Le liseré de contour est construit en **anneau réel** (`padding` + soustraction de masques),
+pas en rectangle plein masqué par le panneau : la lumière ne peut donc **structurellement** pas
+déborder au centre, y compris pendant l'animation d'entrée où le panneau est encore translucide.
+
+Tout est en `opacity`/`transform` seuls — travail du compositeur, zéro *reflow*. Les couches
+décoratives sont `aria-hidden` et `pointer-events: none`, et le respect de
+`prefers-reduced-motion` neutralise **délais compris**.
+
+### 3. Le widget flottant rentre dans la fenêtre
+
+Les boutons GitHub et « café » se posaient à cheval sur la bordure du châssis — moitié dedans,
+moitié dehors. Leurs décalages passent au-dessus du *padding* du fond, ce qui les place
+franchement à l'intérieur du panneau (16 px de marge sur les deux axes).
+
+### Tests
+
+Frontend : **141 → 153** (22 fichiers), dont la couverture du nouveau parcours de déclaration
+d'absence et du pré-remplissage depuis une ligne de technicien.
+
 ## 2026-08-09 — 0.9.56 — Sauvegarde accessible en déploiement *pull-only* + fenêtre de doublon refermée
 
 Deux trous d'exploitation identifiés en revue de préparation à la production.

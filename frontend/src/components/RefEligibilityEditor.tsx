@@ -1,5 +1,5 @@
 import { CheckCircle2, Search, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { SkillCoverageBanner } from "@/components/SkillCoverage";
 import { SyncButton } from "@/components/SyncButton";
@@ -46,9 +46,16 @@ function initials(name: string): string {
 export function RefEligibilityEditor({
   kind,
   save,
+  rowExtra,
 }: {
   kind: RefKind;
   save: (items: EligibilityItem[]) => Promise<RefItem[]>;
+  /**
+   * Contenu additionnel en bout de ligne, rendu par l'appelant (ex. l'état d'absence d'un
+   * technicien). `eligible` vient du BROUILLON : ce qui est coché à l'écran, pas ce qui est
+   * enregistré. Les groupes n'en passent pas — un groupe ne part pas en congés.
+   */
+  rowExtra?: (item: RefItem, eligible: boolean) => ReactNode;
 }) {
   const t = useT();
   const { lang } = useLang();
@@ -296,6 +303,7 @@ export function RefEligibilityEditor({
                       </Tag>
                     )}
                     {r.profile && <Tag tone="muted">{r.profile}</Tag>}
+                    {rowExtra?.(r, d.eligible)}
                   </div>
                   {d.eligible && catalog.length > 0 && (
                     <div className="mt-3 pl-[44px]">
