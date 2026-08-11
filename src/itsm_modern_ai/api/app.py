@@ -133,8 +133,16 @@ async def lifespan(app: FastAPI):
     # Intervalle initial depuis la config runtime (modifiable à chaud via /api/config).
     from ..services.runtime_config import RuntimeConfigService
 
+    # Importé ICI (et non en tête) pour que le module soit résolu à l'appel : un test qui
+    # veut observer l'avertissement de démarrage peut ainsi le remplacer sur le module.
+    from . import security as _security
+
     with db.session_scope() as session:
         cfg = RuntimeConfigService(session, app.state.secrets_box, settings)
+        # ⚠️ Tant qu'aucun compte administrateur n'existe, l'instance est REVENDICABLE par
+        # quiconque atteint le port (choix produit assumé : aucun jeton d'amorçage, aucune
+        # fenêtre temporelle). On l'annonce fort, à CHAQUE démarrage, tant que ça dure.
+        _security.warn_if_setup_required(cfg)
         interval = cfg.get_int("polling_interval_seconds", settings.polling_interval_seconds)
         purge_hour = cfg.get_int("automation_purge_hour_utc", settings.automation_purge_hour_utc)
 

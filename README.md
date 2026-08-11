@@ -9,11 +9,11 @@
 *The LLM proposes, the code decides — GLPI ticket triage with deterministic guardrails.*
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.10.0-blueviolet)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.11.0-blueviolet)](pyproject.toml)
 [![GHCR image](https://img.shields.io/badge/GHCR-image_publique-2496ED?logo=github&logoColor=white)](https://github.com/WicaebethTheo/itsm-modern-ai/pkgs/container/itsm-modern-ai)
 [![Docker multi-arch](https://img.shields.io/badge/docker-amd64_·_arm64-2496ED?logo=docker&logoColor=white)](docker-compose.portainer.yml)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![Tests](https://img.shields.io/badge/tests-596_pytest_·_153_vitest-success)](https://docs.itsm-modern-ai.com)
+[![Tests](https://img.shields.io/badge/tests-652_pytest_·_194_vitest-success)](https://docs.itsm-modern-ai.com)
 [![Sovereign](https://img.shields.io/badge/sovereign-Mistral_EU_par_défaut-6B46C1)](https://docs.itsm-modern-ai.com)
 
 [Déploiement](#déploiement) · [Comment ça marche](#comment-ça-marche) · [Documentation](https://docs.itsm-modern-ai.com) · [Site produit](https://itsm-modern-ai.com)
@@ -64,7 +64,6 @@ services:
       postgres: { condition: service_healthy }   # une base qui démarre n'accepte pas encore de connexion
     ports: ["8000:8000"]
     environment:
-      ITSM_ADMIN_PASSWORD: change-me-min-8       # ≥ 8 car. — amorce l'admin au 1er boot
       SESSION_HTTPS_ONLY: "false"                # true derrière un reverse proxy TLS
       DATABASE_URL: postgresql+psycopg://itsm:change-me-too@postgres:5432/itsm
     volumes: ["itsm_data:/app/data"]             # master.key + sauvegardes
@@ -90,6 +89,15 @@ volumes:
 
 Console : **`http://HOST:8000`** · **Mise à jour :** `docker compose pull && docker compose up -d` (migrations Alembic appliquées au démarrage).
 
+### Première visite : vous créez votre compte
+
+Il n'y a **aucun mot de passe à préparer** : ouvrez `http://HOST:8000`, le premier écran vous demande une **adresse email** et un **mot de passe** (≥ 8 caractères). C'est le compte administrateur unique, et il est créé **en place** — le hash Argon2 est chiffré dans le volume, aucun mot de passe en clair n'existe nulle part.
+
+> ### ⚠️ À lire avant d'ouvrir le port
+> Entre le démarrage du conteneur et la création de ce compte, **quiconque atteint le port peut revendiquer l'administration de l'instance.** Le choix de ne poser **ni jeton d'amorçage ni fenêtre temporelle** est délibéré : le prix aurait été un secret à transporter, exactement ce que cette version supprime. Conséquence pratique : **n'exposez pas le port publiquement avant d'avoir créé votre compte.** Tant qu'il n'existe pas, le moteur le répète à chaque démarrage dans ses logs (`AUCUN COMPTE ADMINISTRATEUR : cette instance est REVENDICABLE`).
+
+**Mot de passe oublié ?** La console n'envoie pas d'email : la récupération se fait depuis l'hôte, avec un accès au conteneur (voir plus bas).
+
 **Sauvegarde** (avant toute mise à jour) : `docker compose exec itsm python -m itsm_modern_ai.backup` — dump `pg_dump` **à chaud** et **relu intégralement** (structure + comptage des lignes), accompagné de la `master.key` sans laquelle une restauration est illisible. Ne copiez jamais le répertoire de données d'un serveur en marche : le cluster obtenu est incohérent.
 
 > ⚠️ Jamais `docker compose down -v` — `-v` supprime `itsm_data` (clé de chiffrement) **et** `itsm_pgdata` (toutes les données).
@@ -105,11 +113,10 @@ Stack **durci** (caps, read-only, healthcheck) → [`docker-compose.portainer.ym
 
 ## Variables d'environnement
 
-Toutes optionnelles **sauf `ITSM_ADMIN_PASSWORD` au 1er boot**. Les clés LLM et tokens GLPI se saisissent **dans l'interface** (chiffrés Fernet au repos), jamais ici.
+**Toutes optionnelles.** Le compte administrateur ne s'amorce **plus** par une variable : il se crée à la première visite (ci-dessus), et le moteur ne lit **aucun** mot de passe dans l'environnement. Les clés LLM et tokens GLPI se saisissent **dans l'interface** (chiffrés Fernet au repos), jamais ici.
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `ITSM_ADMIN_PASSWORD` | — | Mot de passe admin **amorcé au 1er boot** (≥ 8 car. ; alias accepté : `ADMIN_PASSWORD`). Idempotent, jamais écrasé, retirable ensuite. Sans lui : console **verrouillée** (*fail-closed*). |
 | `SESSION_HTTPS_ONLY` | `true` | Cookie de session `Secure`. Défaut code `true` ; les artefacts livrés (`.env` de l'installeur, compose Portainer) posent `false` pour le pilote HTTP (sinon login impossible). Repasser à `true` derrière un TLS. |
 | `ITSM_HOST_PORT` | `8000` | Port hôte publié (installeur / `docker-compose.portainer.yml`). |
 | `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` | `itsm` · `itsm` · `itsm` | Identifiants créés à l'**initialisation du cluster** (premier démarrage seulement — ensuite, `ALTER USER`). |
@@ -160,7 +167,24 @@ Le pipeline est **immuable** : aucune action n'est appliquée à GLPI sans avoir
 - **Secrets chiffrés Fernet** au repos ; `master.key` dans le volume `itsm_data` (`0600`).
 - **Masquage PII avant le LLM** : e-mail + téléphone toujours inclus ; IBAN/cartes, secrets (mots de passe/tokens/clés API), IP/MAC et identifiants FR (NIR/SIRET) débloqués par une licence **Supporter**. ⚠️ Sans licence, IBAN et secrets partent **en clair** au LLM (avertissement affiché en console + fiche DPO).
 - **Console DPO** dédiée : tableau des catégories masquées, testeur de masquage, export d'un rapport DPO pour validation en réunion.
-- **Conteneur non-root**, *fail-closed* sur l'accès admin, rate-limit login (avec `X-Forwarded-For` derrière proxy).
+- **Conteneur non-root**, *fail-closed* sur l'accès admin, rate-limit login (avec `X-Forwarded-For` derrière proxy) — le même compteur couvre la **création** du compte, qui est publique par construction.
+- **Fenêtre de revendication assumée** : tant qu'aucun compte n'existe, `POST /api/auth/setup` est ouvert à quiconque atteint le port. Ni jeton d'amorçage, ni fenêtre temporelle — le choix est délibéré et **annoncé à chaque démarrage** dans les logs. N'exposez pas le port avant d'avoir créé votre compte.
+
+### Mot de passe administrateur oublié
+
+Il n'existe **aucun** envoi d'email de réinitialisation (le produit ne parle à aucun serveur SMTP, par souveraineté). La reprise en main se fait depuis l'hôte — **avoir un accès shell à la machine EST le facteur d'authentification** :
+
+```bash
+# Déploiement compose / Portainer (saisie masquée, l'adresse de connexion est conservée)
+docker compose exec itsm python -m itsm_modern_ai.admin_setup --force
+
+# Depuis les sources
+make set-admin-password            # ajoutez EMAIL=… si aucun compte n'existe encore
+```
+
+Autres usages de la même CLI : `--email a@b.fr --email-only` (corriger l'adresse sans toucher au mot de passe), `--check` (0 si un compte existe, 1 sinon). Tout changement de mot de passe **révoque les sessions ouvertes**. Adresse **oubliée** aussi ? `--force --email <nouvelle adresse>` réécrit les deux.
+
+> `./install.sh --reset-password` fait la même chose pour une installation depuis les sources.
 - **Pas de métrique nominative** par technicien (anti-mouchard) · export CSV DPO + rétention RGPD automatisée.
 
 ➜ **[Sécurité & limites](https://docs.itsm-modern-ai.com/security-limits/)**

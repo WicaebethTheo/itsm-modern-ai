@@ -108,27 +108,30 @@ def _secured(db_url, tmp_path, **over):
         polling_enabled=False,
         dev_open_admin=False,
         session_https_only=False,
-        admin_password="s3cret-pilote",
         frontend_dist=str(tmp_path / "dist"),
         **over,
     )
 
 
-def test_metrics_requires_session_when_no_token_configured(db_url, tmp_path):
+def test_metrics_requires_session_when_no_token_configured(db_url, tmp_path, creer_compte_admin):
     with TestClient(create_app(_secured(db_url, tmp_path))) as c:
+        creer_compte_admin(c)
         r = c.get("/metrics")
         assert r.status_code == 401
         # Le refus ne doit rien laisser filtrer des séries.
         assert "itsm_http_requests_total" not in r.text
         # Session admin → lecture autorisée (l'exploitant garde son endpoint).
-        assert c.post("/api/auth/login", json={"password": "s3cret-pilote"}).status_code == 200
+        assert c.post(
+            "/api/auth/login", json={"email": "admin@exemple.fr", "password": "s3cret-pilote"}
+        ).status_code == 200
         r2 = c.get("/metrics")
         assert r2.status_code == 200 and "itsm_http_requests_total" in r2.text
 
 
-def test_metrics_token_still_allows_anonymous_scrape(db_url, tmp_path):
+def test_metrics_token_still_allows_anonymous_scrape(db_url, tmp_path, creer_compte_admin):
     """COMPATIBILITÉ : jeton configuré = scrape sans session, comme avant (Prometheus)."""
     with TestClient(create_app(_secured(db_url, tmp_path, metrics_token="scrape-secret"))) as c:
+        creer_compte_admin(c)
         r = c.get("/metrics", headers={"Authorization": "Bearer scrape-secret"})
         assert r.status_code == 200 and "itsm_http_requests_total" in r.text
         assert c.get("/metrics").status_code == 401  # sans jeton, toujours refusé

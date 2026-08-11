@@ -11,4 +11,8 @@ beforeEach(() => {
 
 afterEach(() => {
   localStorage.clear();
+  // sessionStorage porte des ceintures anti-boucle inter-pages (`itsm.setup-settled`,
+  // `itsm.login-redirect-at`) : les laisser fuiter d'un test à l'autre rendrait l'ordre
+  // d'exécution significatif.
+  sessionStorage.clear();
 });

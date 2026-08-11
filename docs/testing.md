@@ -4,9 +4,9 @@
 
 | Suite | Compte | Commande |
 |---|---:|---|
-| **pytest** (unit + integration via `respx`) | **596** | `make test` |
-| **Vitest + Testing Library** (composants + pages) | **153** (22 fichiers) | `make ui-test` |
-| **Playwright** (E2E, API mockée) | **3 parcours** | `make ui-e2e` |
+| **pytest** (unit + integration via `respx`) | **652** | `make test` |
+| **Vitest + Testing Library** (composants + pages) | **194** (26 fichiers) | `make ui-test` |
+| **Playwright** (E2E, API mockée) | **7 parcours** (4 fichiers) | `make ui-e2e` |
 | **ruff** (Python) | 0 violation | `make lint` |
 | **Biome + tsc** (TS/JSX) | 0 violation | `make ui-lint` |
 
@@ -66,6 +66,8 @@ y compris celles ouvertes après coup sous un autre thread, voit le bon schéma 
 - Pipeline à ordre immuable (règles → cost cap → masquage → LLM → Pydantic → whitelist → seuil → Suivi / « à trier »).
 - Sauvegarde (`tests/unit/test_backup.py`, contre un **vrai** PostgreSQL — pas un `pg_dump` simulé) : dump `pg_dump --format=custom` pris à chaud, archive **relue en deux temps** (structure par `pg_restore --list`, avec une entrée `TABLE DATA` exigée pour chaque table de la base ; puis relecture **intégrale** des données par `pg_restore --data-only` et recomptage ligne à ligne contre la base vive). Sont refusées : une archive vide, tronquée, à table manquante, ou dont une table peuplée en base ressort vide. `master.key` jointe, URL non-PostgreSQL rejetée, mot de passe jamais passé sur la ligne de commande (`PGPASSWORD`), aucun dossier laissé à moitié fait en cas d'échec.
 - Contrats d'exploitation (`tests/unit/test_deployment_files.py`) : la base est un **service à part entière** des deux composes, le PGDATA ne partage pas le volume applicatif, l'entrypoint **attend la base avant de migrer** (attente bornée, échec explicite), `install.sh --rollback` **restaure réellement** la base (`pg_restore --exit-on-error`, **schéma remis à plat** au lieu de `--clean`, confirmation **tapée** et jamais auto-répondue, refus si l'état courant n'est pas dumpable, état d'avant conservé), la mise à jour **refuse** de partir sans sauvegarde, un **PGDATA d'une autre majeure** est refusé avec sa procédure (fonctions shell réellement exécutées sur un faux cluster, côté installeur **et** entrypoint), et la **majeure PostgreSQL** est la même dans les composes, le client de l'image et la CI.
+- **Compte administrateur créé à la première visite** (`tests/unit/test_deployment_files.py`) : **aucune** trace d'`ITSM_ADMIN_PASSWORD` / `ADMIN_PASSWORD` dans les fichiers d'exploitation (composes, `.env.example`, `install.sh`, entrypoint, `Makefile`, `Dockerfile`, workflow de publication) — une variable résiduelle serait un **leurre**, l'exploitant la renseignerait sans effet et croirait son compte protégé ; l'entrypoint n'appelle plus `admin_setup` en écriture ; l'installeur n'oppose plus de porte dure « pas de mot de passe = refus de terminer » et **renvoie vers l'écran de création** en avertissant de ne pas exposer le port ; `--reset-password` et `make set-admin-password` **délèguent** à la CLI avec les bons drapeaux (`--force`, et `--email` quand aucun compte n'existe).
+- **Publication d'image bloquée par le parcours réel** (`.github/workflows/docker-publish.yml`, verrouillé par le même module) : le smoke test **exerce** `POST /api/auth/setup` (200), son **rejeu** (409, *fail-closed*), puis `POST /api/auth/login` avec les identifiants créés (200) et `setup_required` repassé à faux. Il remplace un `grep` de log qui ne prouvait que l'existence d'une ligne — il serait resté vert avec un hash illisible ou un `/api/auth/login` cassé.
 - Fenêtre de doublon du poller : réservation posée AVANT le handler, rendue si le triage est rejouable, libérée en fin de cycle ; une interruption n'est jamais rejouée et est signalée.
 - Purge RGPD côté console : confirmation obligatoire **avant** toute suppression, annulation qui n'exécute rien, fenêtres réellement appliquées annoncées dans la confirmation (et non le brouillon non enregistré), échec remonté à l'admin.
 - Suivi « non tranché » sur « à trier » : déposé sur un refus **arbitré** (dans les 3 modes, sans mutation, sans brouillon), **jamais** sur un motif rejouable (panne LLM, sortie invalide, cap) ; un GLPI en panne ne casse ni la journalisation ni le marquage « traité ».
@@ -90,7 +92,7 @@ y compris celles ouvertes après coup sous un autre thread, voit le bon schéma 
 | Workflow | Déclencheur | Contenu |
 |---|---|---|
 | `ci.yml` | chaque **PR** + push `main` | `backend` (ruff + pytest sur **3.14 et 3.13**) · `migrations` (Alembic : base vide, base **peuplée**, aller-retour `downgrade`/`upgrade`) · `frontend` (Biome + tsc + Vitest + build Vite) · `docker-build` (image amd64, sans push) |
-| `docker-publish.yml` | push `main` → `edge` ; **release** → `latest` + semver | Re-joue ruff + pytest, **smoke test** du conteneur (boot, `/health`, `/api/status`, amorçage admin), puis build multi-arch amd64 + arm64 |
+| `docker-publish.yml` | push `main` → `edge` ; **release** → `latest` + semver | Re-joue ruff + pytest, **smoke test** du conteneur (boot, `/health`, `/api/status`, **parcours de création du compte admin** : `setup` 200 → rejeu 409 → `login` 200, puis sauvegarde `pg_dump` réelle), puis build multi-arch amd64 + arm64 |
 | `release.yml` | tag `v*.*.*` | Crée la release GitHub (c'est elle qui notifie les instances déployées) |
 | `codeql.yml` | PR + push `main` + hebdo | Analyse statique de sécurité |
 | `secret-scan.yml` | PR + push `main` + hebdo | gitleaks (dont l'historique complet, en hebdo) |

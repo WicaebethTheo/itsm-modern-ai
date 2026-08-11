@@ -429,6 +429,160 @@ def test_l_entrypoint_garde_aussi_la_majeure_du_pgdata(tmp_path):
     assert "incompatible" in lance.stderr or "16" in lance.stderr
 
 
+# ── Compte administrateur : créé à la PREMIÈRE VISITE, plus par l'environnement ────────
+# Ces contrats ont remplacé l'amorçage par variable. L'ancien monde posait
+# `ITSM_ADMIN_PASSWORD` dans les composes, l'entrypoint la lisait au boot, et le smoke test
+# de publication cherchait « compte admin amorcé » dans les logs. Tout cela est mort — mais
+# « mort » n'est pas un état que la CI constate toute seule : un `environment:` oublié
+# donnerait une variable inerte que l'exploitant croirait active, ce qui est pire que
+# l'absence, puisqu'il déploierait en croyant son compte protégé.
+FICHIERS_D_EXPLOITATION = (
+    *COMPOSES,
+    ".env.example",
+    "install.sh",
+    "docker/entrypoint.sh",
+    "Makefile",
+    "Dockerfile",
+    ".github/workflows/docker-publish.yml",
+)
+
+
+@pytest.mark.parametrize("fichier", FICHIERS_D_EXPLOITATION)
+def test_aucun_mot_de_passe_admin_ne_transite_plus_par_l_environnement(fichier):
+    """Aucune trace d'`ITSM_ADMIN_PASSWORD` / `ADMIN_PASSWORD` dans l'exploitation.
+
+    Le moteur ne lit plus AUCUN mot de passe dans l'environnement : ni `Settings`
+    (le champ a disparu), ni la CLI `admin_setup` (stdin ou saisie masquée uniquement).
+    Une variable qui subsisterait dans un compose ou un `.env.example` serait donc un
+    LEURRE : l'exploitant la renseignerait, ne verrait aucune erreur, et découvrirait à la
+    première visite que n'importe qui a pu créer le compte avant lui.
+    """
+    texte = _texte(fichier)
+    assert "ADMIN_PASSWORD" not in texte, (
+        f"{fichier} : `ADMIN_PASSWORD` n'est plus lu par le moteur — la laisser ici fait "
+        "croire à un amorçage qui n'existe plus"
+    )
+
+
+def test_l_entrypoint_n_amorce_plus_le_compte_admin():
+    """L'entrypoint ne doit plus appeler `admin_setup` en écriture au boot.
+
+    `--check` resterait inoffensif ; c'est l'écriture qui n'a plus de sens (aucune source de
+    mot de passe non-interactive). Le garde de majeure PostgreSQL et l'attente de la base,
+    eux, sont intacts — ils sont vérifiés par les contrats voisins.
+    """
+    entrypoint = _texte("docker/entrypoint.sh")
+    lignes = [
+        ligne for ligne in entrypoint.splitlines()
+        if "admin_setup" in ligne and not ligne.lstrip().startswith("#")
+    ]
+    assert not lignes, f"l'entrypoint amorce encore le compte admin : {lignes}"
+    # … et la contrepartie est ANNONCÉE là où l'exploitant la lira (le WARNING de démarrage
+    # vit dans api/security.py ; ici on exige au moins que le fichier dise pourquoi il ne
+    # fait plus rien, sinon la prochaine régression sera de le « réparer »).
+    assert "premi" in entrypoint.lower() and "auth/setup" in entrypoint
+
+
+def test_le_smoke_test_de_publication_exerce_la_creation_du_compte():
+    """La publication doit être bloquée par le PARCOURS, pas par un message de log.
+
+    L'ancien smoke test faisait `grep "compte admin amorcé"` dans `docker logs` : il ne
+    prouvait que l'existence d'une ligne. Il serait resté vert avec un hash illisible, une
+    base en lecture seule ou un `/api/auth/login` cassé — et il est devenu franchement
+    nuisible le jour où le message a disparu, puisqu'il aurait empêché TOUTE publication.
+    On exige donc les quatre points du contrat public.
+    """
+    workflow = _texte(".github/workflows/docker-publish.yml")
+    assert "/api/auth/setup" in workflow, "le smoke test doit créer le compte pour de vrai"
+    assert "/api/auth/login" in workflow, "… et vérifier qu'on peut s'y connecter ensuite"
+    assert "409" in workflow, "un second /api/auth/setup doit être REFUSÉ (fail-closed)"
+    assert "setup_required" in workflow
+    # L'ancien verrou, nommément banni : il ne doit pas revenir par copier-coller.
+    assert "compte admin amorcé" not in workflow
+
+
+def test_l_installeur_renvoie_vers_l_ecran_de_creation_du_compte():
+    """Un installeur qui se termine sans dire où créer son compte laisse l'exploitant
+    devant une console qui lui demande des identifiants qu'il n'a jamais choisis.
+
+    Et il doit dire l'autre moitié : tant que le compte n'existe pas, l'instance est
+    revendicable. C'est le seul moment où l'exploitant lit encore la sortie du script.
+    """
+    installeur = _texte("install.sh")
+    # Plus de porte dure « pas de mot de passe = refus de terminer » : elle exigeait un
+    # amorçage devenu impossible, et aurait fait échouer toute installation.
+    assert "No admin password configured" not in installeur
+    assert "Admin password" not in installeur
+    final = installeur.split("== Installation reussie ==", 1)[1]
+    assert "creer le compte administrateur" in final.lower() or "creer le compte" in final.lower()
+    assert "port" in final.lower() and "publiquement" in final.lower(), (
+        "la conclusion doit avertir de ne pas exposer le port avant la création du compte"
+    )
+    assert "--reset-password" in final, "la récupération doit être annoncée AVANT d'en avoir besoin"
+
+
+def test_la_recuperation_de_mot_de_passe_delegue_a_la_cli_avec_les_bons_drapeaux():
+    """`--reset-password` est désormais le SEUL chemin de récupération : il doit marcher.
+
+    Deux pièges que ce contrat ferme : (1) réimplémenter le hachage côté shell — la CLI est
+    la seule source de vérité ; (2) appeler la CLI sans `--email` sur une base SANS compte,
+    où elle refuse (un compte sans adresse ne pourrait jamais se connecter, le login
+    comparant le couple email + mot de passe).
+    """
+    corps = _texte("install.sh").split("\nreset_admin_password() {", 1)[1].split("\n}", 1)[0]
+    assert "itsm_modern_ai.admin_setup" in corps or "run_admin_setup" in corps
+    assert "--force" in corps, "changer un mot de passe existant exige --force"
+    assert "--email" in corps, "créer un compte sans adresse est refusé par la CLI"
+    assert "admin_is_set" in corps, "les deux cas (compte existant / absent) doivent différer"
+
+
+@pytest.mark.parametrize(
+    ("compte_existe", "attendu"),
+    [
+        # Compte présent, aucun terminal : le mot de passe ne peut PAS être saisi (il n'est
+        # plus lu dans l'environnement) — on doit le dire, pas rendre un « non modifié » muet.
+        (True, "Pas de terminal interactif"),
+        # Aucun compte : rien à réinitialiser, on renvoie vers la console au lieu d'inventer
+        # une adresse (la CLI refuserait, et un compte sans adresse ne se connecterait jamais).
+        (False, "creez le compte depuis la console"),
+    ],
+)
+def test_la_recuperation_refuse_proprement_sans_terminal(compte_existe, attendu):
+    """La fonction est EXÉCUTÉE, pas seulement lue.
+
+    Piège mesuré : `[ -w /dev/tty ]` est **vrai** dans un conteneur de CI (le nœud existe et
+    ses droits passent) alors que l'ouvrir échoue, faute de terminal de contrôle. La branche
+    « on a un terminal » était donc prise à tort, et l'exploitant lisait « mot de passe non
+    modifié » au lieu de la vraie cause. On exige la même détection que `ask` :
+    `[ -r /dev/tty ] && [ -t 1 ]`.
+    """
+    fonctions = _fonctions_shell("install.sh", "run_admin_setup", "reset_admin_password")
+    stub = (
+        'c_yel=""; c_off=""\n'
+        'say() { :; }\nwarn() { echo "$*"; }\n'
+        'die() { echo "$*" >&2; exit 1; }\n'
+        'docker() { return 0; }\n'
+        f'admin_is_set() {{ return {0 if compte_existe else 1}; }}\n'
+    )
+    lance = subprocess.run(
+        ["bash", "-c", stub + fonctions + "\nreset_admin_password"],
+        capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL,
+    )
+    assert lance.returncode == 1, "sans terminal, on s'arrête au lieu de faire semblant"
+    assert attendu in (lance.stdout + lance.stderr)
+
+
+def test_le_makefile_ne_reimplemente_pas_la_recuperation():
+    """`make set-admin-password` reste un raccourci vers la CLI livrée dans l'image."""
+    makefile = _texte("Makefile")
+    cible = makefile.split("\nset-admin-password:", 1)[1].split("\n\n", 1)[0]
+    assert "itsm_modern_ai.admin_setup" in cible
+    assert "--force" in cible
+    # Sur une base vierge la CLI exige une adresse : la cible doit pouvoir en passer une,
+    # sinon `make set-admin-password` échoue sans issue sur une instance jamais revendiquée.
+    assert "EMAIL" in cible
+
+
 def test_env_example_donne_une_stack_coherente():
     """`install.sh` copie .env.example en .env : si le mot de passe du cluster et celui de
     l'URL du moteur divergent, l'instance ne se connecte pas à sa propre base au 1er boot.

@@ -112,15 +112,33 @@ L'exploitant **ne clone ni ne build rien** : on tire l'**image publique pré-con
 curl -fsSL https://itsm-modern-ai.com/install | bash
 
 # (b) Portainer / orchestrateur : coller docker-compose.portainer.yml
-#     + définir ITSM_ADMIN_PASSWORD (≥ 8 car.) dans le stack.
+#     puis Deploy. Aucune variable obligatoire.
 
 # (c) docker run durci : réseau dédié + conteneur postgres:17-alpine +
-#     deux volumes (itsm_data, itsm_pgdata) + ITSM_ADMIN_PASSWORD.
+#     deux volumes (itsm_data, itsm_pgdata).
 ```
 
-Le **mot de passe admin** est **amorcé au premier démarrage** depuis `ITSM_ADMIN_PASSWORD`
-(idempotent : un mot de passe existant n'est jamais écrasé ; retirable après le 1er boot). Sans
-lui, la console est **fail-closed** (verrouillée).
+Il n'y a **aucun mot de passe à préparer** : à la **première visite** de la console, l'exploitant
+crée son compte administrateur (**email + mot de passe**, ≥ 8 caractères) et la session s'ouvre
+dans la foulée. Le moteur ne lit plus **aucun** mot de passe dans l'environnement.
+
+> ### ⚠️ Ce qu'il faut dire au client avant qu'il déploie
+> **Entre le démarrage du conteneur et la création du compte, quiconque atteint le port peut
+> revendiquer l'administration de l'instance.** Ni jeton d'amorçage ni fenêtre temporelle ne
+> sont posés — c'est un choix **délibéré**, au profit de la simplicité (les deux auraient
+> réintroduit un secret à transporter).
+>
+> **Conséquence pratique : ne pas exposer le port publiquement avant d'avoir créé le compte.**
+> Déployer port fermé ou sur réseau interne, créer le compte, **puis** publier.
+>
+> Tant que le compte n'existe pas, le moteur journalise à chaque démarrage
+> `AUCUN COMPTE ADMINISTRATEUR : cette instance est REVENDICABLE …`. Cet avertissement est le
+> signal à surveiller : s'il disparaît sans que personne de l'équipe n'ait créé le compte,
+> l'instance a été prise — il faut repartir d'une base vierge.
+>
+> Déploiement sur un réseau non maîtrisé ? Le compte peut être créé **en CLI**, juste après le
+> `up -d`, avant même d'ouvrir la console :
+> `docker compose exec itsm python -m itsm_modern_ai.admin_setup --email vous@exemple.fr`
 
 > La voie **`install.sh`** (clone + build local) reste valide pour l'**airgap / hors-ligne**.
 > Le schéma ci-dessous illustre ce parcours depuis les sources :
@@ -128,7 +146,7 @@ lui, la console est **fail-closed** (verrouillée).
 > ```bash
 > git clone https://github.com/WicaebethTheo/itsm-modern-ai.git
 > cd itsm-modern-ai
-> ./install.sh          # préflight + .env + build + démarrage + mot de passe admin
+> ./install.sh          # préflight + .env + build + démarrage (pas de mot de passe demandé)
 > ```
 
 ```mermaid
@@ -138,6 +156,7 @@ sequenceDiagram
     participant Dk as Docker Compose
     participant Pg as Conteneur PostgreSQL
     participant Ct as Conteneur moteur
+    participant Nav as Navigateur
     participant Data as ./data
 
     Op->>Sh: ./install.sh
@@ -149,28 +168,48 @@ sequenceDiagram
     Dk->>Ct: démarre le moteur (une fois la base « healthy »)
     Ct->>Pg: attente bornée, puis alembic upgrade head
     Ct->>Data: génère MASTER_KEY (1er démarrage)
-    Sh->>Op: demande le mot de passe admin (saisie masquée)
-    Op-->>Sh: mot de passe
-    Sh->>Ct: admin_setup → stocke un hash Argon2 (jamais en clair)
+    Ct->>Ct: ⚠️ WARNING « instance REVENDICABLE » (aucun compte)
     Sh->>Ct: health check (HTTP 200)
-    Sh-->>Op: ✅ console prête sur http://<hôte>:8000
+    Sh-->>Op: ✅ console sur http://<hôte>:8000 — créez votre compte MAINTENANT
+    Note over Ct,Nav: 🚨 Fenêtre de revendication : ouverte<br/>quiconque atteint le port peut créer le compte
+    Op->>Nav: ouvre http://<hôte>:8000
+    Nav->>Ct: GET /api/auth/status → setup_required = true
+    Ct-->>Nav: écran de création de compte
+    Op->>Nav: email + mot de passe (≥ 8 car.)
+    Nav->>Ct: POST /api/auth/setup
+    Ct->>Data: hash Argon2 chiffré (jamais de mot de passe en clair)
+    Ct-->>Nav: 200 + session ouverte (plus de login à faire)
+    Note over Ct,Nav: ✅ Fenêtre refermée — tout /api/auth/setup répond 409
 ```
 
 **Points de sécurité importants :**
 - `MASTER_KEY` est **générée au premier démarrage dans `./data`** (ne pas la mettre dans `.env` en pilote ; en production, on peut la gérer hors-bande).
-- Le mot de passe admin est saisi de façon interactive et stocké en **hash Argon2**. **Fail-closed** : sans identifiant configuré, les endpoints admin répondent **401** (jamais ouverts).
+- Le compte admin est créé **dans le navigateur** et stocké en **hash Argon2** (lui-même chiffré). Aucun mot de passe ne transite par `.env`, l'environnement du conteneur ou l'historique du shell.
+- **Fail-closed** : tant qu'aucun compte n'existe, les endpoints admin répondent **401** (jamais ouverts) ; une fois créé, `POST /api/auth/setup` répond **409** et ne peut plus écraser le compte en place. Cette route publique est comptée par le **même rate-limit que le login**.
+- **La fenêtre entre les deux notes du schéma est le risque assumé** : elle doit être la plus courte possible, et le port ne doit pas être public pendant ce temps.
+- **Mot de passe oublié** : aucun email de réinitialisation (aucun SMTP, par souveraineté). Seul chemin — `docker compose exec itsm python -m itsm_modern_ai.admin_setup --force`, ou `./install.sh --reset-password` depuis les sources. L'accès shell à l'hôte est donc le facteur d'authentification de dernier recours.
 - `install.sh` pose `chmod 600` sur `.env`.
 
 ### Configuration depuis la console (étape humaine, une fois)
 
 ```mermaid
 flowchart LR
-    L["🔑 Connexion admin"] --> G["1️⃣ Page GLPI<br/>URL + App/User-Token<br/>(ou OAuth2 V2)"]
+    A{"Un compte admin<br/>existe-t-il ?"}
+    A -- non, 1re visite --> N["👤 Créer le compte<br/>email + mot de passe<br/>(session ouverte aussitôt)"]
+    A -- oui --> L["🔑 Connexion<br/>email + mot de passe"]
+    N --> G["1️⃣ Page GLPI<br/>URL + App/User-Token<br/>(ou OAuth2 V2)"]
+    L --> G
     G --> P["2️⃣ Page Fournisseur<br/>Mistral / OpenAI / Anthropic / Ollama"]
     P --> E["3️⃣ Page Moteur<br/>liste blanche · seuil · plafond coût · masquage"]
     E --> M["4️⃣ Mode = suggestion<br/>(défaut sûr)"]
     M --> R["▶️ 1er cycle :<br/>lire le Journal des décisions"]
+
+    style N fill:#fde68a,stroke:#b45309
 ```
+
+> L'étape 👤 n'arrive **qu'une fois** — et c'est celle qu'il faut faire **tout de suite après
+> le déploiement** : tant qu'elle n'a pas eu lieu, n'importe qui atteignant le port peut la
+> faire à votre place.
 
 > **Démarrer sans risque :** restez en mode **suggestion** (aucune écriture, suivi privé)
 > tant que vous n'avez pas relu assez de décisions pour faire confiance. Pour un essai

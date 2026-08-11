@@ -79,9 +79,10 @@ def test_health_cache_expires(db_url, tmp_path, spy, monkeypatch):
 
 
 # ── (b) ?probe=true réservé aux sessions authentifiées ────────────────────────
-def test_probe_requires_authentication(db_url, tmp_path, spy):
+def test_probe_requires_authentication(db_url, tmp_path, spy, creer_compte_admin):
     """La sonde LLM coûte de l'argent : un anonyme ne doit pas pouvoir la déclencher."""
-    with TestClient(create_app(_settings(db_url, tmp_path, admin_password=PASSWORD))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path, dev_open_admin=False))) as c:
+        creer_compte_admin(c, password=PASSWORD)
         r = c.get("/health?probe=true")
         assert r.status_code == 401
         assert r.json()["detail"]["code"] == "unauthorized"
@@ -90,7 +91,9 @@ def test_probe_requires_authentication(db_url, tmp_path, spy):
         # /health nu reste public (installeur, sonde réseau) — non-régression.
         assert c.get("/health").status_code == 200
 
-        assert c.post("/api/auth/login", json={"password": PASSWORD}).status_code == 200
+        assert c.post(
+            "/api/auth/login", json={"email": "admin@exemple.fr", "password": PASSWORD}
+        ).status_code == 200
         assert c.get("/health?probe=true").status_code == 200
 
 

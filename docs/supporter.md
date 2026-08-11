@@ -34,8 +34,10 @@ C'est la seule méthode requise : tout se fait depuis la page Supporter de l'app
 > licenciée, vous pouvez définir `LICENSE_KEY=itsm-lic.v1.…` dans `.env` avant le premier
 > démarrage. La page Supporter reste la méthode normale et recommandée.
 
-> **Mot de passe admin** : il est amorcé au premier démarrage via `ITSM_ADMIN_PASSWORD`
-> (idempotent, retirable ensuite) — rien à faire ici pour devenir Supporter.
+> **Compte admin** : il se crée **à la première visite** de la console (email + mot de passe),
+> pas via une variable d'environnement — rien à faire ici pour devenir Supporter, sinon être
+> connecté (la page Supporter est une page d'administration). Mot de passe oublié :
+> `docker compose exec itsm python -m itsm_modern_ai.admin_setup --force`.
 
 ## Revenir en Community (désactivation)
 

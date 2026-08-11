@@ -12,12 +12,13 @@ from itsm_modern_ai.domain.models import Referentials
 
 
 def _settings(db_url, **kw) -> Settings:
+    # admin sans mot de passe (test) — fail-closed désactivé, sauf surcharge explicite
+    kw.setdefault("dev_open_admin", True)
     return Settings(
         _env_file=None,
         database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
-        dev_open_admin=True,  # admin sans mot de passe (test) — fail-closed désactivé
         **kw,
     )
 
@@ -104,11 +105,10 @@ def test_root_reports_ui_not_built_when_no_dist(db_url, tmp_path):
         assert r.status_code == 200 and r.json()["code"] == "ui_not_built"
 
 
-def test_referentials_protected_when_auth_configured(db_url):
-    # ≥ MIN_ADMIN_CHARS : l'amorçage paresseux applique désormais la même politique de
-    # longueur que `admin_setup` — un "pw" de 2 caractères laisserait l'admin NON configuré.
-    settings = _settings(db_url, admin_password="pw-assez-long")
+def test_referentials_protected_when_auth_configured(db_url, creer_compte_admin):
+    settings = _settings(db_url, dev_open_admin=False)
     with TestClient(create_app(settings)) as c:
+        creer_compte_admin(c)  # compte créé à la première visite, puis déconnexion
         assert c.get("/api/discovery/technician").status_code == 401
         assert c.get("/api/metrics").status_code == 401
 

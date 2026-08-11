@@ -143,3 +143,39 @@ def temp_db() -> Iterator[None]:
 def session(temp_db) -> Iterator[Session]:
     with db.session_scope() as s:
         yield s
+
+
+# ── Compte administrateur (créé à la première visite, plus par variable d'env) ────────
+# Identifiants par défaut des tests d'API. Ils n'ont plus de raison de vivre dans les
+# `Settings` : le compte se crée par HTTP, comme le ferait un exploitant.
+ADMIN_EMAIL = "admin@exemple.fr"
+ADMIN_PASSWORD = "s3cret-pilote"
+
+
+@pytest.fixture
+def creer_compte_admin():
+    """Crée le compte admin d'une instance neuve via l'API, comme le ferait l'exploitant.
+
+    Remplace l'ancien `Settings(admin_password=…)` : il n'existe plus AUCUN chemin
+    d'amorçage hors de l'interface, donc un test qui veut « une instance protégée » doit
+    passer par la même porte que la vraie première visite.
+
+    `deconnecter=True` (défaut) rend la main sur une instance CONFIGURÉE mais DÉCONNECTÉE
+    — l'état dont la plupart des tests ont besoin —, la création ouvrant la session.
+    """
+
+    def _creer(
+        client,
+        *,
+        email: str = ADMIN_EMAIL,
+        password: str = ADMIN_PASSWORD,
+        deconnecter: bool = True,
+    ):
+        reponse = client.post("/api/auth/setup", json={"email": email, "password": password})
+        assert reponse.status_code == 200, reponse.text
+        if deconnecter:
+            client.post("/api/auth/logout")
+            client.cookies.clear()
+        return reponse
+
+    return _creer

@@ -30,10 +30,10 @@ services:
       DATABASE_URL: ${ITSM_DATABASE_URL:-postgresql+psycopg://itsm:itsm@postgres:5432/itsm}
       # Licence Supporter (vide = Community) ; aussi collable via l'UI (page Supporter).
       LICENSE_KEY: ${LICENSE_KEY:-}
-      # Amorcage admin au 1er boot (deploiement non-interactif / orchestrateur) :
-      # l'entrypoint cree le compte admin depuis cette valeur si aucun n'est encore
-      # configure (idempotent, jamais ecrase). Vide = pas d'amorcage automatique.
-      ITSM_ADMIN_PASSWORD: ${ITSM_ADMIN_PASSWORD:-}
+      # ⚠️ AUCUN mot de passe admin ici : le compte se cree A LA PREMIERE VISITE de
+      # l'interface (email + mot de passe). Consequence a connaitre AVANT de deployer :
+      # tant que ce compte n'existe pas, quiconque atteint le port peut le creer et
+      # prendre le controle. N'EXPOSEZ PAS le port publiquement avant de l'avoir cree.
     ports:
       # Port hote pilotable via install.sh --port ; port interne fixe = 8000.
       - "${ITSM_HOST_PORT:-8000}:8000"

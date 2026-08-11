@@ -169,12 +169,16 @@ class Settings(BaseSettings):
     polling_enabled: bool = True
     polling_max_tickets: int = 200  # garde-fou de pagination par cycle
 
-    # Authentification locale (FR-24). Bootstrap : si défini et aucun hash stocké,
-    # le mot de passe est hashé (Argon2) et stocké au premier usage.
-    admin_password: str = ""
+    # Authentification locale (FR-24) : le compte administrateur (email + mot de passe) se
+    # crée À LA PREMIÈRE VISITE, dans l'interface (POST /api/auth/setup). Il n'y a
+    # volontairement PLUS de champ `admin_password` ici, ni de lecture d'ADMIN_PASSWORD /
+    # ITSM_ADMIN_PASSWORD : un mot de passe passé par l'environnement traîne dans le
+    # compose, dans `docker inspect`, dans l'historique shell et dans les sauvegardes de
+    # configuration — et il survivait à sa propre rotation (l'amorçage paresseux le
+    # réinstallait). `extra="ignore"` fait qu'un `.env` en portant encore un ne casse rien.
 
-    # Garde-fou FAIL-CLOSED (durcissement audit 2026-05) : par défaut, si AUCUN mot de
-    # passe admin n'est configuré, les endpoints d'admin sont REFUSÉS (401). Mettre ce
+    # Garde-fou FAIL-CLOSED (durcissement audit 2026-05) : par défaut, si AUCUN compte
+    # administrateur n'est configuré, les endpoints d'admin sont REFUSÉS (401). Mettre ce
     # flag à True ouvre volontairement l'admin sans mot de passe (ancien comportement
     # « pilote réseau interne »). À n'activer qu'en labo/dev, jamais en production.
     dev_open_admin: bool = False

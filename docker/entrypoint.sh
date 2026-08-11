@@ -110,27 +110,19 @@ fi
 echo "[entrypoint] alembic upgrade head"
 alembic upgrade head
 
-# Amorçage admin (déploiement orchestrateur : Portainer / docker run / compose).
-# Sans install.sh, rien n'amorce le compte admin → la console démarre verrouillée
-# (security.py est fail-closed : pas de hash = accès admin refusé). On accepte
-# ITSM_ADMIN_PASSWORD OU son alias ADMIN_PASSWORD (que security.py amorce aussi en
-# lazy) ; ici on le fait tôt, au boot, avec un log clair. Propriétés :
-#   - idempotent : on saute si `--check` confirme un admin déjà configuré ;
-#   - jamais --force : on n'écrase JAMAIS un mot de passe existant au boot ;
-#   - best-effort : on ne fait JAMAIS échouer le démarrage là-dessus (le `if`
-#     neutralise le `set -e`, et le mot de passe peut être (re)défini dans l'UI).
-# On tourne déjà en user non-root `app` ici (gosu plus haut), cohérent avec le reste.
-_ADMIN_PW="${ITSM_ADMIN_PASSWORD:-${ADMIN_PASSWORD:-}}"
-if [ -n "$_ADMIN_PW" ]; then
-  if python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1; then
-    echo "[entrypoint] admin déjà configuré — amorçage ignoré (idempotent)"
-  elif ITSM_ADMIN_PASSWORD="$_ADMIN_PW" python -m itsm_modern_ai.admin_setup; then
-    echo "[entrypoint] compte admin amorcé (ITSM_ADMIN_PASSWORD / ADMIN_PASSWORD)"
-  else
-    # Mot de passe trop court (<8), base illisible, etc. : on log et on continue.
-    echo "[entrypoint] amorçage admin échoué — démarrage quand même (définir le mot de passe via l'UI)" >&2
-  fi
-fi
+# ⚠️ PLUS AUCUN AMORÇAGE ADMIN ICI — et ce n'est pas un oubli.
+# Le compte administrateur se crée désormais à la PREMIÈRE VISITE de l'interface
+# (POST /api/auth/setup) : email + mot de passe saisis par l'exploitant, session ouverte
+# dans la foulée. Le moteur ne lit plus AUCUN mot de passe dans l'environnement — ni
+# `Settings.admin_password` (supprimé), ni la CLI `admin_setup` (qui ne lit plus que stdin
+# ou une saisie masquée). Un bloc d'amorçage ici ne pourrait donc plus rien faire, sinon
+# faire croire qu'il fait quelque chose.
+# La contrepartie ASSUMÉE — l'instance est revendiquable par le premier arrivant tant que
+# le compte n'existe pas — est annoncée BRUYAMMENT à chaque démarrage par
+# `security.warn_if_setup_required` (appelé par le lifespan de api/app.py) : c'est ce
+# WARNING qui remplace ce bloc, et lui seul.
+# Récupération d'un mot de passe oublié (seul chemin) :
+#   docker compose exec itsm python -m itsm_modern_ai.admin_setup --force
 
 # Reverse proxy : si TRUST_PROXY_HEADERS=true, on active la lecture de XFF côté
 # uvicorn (cf. https://docs.itsm-modern-ai.com/production-deployment/). `--forwarded-allow-ips=*` car le moteur n'est

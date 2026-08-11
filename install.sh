@@ -2,7 +2,8 @@
 # On-premise installer — COMMUNITY edition.
 #
 # Checks prerequisites (offers to install missing ones), prepares config, starts the
-# service, creates the admin account, then prints a final CHECKLIST of system state.
+# service, then prints a final CHECKLIST of system state and the URL of the
+# account-creation screen (the admin account is created IN THE WEB UI, not here).
 #
 # Une seule commande pour TOUT : installer ET mettre à jour. Si une instance existe
 # déjà dans ce dossier, un menu propose « Mettre à jour » (sauvegarde base + clé incluse)
@@ -16,7 +17,7 @@
 #   ./install.sh --build                  # force a rebuild of the current code (no pull)
 #   ./install.sh --port 8080              # publish on a different host port
 #   ./install.sh --yes                    # non-interactive (accept proposed installs)
-#   ./install.sh --reset-password         # change the admin password of an instance
+#   ./install.sh --reset-password         # RECUPERATION : mot de passe admin oublie
 #   ./install.sh --rollback [horodatage]  # RETOUR ARRIERE : restaure backups/<ts> (base + cle + image)
 #   ./install.sh --list-backups           # liste les sauvegardes disponibles
 #
@@ -24,8 +25,12 @@
 # sauvegarde). `--yes` ne suffit pas et une absence de terminal ne vaut pas accord ; sans
 # terminal, declarez-le : ITSM_ROLLBACK_CONFIRME=<horodatage> ./install.sh --rollback <horodatage>
 #
-# The admin password is entered interactively (hidden) and stored ONLY as an encrypted
-# Argon2 hash (never in clear text). In non-interactive mode, set ITSM_ADMIN_PASSWORD.
+# COMPTE ADMINISTRATEUR : il se cree DANS L'INTERFACE, a la premiere visite (email + mot
+# de passe), pas ici. Le moteur ne lit plus aucun mot de passe dans l'environnement ; seul
+# un hash Argon2 chiffre est conserve.
+# ⚠️ RISQUE ASSUME : tant que ce compte n'existe pas, quiconque atteint le port peut le
+# creer et prendre le controle de l'instance. N'EXPOSEZ PAS le port publiquement avant
+# d'avoir cree votre compte. Mot de passe oublie : ./install.sh --reset-password
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -46,7 +51,7 @@ while [ $# -gt 0 ]; do
     --rollback) ROLLBACK=true; MODE_GIVEN=true
                 case "${2:-}" in ""|-*) : ;; *) ROLLBACK_TS="$2"; shift ;; esac ;;
     --list-backups) LIST_BACKUPS=true; MODE_GIVEN=true ;;
-    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac; shift
 done
@@ -519,8 +524,8 @@ if [ ! -f .env ]; then
   say "Creating .env from .env.example (MASTER_KEY generated on first start in ./data)"
   cp .env.example .env
 fi
-# Durcissement : .env peut contenir un secret d'amorçage (ITSM_ADMIN_PASSWORD/ADMIN_PASSWORD
-# en mode non-interactif) → propriétaire seul (jamais world-readable).
+# Durcissement : .env porte MASTER_KEY (celle qui déchiffre tous les autres secrets) et le
+# mot de passe de la base → propriétaire seul (jamais world-readable).
 chmod 600 .env 2>/dev/null || true
 check_add ".env file (chmod 600)" ok
 export ITSM_HOST_PORT="$PORT"
@@ -681,45 +686,72 @@ else
   die "Engine did not become ready in time (see logs above)."
 fi
 
-# ── 5) Admin account — REQUIRED (the console must never be left unprotected) ────
+# ── 5) Compte administrateur — CRÉÉ DANS L'INTERFACE, plus ici ──────────────────
+# L'installeur ne demande plus de mot de passe et n'oppose plus de porte dure « pas de mot
+# de passe = refus de terminer ». La raison n'est pas un relâchement : le compte se crée à
+# la première visite de la console (email + mot de passe), et le moteur ne lit PLUS aucun
+# mot de passe dans l'environnement — un prompt ici n'aurait ni adresse à proposer, ni
+# moyen non-interactif de fonctionner (one-liner `curl … | bash` sans TTY, CI, Ansible).
+#
+# ⚠️ Ce que cela coûte, dit franchement : entre ce `up -d` et la création du compte,
+# quiconque atteint le port peut revendiquer l'administration. C'est un choix délibéré
+# (aucun jeton d'amorçage à transporter) — l'installeur le RAPPELLE dans sa conclusion, et
+# le moteur le répète à chaque démarrage tant que le compte n'existe pas.
+#
+# `--reset-password` reste, et devient le SEUL chemin de récupération d'un mot de passe
+# oublié : il délègue à la CLI embarquée dans l'image.
 admin_is_set() { docker compose exec -T itsm python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1; }
-# Peut-on demander interactivement ? stdin = TTY direct, OU un /dev/tty utilisable même
-# quand stdin est un pipe (cas du one-liner `curl … | sh`).
-can_prompt() { [ -t 0 ] || { [ -r /dev/tty ] && [ -w /dev/tty ]; }; }
-run_admin_setup() {  # "$@" → extra flags ; returns the setup exit code
+
+# Exécute la CLI admin en lui donnant un vrai terminal (saisie masquée). stdin = TTY
+# direct, ou /dev/tty quand stdin est un pipe (one-liner `curl … | bash`).
+# ⚠️ La détection du second cas est `[ -r /dev/tty ] && [ -t 1 ]`, la MÊME que `ask` et
+# `confirmer_ecrasement` — et pas `[ -w /dev/tty ]` : dans un conteneur de CI, /dev/tty
+# EXISTE et passe les tests de mode, mais son ouverture échoue faute de terminal de
+# contrôle. On aurait alors un « mot de passe non modifié » au lieu du vrai diagnostic.
+run_admin_setup() {  # "$@" → drapeaux ; renvoie le code de sortie de la CLI
   if [ -t 0 ]; then
     docker compose exec itsm python -m itsm_modern_ai.admin_setup "$@"
-  elif [ -r /dev/tty ] && [ -w /dev/tty ]; then
-    # one-liner `curl … | sh` : stdin = pipe, mais le terminal reste accessible via /dev/tty
+  elif [ -r /dev/tty ] && [ -t 1 ]; then
     docker compose exec itsm python -m itsm_modern_ai.admin_setup "$@" < /dev/tty
-  elif [ -n "${ITSM_ADMIN_PASSWORD:-}" ]; then
-    docker compose exec -T -e ITSM_ADMIN_PASSWORD itsm python -m itsm_modern_ai.admin_setup "$@"
   else
-    die "Pas de terminal interactif et ITSM_ADMIN_PASSWORD non defini - mot de passe admin REQUIS."
+    die "Pas de terminal interactif : le mot de passe ne peut pas etre saisi (il n'est plus
+   lu dans l'environnement, par conception). Depuis un terminal :
+     docker compose exec itsm python -m itsm_modern_ai.admin_setup --force"
   fi
 }
-if [ "$RESET" = true ]; then
-  say "Resetting the administrator password (required)"; run_admin_setup --force || true
-elif admin_is_set; then
-  say "An administrator password is already configured — left unchanged."
-fi
-# Enforce: a password MUST be set. Interactive → retry until set (typo/too short).
-if ! admin_is_set; then
-  if can_prompt; then
-    tries=0
-    until admin_is_set; do
-      tries=$((tries+1)); [ "$tries" -gt 5 ] && die "Mot de passe admin toujours non defini apres plusieurs tentatives."
-      say "Definissez le mot de passe administrateur - REQUIS (min. 8 caracteres)"
-      run_admin_setup || warn "Non defini (incoherence ou trop court) - reessayez."
-    done
+
+# Récupération : nouveau mot de passe pour le compte existant. La CLI EXIGE `--email` à la
+# CRÉATION (sans adresse, aucune connexion ne pourrait aboutir : le login compare le couple
+# email + mot de passe) — on ne l'ajoute donc QUE lorsqu'aucun compte n'existe.
+reset_admin_password() {
+  local email=""
+  if admin_is_set; then
+    say "Nouveau mot de passe administrateur (l'adresse de connexion est conservee)"
+    run_admin_setup --force || die "Mot de passe admin NON modifie (voir le message ci-dessus)."
   else
-    run_admin_setup || true
-    admin_is_set || die "Impossible de definir le mot de passe admin depuis ITSM_ADMIN_PASSWORD (min. 8 caracteres)."
+    warn "Aucun compte administrateur sur cette instance : il n'y a rien a reinitialiser."
+    warn "La voie normale est l'ecran de creation de la console (premier ecran)."
+    if [ -t 0 ]; then
+      read -r -p "$(printf '%s? Adresse de connexion a creer (vide = annuler) : %s' "$c_yel" "$c_off")" email
+    elif [ -r /dev/tty ] && [ -t 1 ]; then
+      printf '%s? Adresse de connexion a creer (vide = annuler) : %s' "$c_yel" "$c_off" > /dev/tty
+      IFS= read -r email < /dev/tty || email=""
+    fi
+    [ -n "$email" ] || die "Annule - creez le compte depuis la console web."
+    run_admin_setup --email "$email" || die "Compte admin NON cree (voir le message ci-dessus)."
   fi
+}
+
+if [ "$RESET" = true ]; then
+  reset_admin_password
 fi
-# Hard gate: refuse to finish if there is still no admin password.
-admin_is_set && check_add "Admin password" ok \
-  || { check_add "Admin password" fail; die "No admin password configured — refusing to finish (console would be UNPROTECTED)."; }
+if admin_is_set; then
+  check_add "Compte administrateur" ok
+else
+  # PAS un échec d'installation : c'est l'état NORMAL d'une instance neuve, et l'écran de
+  # création attend l'exploitant. On le signale en `warn` pour qu'il soit vu, jamais ignoré.
+  check_add "Compte administrateur" "warn:a creer au 1er acces (instance revendicable d'ici la)"
+fi
 
 # ── 6) Runtime checks ────────────────────────────────────────────────────────
 # /health reflète GLPI+LLM : 503 si l'un est configuré-injoignable (ou pas encore
@@ -750,8 +782,9 @@ with db.session_scope() as ss:
     print(verify_license(cfg.get('license_key') or '', today=date.today()).edition)
 " 2>/dev/null | tr -d '\r')"
 check_add "Edition" "ok:${edition:-unknown}"
-# Open-admin mode bypasses login ONLY when no password is set; we now force one, but
-# warn loudly if it's enabled so it isn't left on by accident in production.
+# DEV_OPEN_ADMIN ouvre l'admin SANS login tant qu'aucun compte n'existe — et une instance
+# neuve est justement dans cet état, désormais, jusqu'à la première visite. Ce drapeau est
+# donc plus dangereux qu'avant : on l'annonce fort s'il est resté activé.
 if docker compose exec -T itsm python -c "from itsm_modern_ai.config.settings import get_settings as g; import sys; sys.exit(0 if g().dev_open_admin else 1)" >/dev/null 2>&1; then
   check_add "Open-admin (DEV_OPEN_ADMIN)" "warn:ENABLED — disable for production (DEV_OPEN_ADMIN=false)"
 fi
@@ -781,7 +814,20 @@ if $allgood; then
   else
     printf '   Console : %shttp://localhost:%s%s\n' "$c_grn" "$PORT" "$c_off"
   fi
-  echo "   Configurez GLPI, le fournisseur LLM et le perimetre depuis la console web."
+  if admin_is_set; then
+    echo "   Connectez-vous avec votre compte administrateur."
+  else
+    echo
+    printf '%s== A FAIRE MAINTENANT : creer le compte administrateur ==%s\n' "$c_yel" "$c_off"
+    echo "   Ouvrez l'URL ci-dessus : le premier ecran demande une adresse email et un"
+    echo "   mot de passe (min. 8 caracteres). C'est le compte administrateur unique."
+    warn "Tant que ce compte n'existe pas, QUICONQUE ATTEINT CE PORT peut le creer"
+    warn "et prendre le controle de l'instance : n'exposez pas ce port publiquement"
+    warn "avant d'avoir termine cette etape."
+    echo "   (Mot de passe oublie plus tard : ./install.sh --reset-password)"
+    echo
+  fi
+  echo "   Configurez ensuite GLPI, le fournisseur LLM et le perimetre depuis la console."
   echo "   Devenir Supporter : collez votre cle de licence dans la page Supporter."
   # Procedure de retour arriere annoncee AVANT d'en avoir besoin : a 2 h du matin, on ne
   # cherche pas la commande, on la relit dans le journal de la mise a jour.

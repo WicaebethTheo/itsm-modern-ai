@@ -43,10 +43,17 @@ run:
 migrate:
 	uv run alembic upgrade head
 
-# Définit / change le mot de passe admin (hash Argon2 chiffré ; jamais en clair).
+# RÉCUPÉRATION d'un mot de passe admin oublié (hash Argon2 chiffré ; jamais en clair).
+# En usage normal le compte se crée DANS L'INTERFACE, à la première visite : cette cible
+# ne sert qu'à reprendre la main sur une instance dont on a perdu le mot de passe.
 # `make migrate` au préalable si la base n'existe pas encore.
+#
+# `--force` remplace le mot de passe d'un compte EXISTANT et conserve son adresse. Sur une
+# base sans compte, la CLI exige une adresse (sans elle, aucune connexion ne pourrait
+# aboutir : le login compare le couple email + mot de passe) :
+#   make set-admin-password EMAIL=admin@exemple.fr
 set-admin-password:
-	uv run python -m itsm_modern_ai.admin_setup --force
+	uv run python -m itsm_modern_ai.admin_setup --force $(if $(EMAIL),--email $(EMAIL))
 
 # UI (SPA React) : build de production -> frontend/dist (servi par le moteur)
 ui:

@@ -108,6 +108,18 @@ AUDIT_VALUE_MAX_CHARS = 500
 # login ; incrémenter ce compteur invalide instantanément TOUS les cookies déjà émis.
 SESSION_VERSION_KEY = "session_version"
 
+# Identité du compte administrateur UNIQUE (créé à la première visite, cf. api/security.py).
+# Le produit n'a pas de multi-utilisateur : une table `users` pour une seule ligne serait un
+# schéma à maintenir, à migrer et à sauvegarder pour rien. L'email et le nom affiché vivent
+# donc ici, à côté du hash (`admin_password_hash`, lui chiffré car secret).
+#
+# ⚠️ Clés RÉSERVÉES, délibérément hors `PLAIN_KEYS` : sans quoi l'adresse partirait dans la
+# réponse de `/api/config` et — pire — deviendrait écrivable par n'importe quel POST
+# /api/config. L'email n'est pas un secret, mais il ne doit JAMAIS fuiter avant
+# authentification : c'est la moitié des identifiants, et la seule que le moteur connaisse.
+ADMIN_EMAIL_KEY = "admin_email"
+ADMIN_DISPLAY_NAME_KEY = "admin_display_name"
+
 
 class RuntimeConfigService:
     def __init__(
@@ -354,6 +366,31 @@ class RuntimeConfigService:
         new = self.session_version() + 1
         self._upsert(SESSION_VERSION_KEY, str(new), is_secret=False)
         return new
+
+    # ── compte administrateur (identité non secrète) ────────────────────────────
+    def admin_email(self) -> str | None:
+        """Adresse de connexion de l'unique compte admin (forme canonique), ou None."""
+        row = self._row(ADMIN_EMAIL_KEY)
+        return row.value or None if row is not None else None
+
+    def admin_display_name(self) -> str | None:
+        row = self._row(ADMIN_DISPLAY_NAME_KEY)
+        return row.value or None if row is not None else None
+
+    def set_admin_identity(
+        self, email: str, display_name: str | None = None, *, by: str | None = None
+    ) -> None:
+        """Écrit l'identité du compte admin. Audité (imputabilité), jamais chiffré.
+
+        Écrit via `_upsert` et non `set` : les clés sont RÉSERVÉES (hors `PLAIN_KEYS`), donc
+        `set` les refuserait — et c'est exactement ce qu'on veut, puisque `/api/config` ne
+        doit ni les lire ni les écrire.
+        """
+        old = self.admin_email() or ""
+        self._upsert(ADMIN_EMAIL_KEY, email, is_secret=False)
+        if display_name is not None:
+            self._upsert(ADMIN_DISPLAY_NAME_KEY, display_name, is_secret=False)
+        self._audit("admin.identity", ADMIN_EMAIL_KEY, old, email, by)
 
     # ── vues typées ──────────────────────────────────────────────────────────────
     def glpi_credentials(self) -> GlpiCredentials:

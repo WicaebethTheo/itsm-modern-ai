@@ -38,9 +38,15 @@ def _settings(db_url, **kw) -> Settings:
     )
 
 
+EMAIL = "admin@exemple.fr"
+PASSWORD = "s3cret-pilote"
+
+
 @pytest.fixture
-def secured_client(db_url):
-    with TestClient(create_app(_settings(db_url, admin_password="s3cret-pilote"))) as c:
+def secured_client(db_url, creer_compte_admin):
+    """Instance protégée : le compte est créé par HTTP (première visite), puis déconnecté."""
+    with TestClient(create_app(_settings(db_url))) as c:
+        creer_compte_admin(c, email=EMAIL, password=PASSWORD)
         yield c
 
 
@@ -56,7 +62,7 @@ def test_public_status_is_minimal_no_cost_nor_volumetry(secured_client):
 
 
 def test_authenticated_status_is_enriched(secured_client):
-    secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
+    secured_client.post("/api/auth/login", json={"email": EMAIL, "password": PASSWORD})
     body = secured_client.get("/api/status").json()
     assert body["ok"] is True and body["version"] == __version__
     assert ENRICHED_FIELDS <= body.keys()
@@ -85,7 +91,7 @@ def test_status_reflects_runtime_polling_overrides(secured_client):
         cfg.set("polling_enabled", "true")
         cfg.set("polling_interval_seconds", "120")
 
-    secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
+    secured_client.post("/api/auth/login", json={"email": EMAIL, "password": PASSWORD})
     body = secured_client.get("/api/status").json()
     assert body["polling_enabled"] is True
     assert body["polling_interval_seconds"] == 120
@@ -118,7 +124,7 @@ def test_last_poll_is_never_exposed_to_anonymous(secured_client):
 def test_last_poll_says_explicitly_that_no_cycle_ever_ran(secured_client):
     """« Aucun cycle n'a jamais tourné » doit être un état EXPLICITE : c'est le symptôme
     n°1 (worker « En marche » alors que rien ne s'exécute)."""
-    secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
+    secured_client.post("/api/auth/login", json={"email": EMAIL, "password": PASSWORD})
     block = secured_client.get("/api/status").json()["last_poll"]
     assert block["has_run"] is False
     assert block["run_at"] is None and block["error_message"] is None
@@ -142,7 +148,7 @@ def test_last_poll_reflects_the_persisted_cycle(secured_client):
         cfg.set("poll_last_errors", "1")
         cfg.set("poll_last_error_message", "Référentiels GLPI indisponibles: timeout")
 
-    secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
+    secured_client.post("/api/auth/login", json={"email": EMAIL, "password": PASSWORD})
     block = secured_client.get("/api/status").json()["last_poll"]
     assert block["has_run"] is True and block["run_at"].startswith("2026-08-08")
     assert block["fetched"] == 12 and block["processed"] == 3
@@ -162,6 +168,6 @@ def test_last_poll_error_message_is_bounded(secured_client):
         cfg.set("poll_last_run_at", "2026-08-08T19:42:03+00:00")
         cfg.set("poll_last_error_message", "A" * 5000)
 
-    secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
+    secured_client.post("/api/auth/login", json={"email": EMAIL, "password": PASSWORD})
     block = secured_client.get("/api/status").json()["last_poll"]
     assert len(block["error_message"]) <= 301  # +1 pour l'ellipse

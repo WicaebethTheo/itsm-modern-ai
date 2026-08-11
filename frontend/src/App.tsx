@@ -15,6 +15,7 @@ import { Login } from "@/pages/Login";
 import { Privacy } from "@/pages/Privacy";
 import { Sandbox } from "@/pages/Sandbox";
 import { Scope } from "@/pages/Scope";
+import { Setup } from "@/pages/Setup";
 import { Status } from "@/pages/Status";
 import { Store } from "@/pages/Store";
 import { Technicians } from "@/pages/Technicians";
@@ -30,6 +31,9 @@ export default function App() {
     >
       <ToastProvider>
         <Routes>
+          {/* Routes PUBLIQUES (hors garde d'authentification) : la première installation
+              précède, par construction, tout compte capable de la franchir. */}
+          <Route path="/setup" element={<Setup />} />
           <Route path="/login" element={<Login />} />
           {/* Routes protégées (Layout rendu par RequireAuth) */}
           <Route element={<RequireAuth />}>

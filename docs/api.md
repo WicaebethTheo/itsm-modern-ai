@@ -22,13 +22,20 @@
 
 ## Authentification (Argon2 + session signée)
 
+Un **seul** compte administrateur, créé **à la première visite** — pas d'amorçage par variable d'environnement.
+
 | Endpoint | Méthode | Description |
 |---|---|---|
-| `/api/auth/login` | `POST` | Connexion (mot de passe → cookie de session). |
+| `/api/auth/setup` | `POST` | **Création du compte unique** (`email`, `password`, `display_name` optionnel) puis ouverture de session. **Public** — par construction, aucun identifiant n'existe pour l'atteindre — mais **fail-closed** : `409` (`already_configured`) dès qu'un compte existe, `422` sur email invalide ou mot de passe < 8 caractères. |
+| `/api/auth/login` | `POST` | Connexion (`email` + `password` → cookie de session). |
 | `/api/auth/logout` | `POST` | Déconnexion. |
-| `/api/auth/status` | `GET` | État de la session (authentifié ? auth configurée ?). |
+| `/api/auth/status` | `GET` | État de la session : `authenticated`, `auth_configured`, **`setup_required`** (vrai tant qu'aucun compte n'existe → l'UI envoie sur l'écran de création). |
 
-Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `X-Forwarded-For` si `TRUST_PROXY_HEADERS=true`.
+⚠️ **L'adresse du compte n'apparaît dans aucune de ces réponses.** `/api/auth/status` est public : diffuser l'identifiant à un anonyme lui offrirait la moitié du couple à deviner. De même, un login raté renvoie le **même** code et le **même** message que l'email soit inconnu ou le mot de passe faux — et le hash est payé dans tous les cas, pour que le chronomètre ne dise pas ce que le message tait.
+
+Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `X-Forwarded-For` si `TRUST_PROXY_HEADERS=true`. **`/api/auth/setup` est compté par le même limiteur** que le login : sans cela, la création offrirait un point de martèlement non compté, et un moyen de sonder gratuitement si l'instance est encore revendicable.
+
+> **Fenêtre de revendication (risque assumé)** : tant qu'aucun compte n'existe, `POST /api/auth/setup` est ouvert à quiconque atteint le port. Ni jeton d'amorçage ni fenêtre temporelle — choix délibéré, annoncé par un `WARNING` à chaque démarrage. **N'exposez pas le port avant d'avoir créé le compte** (cf. [`SECURITY.md`](../SECURITY.md) et [`docs/install.md`](install.md)).
 
 ## Configuration
 

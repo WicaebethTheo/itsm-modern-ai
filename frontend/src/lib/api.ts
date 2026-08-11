@@ -49,9 +49,29 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public payload: unknown,
+    /** Secondes à attendre (en-tête `Retry-After`) — renseigné sur les 429 anti-brute-force. */
+    public retryAfter?: number,
   ) {
     super(errorMessage(status, payload));
   }
+}
+
+/**
+ * Code machine de l'erreur (`detail.code`), quand le backend en pose un.
+ * Les pages d'auth s'en servent pour distinguer « email invalide » de « mot de passe
+ * trop court » sur un même 422 — le message, lui, reste destiné à l'humain.
+ */
+export function errorCode(e: unknown): string | null {
+  if (!(e instanceof ApiError)) return null;
+  const p = e.payload;
+  if (p && typeof p === "object" && "detail" in p) {
+    const detail = (p as { detail?: unknown }).detail;
+    if (detail && typeof detail === "object" && "code" in detail) {
+      const c = (detail as { code?: unknown }).code;
+      if (typeof c === "string" && c) return c;
+    }
+  }
+  return null;
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -79,7 +99,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     if (res.status === 401 && !path.startsWith("/api/auth/") && !DEMO) {
       navigation.toLogin();
     }
-    throw new ApiError(res.status, data);
+    // `Retry-After` (429 anti-brute-force) : le corps ne porte QUE le message, le délai
+    // vit dans l'en-tête. Sans le remonter ici, l'UI ne peut ni décompter ni rouvrir le
+    // formulaire au bon moment — elle inventerait un délai, ou ferait attendre à vide.
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    throw new ApiError(
+      res.status,
+      data,
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+    );
   }
   return data as T;
 }
@@ -101,6 +129,25 @@ export const navigation = {
   },
 };
 
+/**
+ * Deuxième ceinture anti-boucle, sur le même principe que `navigation.toLogin` :
+ * `/setup` renvoie vers `/login` quand le moteur répond 409 « un compte existe déjà »,
+ * or `/login` renvoie vers `/setup` quand le statut dit `setup_required`. Si les deux
+ * réponses se contredisent — statut en cache, réplique en retard, second onglet qui a
+ * créé le compte —, les deux pages se renvoient la balle indéfiniment.
+ *
+ * Le 409 fait FOI : il vient de l'écriture elle-même, pas d'une lecture. On le mémorise
+ * donc pour l'onglet en cours, et `/login` cesse de proposer l'installation. La marque ne
+ * survit pas à la fermeture de l'onglet (sessionStorage) : une instance réellement vierge
+ * retrouve son écran d'installation à la visite suivante.
+ */
+const SETUP_SETTLED_KEY = "itsm.setup-settled";
+
+export const setupSettled = {
+  mark: () => sessionStorage.setItem(SETUP_SETTLED_KEY, "1"),
+  get: () => sessionStorage.getItem(SETUP_SETTLED_KEY) === "1",
+};
+
 export const api = {
   get: <T>(p: string) => request<T>("GET", p),
   post: <T>(p: string, b?: unknown) => request<T>("POST", p, b),
@@ -110,7 +157,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.10.0";
+export const APP_VERSION = "0.11.0";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -133,7 +180,24 @@ export type GlpiApiVersion = "legacy" | "v2";
 export interface AuthStatus {
   authenticated: boolean;
   auth_configured: boolean;
+  /**
+   * Aucun compte administrateur n'existe encore → l'installation n'est pas terminée et
+   * l'UI doit envoyer sur `/setup`. Optionnel : un moteur antérieur à la page
+   * d'installation ne renvoie pas ce champ, et `undefined` (faux) est le bon défaut —
+   * on ne propose jamais de créer un compte sur une instance qui n'en sait rien.
+   */
+  setup_required?: boolean;
 }
+
+/** Création du compte administrateur (première installation). */
+export interface SetupRequest {
+  email: string;
+  password: string;
+  display_name?: string;
+}
+
+/** Longueur minimale imposée par le moteur (`MIN_ADMIN_CHARS`, api/security.py). */
+export const MIN_PASSWORD_CHARS = 8;
 
 export interface Health {
   status: "ok" | "degraded";
@@ -727,8 +791,13 @@ export const Api = {
   // En mode démo : AUCUN appel réseau. Un visiteur qui confond la démo publique avec sa
   // propre instance enverrait sinon un vrai mot de passe admin sur le réseau (le serveur
   // statique de la démo ne doit jamais le voir). On renvoie un statut authentifié simulé.
-  login: (password: string) =>
-    DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/login", { password }),
+  login: (email: string, password: string) =>
+    DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/login", { email, password }),
+  // Même garde qu'au login, et elle compte DOUBLE ici : l'écran d'installation est celui
+  // où l'on choisit un mot de passe qu'on réutilisera. Un visiteur de la démo publique qui
+  // le croirait « sa » console enverrait ce secret tout neuf à un serveur statique.
+  setup: (body: SetupRequest) =>
+    DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/setup", body),
   logout: () => (DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/logout")),
 
   // `probe` déclenche une VRAIE requête sortante vers le fournisseur LLM (facturée, et

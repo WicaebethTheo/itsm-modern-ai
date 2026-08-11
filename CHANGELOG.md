@@ -1,3 +1,78 @@
+## 2026-08-11 — 0.11.0 — Le compte administrateur se crée à la première visite
+
+> ⚠️ **Version de rupture.** `ITSM_ADMIN_PASSWORD` et `ADMIN_PASSWORD` **ne sont plus lus**.
+> Une instance existante continue de fonctionner — le compte déjà en base n'est pas touché —
+> mais la connexion se fait désormais avec **une adresse email**, qu'un compte amorcé par
+> variable ne possède pas. Il faut donc lui en attribuer une :
+> `docker compose exec itsm python -m itsm_modern_ai.admin_setup --email-only vous@exemple.fr`
+
+### Le geste
+
+On déploie, on ouvre l'URL, on crée son compte. C'est tout.
+
+Avant, il fallait choisir un mot de passe **au moment de l'installation**, dans un fichier
+`.env` ou un champ de stack Portainer, et le passer par une variable d'environnement — c'est-
+à-dire l'écrire en clair quelque part avant même d'avoir vu le produit. Un écran d'accueil
+demande maintenant une adresse email, un mot de passe et sa confirmation, puis ouvre la
+session dans la foulée. Le premier écran du produit ressemble enfin à un produit.
+
+### ⚠️ Le risque que ça introduit, dit sans détour
+
+Entre le démarrage du conteneur et la création du compte, **quiconque atteint le port peut
+revendiquer l'administration de l'instance**. Il n'y a ni jeton d'amorçage, ni fenêtre
+temporelle : c'est un choix délibéré en faveur de la simplicité, pas un oubli.
+
+**N'exposez pas le port publiquement avant d'avoir créé votre compte.** Le moteur le rappelle
+lui-même : tant qu'aucun compte n'existe, un avertissement est journalisé **à chaque
+démarrage**, disant que l'instance est revendicable.
+
+### Mot de passe oublié
+
+C'est la question que pose immédiatement quiconque perd sa variable d'environnement, et la
+réponse n'existait nulle part. Le seul chemin de récupération est la ligne de commande :
+
+```bash
+docker compose exec itsm python -m itsm_modern_ai.admin_setup --force
+```
+
+Il n'y a **aucun email de réinitialisation** : l'accès shell à l'hôte *est* le facteur
+d'authentification de dernier recours. La CLI gère aussi `--email`, `--email-only` (changer
+l'adresse sans toucher au secret ni révoquer les sessions), `--display-name` et `--check`.
+
+### Ce qui a été retiré
+
+`Settings.admin_password`, l'amorçage paresseux de `security.py`, le bloc d'amorçage de
+l'entrypoint, la saisie de mot de passe de `install.sh` et sa porte dure qui refusait de
+terminer sans compte configuré, et la variable dans les deux composes et `.env.example`.
+
+**Un bug est corrigé au passage** : `admin_setup` lisait la variable d'environnement **avant**
+l'entrée standard et avant la saisie interactive. Dans un conteneur portant encore la
+variable, `--force` réinstallait donc silencieusement le même mot de passe **en affichant un
+message de succès** — mesuré, l'ancien mot de passe continuait d'authentifier. La CLI ne
+consulte plus l'environnement du tout.
+
+### Connexion par email
+
+L'échec de connexion ne permet **jamais** de distinguer « adresse inconnue » de « mot de passe
+faux » : même code, même message, et le hash Argon2 est vérifié dans tous les cas pour ne pas
+ouvrir un canal temporel qui révélerait l'existence d'une adresse. L'email est comparé sans
+tenir compte de la casse ni des espaces de bord, et **n'apparaît sur aucune réponse publique**.
+
+L'endpoint de création est public mais fail-closed — il refuse dès qu'un compte existe (409) —
+et passe par le **même limiteur de tentatives** que la connexion, sans quoi il offrirait un
+point de force brute non compté.
+
+### Le smoke test de publication est meilleur qu'avant
+
+Il vérifiait la présence d'un message dans les journaux du conteneur. Il exerce désormais le
+parcours réel sur l'image construite : création (200), rejeu refusé (409), connexion avec les
+identifiants créés (200).
+
+### Tests
+
+**596 → 652** backend, **153 → 194** frontend (26 fichiers), 7 parcours Playwright. Couverture
+backend 89 %.
+
 ## 2026-08-11 — 0.10.0 — PostgreSQL exclusif : SQLite est retiré du produit
 
 > ⚠️ **Version de rupture.** Le moteur ne sait plus lire une base SQLite. Une instance

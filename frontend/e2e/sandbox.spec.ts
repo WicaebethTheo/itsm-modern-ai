@@ -1,18 +1,22 @@
 import { expect, test } from "@playwright/test";
 import { demo } from "../src/lib/demo";
+import { useFrench } from "./fixtures";
 
 // 3e parcours E2E : après login, naviguer vers le Bac à sable, soumettre un
 // texte de ticket et vérifier que la décision simulée (mockée) s'affiche
 // (nom du technicien et nom de la catégorie résolus côté API).
 test("login → sandbox : un texte de ticket donne une décision simulée", async ({ page }) => {
+  await useFrench(page);
   let authenticated = false;
 
   await page.route("**/api/auth/status", (route) =>
-    route.fulfill({ json: { authenticated, auth_configured: true } }),
+    route.fulfill({ json: { authenticated, auth_configured: true, setup_required: false } }),
   );
   await page.route("**/api/auth/login", (route) => {
     authenticated = true;
-    return route.fulfill({ json: { authenticated: true, auth_configured: true } });
+    return route.fulfill({
+      json: { authenticated: true, auth_configured: true, setup_required: false },
+    });
   });
   await page.route("**/health", (route) => route.fulfill({ json: demo.health }));
   await page.route("**/api/metrics", (route) => route.fulfill({ json: demo.metrics }));
@@ -39,7 +43,8 @@ test("login → sandbox : un texte de ticket donne une décision simulée", asyn
   );
 
   await page.goto("/login");
-  await page.locator('input[type="password"]').fill("s3cret");
+  await page.getByLabel("Adresse email").fill("admin@exemple.fr");
+  await page.getByLabel("Mot de passe").fill("s3cretaire");
   await page.getByRole("button", { name: "Se connecter" }).click();
   await expect(page.getByRole("heading", { name: "Tableau de bord" })).toBeVisible();
 

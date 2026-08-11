@@ -1,6 +1,8 @@
 # ITSM Modern AI — stack pull-only (Portainer / orchestrateur) : moteur + PostgreSQL.
-# Portainer : Stacks > Add stack > coller > définir ITSM_ADMIN_PASSWORD (>= 8 car.) > Deploy.
-# L'admin est amorcé au 1er boot depuis cette variable.
+# Portainer : Stacks > Add stack > coller > Deploy. Aucune variable obligatoire.
+# Puis ouvrez http://<hôte>:8000 : le premier écran crée le compte administrateur
+# (email + mot de passe). ⚠️ Tant que ce compte n'existe pas, l'instance est REVENDICABLE
+# par quiconque atteint le port — ne l'exposez pas publiquement avant de l'avoir créé.
 # NE JAMAIS faire `down -v` : cela supprime itsm_data (master.key) ET itsm_pgdata (la base).
 services:
   itsm:
@@ -20,7 +22,6 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      ITSM_ADMIN_PASSWORD: ${ITSM_ADMIN_PASSWORD:-}        # requis au 1er boot (>= 8 car. ; alias ADMIN_PASSWORD)
       SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-false}     # false = login OK en HTTP ; true derrière un proxy TLS
       # ⚠️ COHÉRENCE : ce défaut porte le couple itsm/itsm. Définir POSTGRES_USER /
       # POSTGRES_PASSWORD dans les variables du stack OBLIGE à définir aussi

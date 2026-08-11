@@ -104,11 +104,39 @@ image + port publié) — voir « Restauration et retour arrière » plus bas.
 
 ## Installation (image GHCR, recommandé)
 
-Trois voies, toutes **sans clone ni build**. L'**admin est amorcé au premier démarrage** à partir
-de la variable **`ITSM_ADMIN_PASSWORD`** (≥ 8 caractères) : l'amorçage est **idempotent** (un mot
-de passe existant n'est **jamais** écrasé) et la variable peut être **retirée** après le 1er boot
-(le hash est persisté chiffré dans le volume). **Sans** mot de passe, la console est **fail-closed**
-(verrouillée, admin en 401).
+Trois voies, toutes **sans clone ni build**, et **aucun mot de passe à préparer** : le compte
+administrateur se crée **à la première visite de l'interface** (adresse email + mot de passe
+≥ 8 caractères). Il n'y a plus de variable `ITSM_ADMIN_PASSWORD` — le moteur ne lit **aucun**
+mot de passe dans l'environnement.
+
+> ## ⚠️ À lire AVANT de déployer — la fenêtre de revendication
+>
+> **Entre le démarrage du conteneur et la création de votre compte, quiconque atteint le port
+> peut revendiquer l'administration de l'instance.** Le premier arrivé sur `http://<vm>:8000/`
+> voit l'écran de création et devient l'administrateur.
+>
+> Le choix de ne poser **ni jeton d'amorçage ni fenêtre temporelle** est **délibéré**, au profit
+> de la simplicité : l'un comme l'autre auraient réintroduit un secret à transporter — c'est
+> précisément ce que cette version supprime.
+>
+> **Conséquence pratique : n'exposez pas le port publiquement avant d'avoir créé votre compte.**
+> Déployez sur un réseau interne (ou avec le port fermé au pare-feu), ouvrez la console,
+> créez le compte, **puis** publiez.
+>
+> Tant que le compte n'existe pas, le moteur le répète à **chaque démarrage** dans ses logs :
+> ```
+> AUCUN COMPTE ADMINISTRATEUR : cette instance est REVENDICABLE. …
+> ```
+> Cet avertissement disparaît une fois le compte créé — et sa création est journalisée avec
+> l'IP d'origine. Si vous la voyez et que ce n'est pas la vôtre, l'instance a été prise :
+> détruisez-la et repartez d'une base vierge.
+
+**Ordre recommandé**, quelle que soit la voie choisie :
+
+1. déployer avec le port **fermé** ou restreint (réseau interne, `127.0.0.1:8000:8000`, VPN) ;
+2. ouvrir `http://<vm>:8000/` → l'écran d'installation demande **email + mot de passe** ;
+3. vérifier dans les logs que l'avertissement « instance REVENDICABLE » a disparu ;
+4. seulement ensuite, publier le service (reverse proxy TLS, règle de pare-feu).
 
 ### (a) One-liner (le plus simple)
 
@@ -116,16 +144,19 @@ de passe existant n'est **jamais** écrasé) et la variable peut être **retiré
 curl -fsSL https://itsm-modern-ai.com/install | bash
 ```
 
-Le script écrit un `docker-compose.yml` + un `.env` (avec un `ITSM_ADMIN_PASSWORD` généré ou
-demandé), tire les images et fait `docker compose up -d`. La stack comprend **deux services** :
-le moteur et sa base PostgreSQL. Puis ouvrez `http://<vm>:8000/`.
+Le script écrit un `docker-compose.yml` + un `.env`, tire les images et fait
+`docker compose up -d`. La stack comprend **deux services** : le moteur et sa base PostgreSQL.
+Il ne demande **aucun mot de passe** et se termine en affichant l'URL de l'écran de création
+de compte : ouvrez `http://<vm>:8000/` et créez-le **tout de suite**.
 
 ### (b) Portainer / orchestrateur
 
 Collez le contenu de **`docker-compose.portainer.yml`** dans un nouveau *stack* Portainer (ou votre
-orchestrateur), définissez **`ITSM_ADMIN_PASSWORD`** (≥ 8 caractères) dans les variables
-d'environnement du stack, puis déployez. Les images sont **tirées** (aucun build) : le moteur
-depuis GHCR, la base depuis `postgres:17-alpine`.
+orchestrateur), puis déployez : **aucune variable n'est obligatoire**. Les images sont **tirées**
+(aucun build) : le moteur depuis GHCR, la base depuis `postgres:17-alpine`. Ouvrez ensuite
+`http://<hôte>:8000/` et **créez votre compte administrateur** (email + mot de passe) — c'est le
+premier écran, et tant qu'il n'a pas été franchi l'instance est revendiquable par quiconque
+atteint le port (cf. l'avertissement en tête de section).
 
 Le stack crée **deux volumes nommés** : `itsm_data` (master.key, sauvegardes) et `itsm_pgdata`
 (les données). Un `down -v` détruirait les deux — **ne jamais le faire**.
@@ -177,7 +208,6 @@ docker run -d --name itsm-modern-ai \
   --restart unless-stopped \
   -p 8000:8000 \
   -e DATABASE_URL='postgresql+psycopg://itsm:mot-de-passe-de-la-base@itsm-postgres:5432/itsm' \
-  -e ITSM_ADMIN_PASSWORD='change-me-min-8-chars' \
   -e SESSION_HTTPS_ONLY=false \
   -v itsm_data:/app/data \
   --cap-drop ALL \
@@ -204,6 +234,11 @@ Points à ne pas manquer :
   hors de son PGDATA (socket, fichiers temporaires).
 - `SESSION_HTTPS_ONLY=false` est nécessaire pour se connecter en **HTTP nu** (défaut code
   `true` → cookie `Secure` ignoré, login impossible). Repasser à `true` derrière un TLS.
+- **Aucun mot de passe admin n'est passé au conteneur** — il n'en lit plus. Tant que vous
+  n'avez pas créé votre compte dans l'interface, ce `-p 8000:8000` publie une instance
+  **revendicable** : sur une machine exposée, publiez d'abord sur la boucle locale
+  (`-p 127.0.0.1:8000:8000`), créez le compte, puis recréez le conteneur avec la
+  publication définitive.
 
 La **master key** et les sauvegardes vivent dans `itsm_data` (`/app/data`) ; les **données**
 vivent dans `itsm_pgdata`. La `master.key` Fernet est générée automatiquement au premier
@@ -233,8 +268,12 @@ connus de l'archive, et laisserait en place les tables des migrations postérieu
 ## 3. Tout configurer dans l'interface web
 
 Ouvrez l'**interface** sur **`http://<vm>:8000/`** (derrière le reverse proxy HTTPS en prod).
-Connectez-vous avec le **mot de passe administrateur** amorcé au premier démarrage (variable
-`ITSM_ADMIN_PASSWORD`). Toute la configuration se fait ici — **aucun fichier à éditer** :
+
+**Au tout premier accès**, l'écran d'installation vous demande une **adresse email** et un **mot
+de passe** (≥ 8 caractères) : c'est la création du compte administrateur unique, et la session
+s'ouvre dans la foulée — pas besoin de se reconnecter. Aux accès suivants, c'est l'écran de
+connexion habituel (email + mot de passe). Toute la configuration se fait ensuite ici —
+**aucun fichier à éditer** :
 
 - **Connexion GLPI** : base URL `apirest.php`, **user token** (et app token si requis).
 - **Fournisseur IA** : choisissez parmi **Mistral EU** (souverain, défaut), **OpenAI** (hors UE — à valider DPO), **Ollama** (modèle **local**, **pas de clé**) ou **Anthropic / Claude** (hors UE — à valider DPO) ; saisir la **clé API** (sauf Ollama).
@@ -253,6 +292,49 @@ Les **secrets** (clé LLM, tokens GLPI ; pas de clé pour Ollama) sont stockés 
 >   "anthropic_api_key": "sk-ant-…"
 > }'
 > ```
+
+### Mot de passe administrateur oublié
+
+C'est la première question que pose un exploitant à qui l'on retire la variable
+d'environnement, alors répondons-y franchement : **il n'y a aucune réinitialisation par
+email**. Le produit ne parle à aucun serveur SMTP — c'est une contrainte de souveraineté
+assumée, pas un oubli. Le seul chemin de récupération est la **CLI livrée dans l'image**, ce qui
+revient à dire que **l'accès shell à la machine hôte est le facteur d'authentification de
+dernier recours** (quiconque l'a pouvait déjà lire `master.key` dans le volume : cette CLI
+n'élargit pas la surface d'attaque).
+
+```bash
+# Compose / Portainer — nouveau mot de passe, l'adresse de connexion est conservée.
+# Saisie MASQUÉE, avec confirmation ; le mot de passe n'apparaît ni à l'écran ni dans
+# l'historique du shell. Les sessions ouvertes sont révoquées.
+docker compose exec itsm python -m itsm_modern_ai.admin_setup --force
+
+# docker run
+docker exec -it itsm-modern-ai python -m itsm_modern_ai.admin_setup --force
+
+# Depuis les sources
+./install.sh --reset-password        # ou : make set-admin-password
+```
+
+Les autres cas de figure de la même commande :
+
+| Situation | Commande |
+|---|---|
+| Mot de passe oublié (compte existant) | `admin_setup --force` |
+| **Adresse** oubliée aussi | `admin_setup --force --email <nouvelle@adresse>` |
+| Corriger l'adresse **sans** toucher au mot de passe (sessions préservées) | `admin_setup --email <a@b.fr> --email-only` |
+| Savoir si un compte existe (script, supervision) | `admin_setup --check` — sort `0` si oui, `1` sinon |
+| Créer le compte **sans passer par l'interface** (poste sans navigateur) | `admin_setup --email <a@b.fr>` |
+
+Ce dernier cas est aussi la **parade au risque de revendication** si vous devez déployer sur un
+réseau que vous ne maîtrisez pas : créez le compte en CLI juste après le `up -d`, avant même
+d'ouvrir la console. `POST /api/auth/setup` répondra alors 409 à tout le monde.
+
+> `--force` est **obligatoire** pour écraser un compte existant : sans lui, la commande refuse
+> (« Un compte administrateur est déjà configuré »). Et il n'y a **aucun** moyen de passer le
+> mot de passe par une variable d'environnement — il est lu sur `stdin` (pipe) ou saisi de
+> façon masquée, précisément pour ne pas laisser de copie en clair dans `docker inspect`,
+> l'historique du shell ou les logs de l'orchestrateur.
 
 ## 4. Vérifier
 
@@ -305,7 +387,7 @@ Tous **optionnels** dans le `.env` (valeurs par défaut sûres). Détails dans
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `DEV_OPEN_ADMIN` | `false` | **Fail-closed** : sans mot de passe admin, l'admin est refusée (401). Mettre `true` rouvre l'admin **sans** mot de passe — **dev/labo uniquement, jamais en prod**. |
+| `DEV_OPEN_ADMIN` | `false` | **Fail-closed** : tant qu'aucun compte admin n'existe, l'admin est refusée (401). Mettre `true` rouvre l'admin **sans aucune authentification** — **dev/labo uniquement, jamais en prod**. ⚠️ Plus dangereux qu'avant : une instance neuve est désormais, normalement, sans compte. |
 | `SESSION_HTTPS_ONLY` | `true` | Flag `Secure` du cookie de session. Défaut code `true` ; les artefacts livrés (`.env` de l'installeur, compose Portainer) posent `false` pour le pilote HTTP (sinon login impossible). Repasser à `true` derrière un TLS. |
 | `SSRF_GUARD_ENABLED` | `true` | Garde anti-SSRF au runtime : résout chaque hôte sortant (LLM, GLPI) et **bloque les IP internes** avant l'appel. Ne désactiver qu'en réseau de confiance. |
 | `LOG_LEVEL` | `INFO` | Seuil de log racine (`DEBUG`…`CRITICAL`). |
@@ -458,10 +540,15 @@ cd itsm-modern-ai
 ```
 
 Le script vérifie Docker, crée `.env`, génère la clé de chiffrement, **build + démarre**
-(migrations incluses), attend que le moteur soit sain, puis **demande un mot de passe
-administrateur** (saisie masquée + confirmation). Ce mot de passe est stocké **uniquement
-en hash Argon2 chiffré** (jamais en clair). Pour le changer ensuite :
-`./install.sh --reset-password`. Puis ouvrez `http://<vm>:8000/`.
+(migrations incluses), attend que le moteur soit sain, puis affiche l'**URL de la console** et
+vous renvoie vers l'**écran de création du compte** — il ne demande plus de mot de passe (le
+moteur n'en lit plus dans l'environnement, et un prompt n'aurait pas d'adresse à proposer).
+Ouvrez `http://<vm>:8000/` et créez votre compte : email + mot de passe, stocké **uniquement en
+hash Argon2 chiffré** (jamais en clair).
+
+⚠️ Comme pour les voies GHCR, l'instance est **revendicable** entre ce démarrage et cette
+création — l'installeur vous le rappelle dans sa conclusion. Mot de passe oublié plus tard :
+`./install.sh --reset-password` (cf. « Mot de passe administrateur oublié »).
 
 ### Équivalent manuel
 
