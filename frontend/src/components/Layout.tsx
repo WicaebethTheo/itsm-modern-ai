@@ -50,8 +50,11 @@ function SidebarIcon({ name }: { name: IconName }) {
   );
 }
 
+/** Cible de `aria-controls` : le déclencheur DÉSIGNE le panneau qu'il ouvre. */
+const ACCOUNT_POPOVER_ID = "account-popover";
+
 /**
- * Chip de compte + menu déroulant : le seul objet « personnel » de la barre.
+ * Chip de compte + panneau déroulant : le seul objet « personnel » de la barre.
  *
  * Il remplace un rond dégradé purement décoratif, qui occupait la place d'un menu sans en
  * offrir un, et absorbe les trois contrôles qui traînaient à côté de lui (langue, thème,
@@ -61,11 +64,21 @@ function SidebarIcon({ name }: { name: IconName }) {
  * Si `/api/auth/me` échoue (route récente, moteur en cours de démarrage, session qui vient
  * de tomber), on retombe sur « Administrateur » : la barre ne doit jamais casser pour une
  * étiquette.
+ *
+ * CE N'EST PAS UN `role="menu"`, ET ON NE LE PRÉTEND PLUS. Un menu ARIA est un contrat :
+ * il n'expose que des `menuitem`. Or ce panneau porte un bloc d'identité, deux BASCULES de
+ * réglage (langue, thème) et une ligne de version — quatre enfants qui ne sont pas des
+ * commandes de menu. Sous `role="menu"`, un lecteur d'écran les escamotait purement et
+ * simplement : les deux seuls réglages du produit devenaient inatteignables au clavier
+ * assisté. C'est donc un POPOVER : un groupe nommé, annoncé par l'`aria-expanded` de son
+ * déclencheur, dont chaque enfant garde son rôle natif (lien, bouton). Et `Escape` rend le
+ * focus au déclencheur — sinon le clavier repart en haut du document.
  */
 function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => void }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const me = useResource(useCallback(() => Api.me(), []));
 
   const email = me.data?.email || "";
@@ -79,7 +92,11 @@ function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => v
       if (!root.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      // Le focus revient d'où il vient. Sans ça, fermer au clavier éjecte l'utilisateur
+      // en haut du document : il doit re-tabuler toute la barre pour rouvrir le panneau.
+      trigger.current?.focus();
     };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -95,9 +112,10 @@ function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => v
     <div ref={root} className="relative">
       <button
         type="button"
+        ref={trigger}
         onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={ACCOUNT_POPOVER_ID}
         className="flex items-center gap-2 rounded-full border border-border py-0.5 pl-0.5 pr-2 text-body text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
         <Avatar name={name} className="size-6 text-caption" />
@@ -107,7 +125,8 @@ function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => v
 
       {open ? (
         <div
-          role="menu"
+          id={ACCOUNT_POPOVER_ID}
+          role="group"
           aria-label={t("Compte", "Account")}
           className="absolute right-0 top-9 z-50 w-64 rounded-lg border border-border bg-card p-1.5 shadow-lg"
         >
@@ -118,7 +137,6 @@ function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => v
           <div className="my-1 h-px bg-border" />
           <NavLink
             to="/account"
-            role="menuitem"
             onClick={() => setOpen(false)}
             className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-body text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
@@ -147,7 +165,6 @@ function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => v
           <div className="my-1 h-px bg-border" />
           <button
             type="button"
-            role="menuitem"
             onClick={onLogout}
             className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-body text-destructive transition-colors hover:bg-destructive/10"
           >

@@ -116,11 +116,20 @@ describe("Debug", () => {
       expect(screen.queryByText("Informations")).not.toBeInTheDocument();
     });
 
-    it("prévient que le rapport peut porter des adresses internes, jamais de secret", async () => {
+    it("ne promet plus une garantie que le masqueur ne fournit pas", async () => {
+      // L'ancienne version de ce test assérait la PRÉSENCE de deux phrases : elle testait
+      // la formulation, pas la propriété — et c'est elle qui a laissé passer la garantie
+      // absolue « ce rapport ne contient aucun jeton ni clé d'API ». Le masqueur du moteur
+      // est ancré sur mots-clés : ce que la page copie vraiment est vérifié plus bas
+      // (« recopie tel quel… »), ici on garde seulement la légende honnête.
       renderWithToast(<Debug />);
       await stateCard();
-      expect(screen.getByText(/aucun jeton ni clé d'API/)).toBeInTheDocument();
+      expect(document.body.textContent).not.toMatch(/ne contient aucun jeton/);
+      expect(screen.getByText(/les secrets qu'il RECONNAÎT/)).toBeInTheDocument();
+      expect(screen.getByText(/Ce n'est pas une garantie/)).toBeInTheDocument();
+      // Les résidus possibles, énumérés : adresses internes ET contenu métier.
       expect(screen.getByText(/adresses internes/)).toBeInTheDocument();
+      expect(screen.getByText(/contenu de ticket et des noms de personnes/)).toBeInTheDocument();
     });
 
     it("n'affirme rien quand la santé est indisponible", async () => {
@@ -183,6 +192,38 @@ describe("Debug", () => {
       expect(
         await screen.findByText("Copie impossible — copiez manuellement."),
       ).toBeInTheDocument();
+    });
+
+    it("recopie tel quel ce que le moteur a renvoyé — secret non reconnu compris", async () => {
+      // LA propriété, mesurée sur le presse-papiers et non sur une phrase : le rapport
+      // n'est pas re-masqué côté interface. Le masqueur du moteur est ancré sur mots-clés
+      // (`token`, `api_key`, `password`…) plus deux préfixes de clés cloud ; une clé posée
+      // seule dans un corps d'erreur, sans mot-clé devant, arrive donc en clair — tout
+      // comme un titre de ticket et le nom de son demandeur. Tant que c'est vrai, la
+      // légende de la page ne doit promettre AUCUNE garantie absolue.
+      const FAUSSE_CLE = "sk-proj-FAUSSE-CLE-DE-TEST-0000";
+      vi.mocked(Api.debugDiagnostics).mockResolvedValue({
+        glpi: {
+          configured: true,
+          reachable: false,
+          error: `500 sur /Ticket : « Imprimante HS — Jean Dupont » (${FAUSSE_CLE})`,
+        },
+        llm: { configured: true, reachable: false },
+      });
+      // `userEvent.setup()` pose SON propre stub de presse-papiers : le nôtre doit passer
+      // après, sinon il est écrasé en silence et l'assertion porte sur le mauvais mock.
+      const user = userEvent.setup();
+      const writeText = stubClipboard();
+      renderWithToast(<Debug />);
+      await stateCard();
+      await user.click(await screen.findByRole("button", { name: "Lancer le diagnostic" }));
+      await screen.findByText("Résultat du diagnostic");
+      await user.click(screen.getByRole("button", { name: "Copier le rapport" }));
+      await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+
+      const report = writeText.mock.calls[0][0] as string;
+      expect(report).toContain(FAUSSE_CLE); // la clé N'EST PAS masquée : il faut le dire
+      expect(report).toContain("Jean Dupont"); // le contenu de ticket non plus
     });
 
     it("embarque le diagnostic détaillé une fois celui-ci lancé", async () => {

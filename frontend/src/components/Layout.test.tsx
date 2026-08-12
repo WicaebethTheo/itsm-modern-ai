@@ -56,11 +56,24 @@ function topbar() {
   return screen.getByRole("banner");
 }
 
-/** Ouvre le menu de compte et rend le `user-event` qui a servi (pour la suite du test). */
+/** Le déclencheur du panneau de compte : le seul bouton de la barre qui s'annonce ouvrable. */
+function trigger() {
+  return screen.findByRole("button", { expanded: false });
+}
+
+/** Ouvre le panneau de compte et rend le `user-event` qui a servi (pour la suite du test). */
 async function openMenu() {
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { expanded: false }));
+  await user.click(await trigger());
   return user;
+}
+
+/**
+ * Le panneau de compte. `role="group"` et NON `role="menu"` : voir `AccountMenu`. Un menu
+ * ARIA n'expose que des `menuitem` — les deux bascules de réglage y disparaissaient.
+ */
+function popover() {
+  return screen.getByRole("group", { name: "Compte" });
 }
 
 describe("Layout — topbar", () => {
@@ -158,48 +171,74 @@ describe("Layout — menu de compte", () => {
   it("reste fermé tant qu'on ne le demande pas", async () => {
     renderLayout();
     await screen.findByText(`GLPI ${demo.health.glpi.version}`);
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Compte" })).not.toBeInTheDocument();
   });
 
   it("ouvre l'identité, les réglages, la version et la déconnexion", async () => {
     renderLayout();
     await openMenu();
-    const menu = screen.getByRole("menu");
-    expect(menu).toBeInTheDocument();
+    expect(popover()).toBeInTheDocument();
     expect(screen.getByText(demo.me.email)).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /Compte & sécurité/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Compte & sécurité/ })).toBeInTheDocument();
     expect(screen.getByText("Langue")).toBeInTheDocument();
     expect(screen.getByText("Thème")).toBeInTheDocument();
     expect(screen.getByText(`v${demo.version.current} · Docker`)).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /Déconnexion/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Déconnexion/ })).toBeInTheDocument();
+  });
+
+  it("n'annonce AUCUN contrat de menu : les réglages ne sont pas des menuitem", async () => {
+    // `role="menu"` n'expose que des `menuitem` : sous ce contrat, un lecteur d'écran
+    // escamotait le bloc d'identité, les DEUX bascules de réglage et la ligne de version —
+    // c'est-à-dire les seuls réglages du produit, devenus inatteignables. Le panneau est
+    // donc un groupe nommé, décrit par l'`aria-expanded` de son déclencheur.
+    renderLayout();
+    await openMenu();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+    expect(await trigger.call(null).catch(() => null)).toBeNull(); // le déclencheur est ouvert
+    const panel = popover();
+    // Les deux bascules sont bien DANS le panneau, avec leur rôle natif.
+    expect(within(panel).getByRole("button", { name: "Passer en anglais" })).toBeInTheDocument();
+    expect(
+      within(panel).getByRole("button", { name: /Passer en (clair|sombre)/ }),
+    ).toBeInTheDocument();
+    // Et le déclencheur DÉSIGNE le panneau qu'il ouvre.
+    const opener = screen.getByRole("button", { expanded: true });
+    expect(opener).toHaveAttribute("aria-controls", panel.id);
+    expect(opener).not.toHaveAttribute("aria-haspopup");
   });
 
   it("mène à « Compte & sécurité » et se referme au passage", async () => {
     renderLayout();
     const user = await openMenu();
-    await user.click(screen.getByRole("menuitem", { name: /Compte & sécurité/ }));
+    await user.click(screen.getByRole("link", { name: /Compte & sécurité/ }));
     expect(await screen.findByText("PAGE-COMPTE")).toBeInTheDocument();
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Compte" })).not.toBeInTheDocument();
   });
 
-  it("se referme sur Échap", async () => {
+  it("se referme sur Échap EN RENDANT le focus au déclencheur", async () => {
+    // Sans le retour de focus, fermer au clavier éjecte l'utilisateur en haut du document :
+    // il doit re-tabuler toute la barre pour rouvrir le panneau qu'il vient de fermer.
     renderLayout();
-    const user = await openMenu();
+    const opener = await trigger();
+    const user = userEvent.setup();
+    await user.click(opener);
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Compte" })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(opener);
   });
 
   it("se referme quand on désigne autre chose", async () => {
     renderLayout();
     const user = await openMenu();
     await user.click(screen.getByRole("heading", { name: "Tableau de bord" }));
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Compte" })).not.toBeInTheDocument();
   });
 
   it("déconnecte et renvoie à l'écran de connexion", async () => {
     renderLayout();
     const user = await openMenu();
-    await user.click(screen.getByRole("menuitem", { name: /Déconnexion/ }));
+    await user.click(screen.getByRole("button", { name: /Déconnexion/ }));
     expect(await screen.findByText("PAGE-CONNEXION")).toBeInTheDocument();
     expect(Api.logout).toHaveBeenCalled();
   });
@@ -212,6 +251,6 @@ describe("Layout — menu de compte", () => {
     // Aucune adresse inventée : la ligne email disparaît, elle ne ment pas.
     expect(screen.queryByText(demo.me.email)).not.toBeInTheDocument();
     // Et le reste du menu fonctionne toujours.
-    expect(screen.getByRole("menuitem", { name: /Déconnexion/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Déconnexion/ })).toBeInTheDocument();
   });
 });

@@ -24,6 +24,16 @@ import { useT } from "@/lib/i18n";
  * moteur. TOUTES les sessions tombent, y compris celle qui vient de faire la demande. C'est
  * voulu (un cookie volé ne survit pas au changement) — donc on l'annonce AVANT de valider,
  * on le redit APRÈS, et on renvoie vers `/login` sans faire semblant que la session tient.
+ *
+ * DEUXIÈME POINT DÉLICAT, ET IL SE JOUE SUR UN SEUL 401 : le moteur en émet deux qui n'ont
+ * rien à voir. `require_auth` refuse une session absente ou révoquée avec le code
+ * `unauthorized` ; la route de rotation refuse un mauvais mot de passe courant avec
+ * `bad_credentials` (api/security.py, api/routes/auth.py). Les confondre — ce que fait un
+ * branchement sur le seul status — revient à accuser d'une faute de frappe quelqu'un qui
+ * vient d'être déconnecté (cookie expiré, rotation faite ailleurs, `admin_setup --force`
+ * lancé sur l'hôte). Et comme les routes d'auth sont exclues de la redirection automatique
+ * de `lib/api.ts`, RIEN ne l'en sortirait : il corrigerait indéfiniment un mot de passe
+ * juste. On lit donc le CODE d'abord, le status seulement en dernier recours.
  */
 
 type FieldErrors = { current?: string; next?: string; confirm?: string };
@@ -42,6 +52,9 @@ export function Account() {
   const [reveal, setReveal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  // Session tombée pendant qu'on remplissait le formulaire : ni une erreur de champ, ni un
+  // succès. Le formulaire n'a plus de sens (le moteur ne nous connaît plus), on le retire.
+  const [expired, setExpired] = useState(false);
   const [error, setError] = useState("");
   const [retryIn, setRetryIn] = useState(0); // 429 : secondes restantes
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -60,12 +73,23 @@ export function Account() {
     return () => clearInterval(id);
   }, [retryIn]);
 
-  // Succès : la session courante est morte avec les autres, rester ici n'aurait aucun sens.
+  // Deux issues, un seul geste : la session est morte (rotation réussie, ou session déjà
+  // tombée avant la demande). Rester ici n'aurait aucun sens — on laisse le temps de lire.
   useEffect(() => {
-    if (!done) return;
+    if (!done && !expired) return;
     const id = setTimeout(() => navigate("/login", { replace: true }), REDIRECT_MS);
     return () => clearTimeout(id);
-  }, [done, navigate]);
+  }, [done, expired, navigate]);
+
+  /**
+   * Une erreur de champ tombe dès que le champ change — pas au prochain envoi (même règle
+   * qu'à l'installation, cf. `Setup.tsx`). Sinon on corrige sa faute de frappe et le rouge
+   * reste, `aria-invalid="true"` avec lui : l'écran a l'air cassé et un lecteur d'écran
+   * annonce un champ invalide qui ne l'est plus.
+   */
+  const clearFieldError = useCallback((key: keyof FieldErrors) => {
+    setFieldErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+  }, []);
 
   const email = me.data?.email || "";
   const displayName = me.data?.display_name || "";
@@ -103,13 +127,25 @@ export function Account() {
       const code = errorCode(err);
       const status = err instanceof ApiError ? err.status : 0;
       if (status === 429 || code === "too_many_attempts") {
-        setRetryIn((err instanceof ApiError && err.retryAfter) || 60);
+        // Décompte SEULEMENT si `Retry-After` est là (cf. `lib/api.ts`) : un limiteur
+        // intermédiaire (nginx, Traefik, WAF) renvoie couramment un 429 sans l'en-tête, et
+        // une minute inventée verrouillerait le bouton sur un chiffre que rien ne mesure.
+        const wait = err instanceof ApiError ? err.retryAfter : undefined;
+        if (wait) setRetryIn(wait);
         setError((err as Error).message);
-      } else if (status === 401 || code === "bad_credentials") {
+      } else if (code === "bad_credentials") {
+        // Le CODE d'abord : c'est le seul 401 qui parle vraiment du champ « actuel ».
         setFieldErrors({
           current: t("Mot de passe actuel incorrect.", "Current password is incorrect."),
         });
         currentRef.current?.focus();
+      } else if (status === 401) {
+        // Tout autre 401 = plus de session (`unauthorized`). Accuser l'admin d'une faute de
+        // frappe l'enfermerait sur un formulaire qui ne peut plus aboutir.
+        setExpired(true);
+        setCurrent("");
+        setNext("");
+        setConfirm("");
       } else if (code === "invalid_password") {
         setFieldErrors({ next: (err as Error).message });
         nextRef.current?.focus();
@@ -190,6 +226,13 @@ export function Account() {
                   "Password changed. All your sessions are closed, on this device and on any other — sign in again with the new password.",
                 )}
               </Banner>
+            ) : expired ? (
+              <Banner kind="warning">
+                {t(
+                  "Votre session a expiré : le moteur ne vous reconnaît plus. Votre mot de passe n'a pas été changé — reconnectez-vous, puis recommencez.",
+                  "Your session has expired: the engine no longer recognises you. Your password was not changed — sign in again, then start over.",
+                )}
+              </Banner>
             ) : error ? (
               <Banner kind="error">
                 {error}
@@ -206,7 +249,7 @@ export function Account() {
             ) : null}
           </div>
 
-          {done ? (
+          {done || expired ? (
             <div className="pt-4">
               <Button type="button" onClick={() => navigate("/login", { replace: true })}>
                 {t("Aller à la connexion", "Go to sign-in")}
@@ -223,7 +266,10 @@ export function Account() {
                   autoComplete="current-password"
                   aria-invalid={fieldErrors.current ? true : undefined}
                   aria-describedby={fieldErrors.current ? "account-current-error" : undefined}
-                  onChange={(e) => setCurrent(e.target.value)}
+                  onChange={(e) => {
+                    setCurrent(e.target.value);
+                    clearFieldError("current");
+                  }}
                   disabled={busy}
                 />
                 {fieldErrors.current ? (
@@ -251,6 +297,7 @@ export function Account() {
                     onChange={(e) => {
                       setNext(e.target.value);
                       if (tooShort) setTooShort(e.target.value.length < MIN_PASSWORD_CHARS);
+                      clearFieldError("next");
                     }}
                     disabled={busy}
                   />
@@ -292,7 +339,10 @@ export function Account() {
                   autoComplete="new-password"
                   aria-invalid={fieldErrors.confirm ? true : undefined}
                   aria-describedby={fieldErrors.confirm ? "account-confirm-error" : undefined}
-                  onChange={(e) => setConfirm(e.target.value)}
+                  onChange={(e) => {
+                    setConfirm(e.target.value);
+                    clearFieldError("confirm");
+                  }}
                   disabled={busy}
                 />
                 {fieldErrors.confirm ? (

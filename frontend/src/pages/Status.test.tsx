@@ -76,10 +76,81 @@ describe("Status", () => {
       expect(await screen.findByText("Le moteur trie les tickets")).toBeInTheDocument();
     });
 
-    it("un cycle en erreur prime sur tout le reste", async () => {
-      vi.mocked(Api.status).mockResolvedValue(statusWith({ fetched: 5, errors: 2 }));
+    it("un cycle qui n'a RIEN trié malgré ses erreurs → le moteur ne trie plus", async () => {
+      vi.mocked(Api.status).mockResolvedValue(statusWith({ fetched: 5, processed: 0, errors: 5 }));
       render(<Status />);
       expect(await screen.findByText("Le moteur ne trie plus")).toBeInTheDocument();
+    });
+
+    it("des erreurs PARTIELLES ne font pas dire « le moteur ne trie plus »", async () => {
+      // Le compteur `errors` du poller est incrémenté PAR TICKET : 1 échec sur 100 ne
+      // dit rien de la santé du moteur — il a trié les 99 autres.
+      vi.mocked(Api.status).mockResolvedValue(
+        statusWith({ fetched: 100, processed: 99, errors: 1 }),
+      );
+      render(<Status />);
+      expect(
+        await screen.findByText("Des tickets sont partis « à trier » sur erreur"),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Le moteur ne trie plus")).not.toBeInTheDocument();
+      // Le compte réel, deux fois : dans le verdict et dans la carte du dernier cycle.
+      expect(screen.getAllByText(/1 ticket en échec sur 100/).length).toBeGreaterThan(1);
+    });
+
+    it("aucun fournisseur IA configuré → le verdict le dit avant de conclure au vert", async () => {
+      vi.mocked(Api.health).mockResolvedValue({
+        ...demo.health,
+        llm: { configured: false, reachable: null },
+      });
+      render(<Status />);
+      expect(await screen.findByText("Aucun fournisseur IA n'est configuré")).toBeInTheDocument();
+      expect(screen.queryByText("Le moteur trie les tickets")).not.toBeInTheDocument();
+    });
+
+    it("polling en pause ET aucun cycle : c'est attendu, pas une panne", async () => {
+      vi.mocked(Api.status).mockResolvedValue({
+        ...statusWith({ has_run: false }),
+        polling_enabled: false,
+      });
+      render(<Status />);
+      expect(await screen.findByText("Triage en pause")).toBeInTheDocument();
+      expect(screen.queryByText("Le moteur n'a jamais trié")).not.toBeInTheDocument();
+    });
+
+    it("installation neuve (GLPI non configuré) → verdict de mise en service, pas d'alarme", async () => {
+      vi.mocked(Api.health).mockResolvedValue({
+        ...demo.health,
+        status: "degraded",
+        glpi: { configured: false, reachable: false },
+      });
+      vi.mocked(Api.status).mockResolvedValue(statusWith(null)); // aucun cycle : le cycle
+      render(<Status />); // sort avant de persister ses compteurs
+      expect(await screen.findByText("GLPI n'est pas encore configuré")).toBeInTheDocument();
+      expect(screen.queryByText("Le moteur n'a jamais trié")).not.toBeInTheDocument();
+      // Aucune connexion n'a jamais été TENTÉE : le titre ne peut pas parler d'échec.
+      expect(
+        screen.queryByText("GLPI est injoignable — rien ne peut être trié"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("un moteur muet sur son cycle : le verdict ne prétend pas que l'API n'a pas répondu", async () => {
+      vi.mocked(Api.status).mockResolvedValue({
+        ...statusWith(undefined),
+        version: "0.0.1-ancienne",
+      });
+      render(<Status />);
+      expect(await screen.findByText("Statut du moteur inconnu")).toBeInTheDocument();
+      expect(screen.getByText(/ni confirmer ni infirmer/)).toBeInTheDocument();
+      expect(screen.queryByText(/tant que l'API n'a pas répondu/)).not.toBeInTheDocument();
+    });
+
+    it("sans horodatage, aucun verdict nominal : la fraîcheur n'a pas été mesurée", async () => {
+      vi.mocked(Api.status).mockResolvedValue(
+        statusWith({ run_at: null, fetched: 4, processed: 4 }),
+      );
+      render(<Status />);
+      expect(await screen.findByText("Fraîcheur du dernier cycle inconnue")).toBeInTheDocument();
+      expect(screen.queryByText("Le moteur trie les tickets")).not.toBeInTheDocument();
     });
 
     it("polling coupé → « Triage en pause » (sans réutiliser le libellé de la tuile)", async () => {

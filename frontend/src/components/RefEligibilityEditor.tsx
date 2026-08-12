@@ -8,7 +8,7 @@ import {
   Square,
   Users,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Banner } from "@/components/Banner";
 import { EmptyState } from "@/components/EmptyState";
 import { SkillCoverageBanner } from "@/components/SkillCoverage";
@@ -108,25 +108,38 @@ export function RefEligibilityEditor({
           "Fallback targets. Tick eligible groups and describe them.",
         );
 
+  // Les `ext_id` que l'admin a RÉELLEMENT édités — la seule chose que la fusion ci-dessous
+  // doit protéger. Sans ce registre, la fusion ne reprenait JAMAIS le serveur pour une
+  // ligne existante : le brouillon était peuplé de TOUTES les lignes dès le premier
+  // chargement, donc `prev[r.ext_id]` était toujours défini et la branche serveur n'était
+  // atteinte que par un acteur nouvellement apparu dans GLPI. Un « Scanner GLPI » n'affichait
+  // donc jamais une fiche modifiée ailleurs, le compteur annonçait des modifications que
+  // personne n'avait faites, et « Enregistrer » les écrasait avec la valeur périmée.
+  // Vidé après un enregistrement réussi : le serveur redevient la référence.
+  const edites = useRef<Set<number>>(new Set());
+
   // FUSION, jamais écrasement : « Scanner GLPI » appelle `res.reload()`, donc `res.data`
   // change et cet effet se rejoue alors que l'admin est en pleine saisie. En repartant du
   // serveur on jetait sans un mot des fiches entières (prose + compétences cochées). On ne
   // reprend donc du serveur que les acteurs dont l'admin n'a rien touché ; un acteur
   // disparu de GLPI sort de la liste, un acteur nouveau y entre avec ses valeurs serveur.
-  // Après un vrai enregistrement le brouillon égale déjà le serveur : la fusion est neutre.
   useEffect(() => {
     const items = res.data;
     if (items) {
       setDraft((prev) =>
         Object.fromEntries(
-          items.map((r) => [
-            r.ext_id,
-            prev[r.ext_id] ?? {
+          items.map((r) => {
+            const serveur = {
               eligible: r.eligible,
               skills: r.skills,
               skill_tags: r.skill_tags ?? [],
-            },
-          ]),
+            };
+            // Seules les lignes RÉELLEMENT éditées résistent au serveur. Tester la seule
+            // présence dans le brouillon ne marchait pas : il est peuplé de toutes les
+            // lignes dès le premier chargement, donc plus aucune ne se rafraîchissait.
+            const protegee = edites.current.has(r.ext_id);
+            return [r.ext_id, protegee ? (prev[r.ext_id] ?? serveur) : serveur];
+          }),
         ),
       );
     }
@@ -154,7 +167,10 @@ export function RefEligibilityEditor({
   // Ce qui est modifié À L'ÉCRAN et pas encore enregistré. Sans ce compteur, le bouton
   // « Enregistrer » ne disait ni s'il y avait quelque chose à enregistrer, ni combien de
   // fiches étaient en jeu — et il vivait sous soixante fiches dépliées, hors du champ.
-  const modifies = useMemo(
+  // C'est aussi la LISTE envoyée au serveur : `set_eligibility` écrit par `ext_id`, une
+  // ligne inchangée n'a rien à y faire — l'envoyer quand même écrasait la version d'un
+  // autre onglet par la valeur qu'on avait lue avant lui.
+  const modifiees = useMemo(
     () =>
       items.filter((r) => {
         const d = draft[r.ext_id];
@@ -165,9 +181,10 @@ export function RefEligibilityEditor({
           d.skills !== r.skills ||
           [...d.skill_tags].sort().join(",") !== tags
         );
-      }).length,
+      }),
     [items, draft],
   );
+  const modifies = modifiees.length;
 
   /**
    * Cochage en masse — sur la liste FILTRÉE, jamais sur tout le référentiel.
@@ -181,6 +198,7 @@ export function RefEligibilityEditor({
     setDraft((d) => {
       const next = { ...d };
       for (const r of filtered) {
+        edites.current.add(r.ext_id);
         const actuel = next[r.ext_id] ?? {
           eligible: r.eligible,
           skills: r.skills,
@@ -218,6 +236,7 @@ export function RefEligibilityEditor({
   }, []);
 
   function toggleTag(id: number, key: string, coche: boolean) {
+    edites.current.add(id);
     setDraft((d) => {
       const actuel = d[id]?.skill_tags ?? [];
       return {
@@ -234,13 +253,47 @@ export function RefEligibilityEditor({
     id: number,
     p: Partial<{ eligible: boolean; skills: string; skill_tags: string[] }>,
   ) {
+    edites.current.add(id);
     setDraft((d) => ({ ...d, [id]: { ...d[id], ...p } }));
   }
+
+  // Le compteur promet « N modifications non enregistrées » : un rechargement les emportait
+  // sans un mot. Seul le RECHARGEMENT est gardé — le blocage de navigation interne
+  // (`useBlocker`) exige un data router, et `App.tsx` monte un `<BrowserRouter>` déclaratif.
+  useEffect(() => {
+    return;
+  }, [modifies]);
+
+  // Annoncer « N modification(s) non enregistrée(s) » puis laisser un F5 les emporter sans
+  // un mot était une demi-promesse. Seul le RECHARGEMENT est gardé : bloquer la navigation
+  // interne exige un data router, et l'application monte un `<BrowserRouter>` déclaratif.
+  useEffect(() => {
+    if (modifies === 0) return;
+    const retenir = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", retenir);
+    return () => window.removeEventListener("beforeunload", retenir);
+  }, [modifies]);
 
   async function onSave() {
     setSaving(true);
     try {
-      await save(Object.entries(draft).map(([ext_id, v]) => ({ ext_id: Number(ext_id), ...v })));
+      // On n'envoie QUE ce qui a changé : `set_eligibility` écrit par `ext_id`, et
+      // réexpédier une ligne intacte écrasait la version d'un autre onglet par celle
+      // qu'on avait lue avant lui.
+      await save(
+        modifiees.map((r) => {
+          const d = draft[r.ext_id];
+          return {
+            ext_id: r.ext_id,
+            eligible: d.eligible,
+            skills: d.skills,
+            skill_tags: d.skill_tags,
+          };
+        }),
+      );
+      // Le serveur redevient la référence : la relecture doit pouvoir ramener ce qu'il a
+      // RÉELLEMENT enregistré, y compris une valeur qu'il a normalisée.
+      edites.current.clear();
       res.reload();
       toast.success(t("Enregistré.", "Saved."));
     } catch (e: unknown) {

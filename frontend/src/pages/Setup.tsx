@@ -8,7 +8,14 @@ import { PasswordStrength } from "@/components/PasswordStrength";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
-import { Api, ApiError, errorCode, MIN_PASSWORD_CHARS, setupSettled } from "@/lib/api";
+import {
+  Api,
+  ApiError,
+  type AuthStatus,
+  errorCode,
+  MIN_PASSWORD_CHARS,
+  setupSettled,
+} from "@/lib/api";
 import { useT } from "@/lib/i18n";
 
 /**
@@ -26,11 +33,61 @@ import { useT } from "@/lib/i18n";
  * peut-être encore en train de démarrer.
  *
  * CE QUE CET ÉCRAN N'EST PAS : une page de connexion. Si un compte existe déjà (409, ou
- * `setup_required` faux), on n'insiste pas — on renvoie vers `/login`.
+ * `needsSetup` faux), on n'insiste pas — on renvoie vers `/login`. Ce prédicat est LE MÊME
+ * que celui dont `/login` se sert pour envoyer ici : voir `needsSetup` ci-dessous.
  */
 
 /** Format d'email : volontairement PERMISSIF (le moteur reste l'autorité, cf. 422). */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * « L'installation est-elle encore à faire ? » — LE prédicat, partagé avec `/login`.
+ *
+ * Il vit ici et nulle part ailleurs parce que les deux pages se renvoient l'une à l'autre :
+ * tant que chacune lisait le statut à sa façon, il existait un statut sur lequel elles se
+ * contredisaient. `/login` envoyait ici sur `setup_required || !auth_configured`, cet écran
+ * ne s'affichait que sur `setup_required` seul — et un moteur qui répond
+ * `{auth_configured: false}` SANS `setup_required` (le cas « moteur antérieur » documenté
+ * dans `lib/api.ts`) faisait rebondir les deux pages l'une contre l'autre à la vitesse du
+ * réseau. Un prédicat, deux appelants : la contradiction n'est plus exprimable.
+ *
+ * `setup_required` absent ne vaut pas « oui » : c'est `auth_configured` qui tranche alors.
+ */
+export function needsSetup(s: AuthStatus): boolean {
+  return s.setup_required === true || !s.auth_configured;
+}
+
+/**
+ * Ceinture anti-boucle du renvoi `/login` → `/setup`, complémentaire de `setupSettled`.
+ *
+ * `setupSettled` ne se pose que sur un 409, c'est-à-dire après une tentative d'écriture :
+ * elle ne couvre PAS la contradiction de lecture ci-dessus, et les ceintures de
+ * `navigation.toLogin` non plus (elles supposent un rechargement de page, or ce
+ * ping-pong-là reste dans le même document React). Celle-ci compte les renvois : au-delà
+ * de `MAX` dans la fenêtre, `/login` cesse de proposer l'installation et garde l'admin sur
+ * son formulaire de connexion — l'écran terminal utile, celui qui porte la commande de
+ * récupération. On préfère un écran de trop à une boucle infinie.
+ *
+ * Portée : l'onglet (sessionStorage), comme `setupSettled`. Un renvoi qui ABOUTIT (le
+ * formulaire d'installation s'affiche) remet le compteur à zéro : seuls les allers-retours
+ * stériles consomment le budget.
+ */
+const HANDOFF_KEY = "itsm.setup-handoff";
+const HANDOFF_WINDOW_MS = 5_000;
+const HANDOFF_MAX = 3;
+
+export const setupHandoff = {
+  /** Consomme un renvoi vers `/setup`. Faux = budget épuisé, ne pas naviguer. */
+  take: (): boolean => {
+    const [count, at] = (sessionStorage.getItem(HANDOFF_KEY) ?? "").split(":").map(Number);
+    const fresh = Number.isFinite(at) && Date.now() - at < HANDOFF_WINDOW_MS;
+    const used = fresh && Number.isFinite(count) ? count : 0;
+    sessionStorage.setItem(HANDOFF_KEY, `${used + 1}:${Date.now()}`);
+    return used < HANDOFF_MAX;
+  },
+  /** Le renvoi a abouti (ou n'a plus lieu d'être) : le budget repart entier. */
+  clear: () => sessionStorage.removeItem(HANDOFF_KEY),
+};
 
 type Phase = "checking" | "form" | "unreachable";
 type FieldErrors = { email?: string; password?: string; confirm?: string };
@@ -65,9 +122,15 @@ export function Setup() {
     setPhase("checking");
     Api.authStatus()
       .then((s) => {
-        if (s.setup_required) setPhase("form");
-        else if (s.authenticated) navigate("/", { replace: true });
-        else navigate("/login", { replace: true });
+        // Une session ouverte prime sur tout : elle rend la question sans objet.
+        if (s.authenticated) {
+          setupHandoff.clear();
+          navigate("/", { replace: true });
+        } else if (needsSetup(s)) {
+          // Le renvoi depuis /login a abouti : le budget anti-boucle repart entier.
+          setupHandoff.clear();
+          setPhase("form");
+        } else navigate("/login", { replace: true });
       })
       .catch(() => {
         // Le moteur démarre peut-être encore : on le dit, et on offre de réessayer —
@@ -163,8 +226,12 @@ export function Setup() {
           ),
         );
       } else if (status === 429 || code === "too_many_attempts") {
-        const wait = (err instanceof ApiError && err.retryAfter) || 60;
-        setRetryIn(wait);
+        // Le décompte ne vient QUE de `Retry-After` (cf. `lib/api.ts`). Un limiteur
+        // intermédiaire — nginx, Traefik, WAF — renvoie couramment un 429 sans l'en-tête :
+        // inventer une minute d'attente verrouillerait le formulaire sur un chiffre que
+        // personne n'a mesuré. Sans valeur, on dit le refus et on laisse le bouton actif.
+        const wait = err instanceof ApiError ? err.retryAfter : undefined;
+        if (wait) setRetryIn(wait);
         setError((err as Error).message);
       } else if (code === "invalid_password") {
         setFieldErrors({ password: (err as Error).message });

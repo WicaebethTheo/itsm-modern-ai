@@ -90,6 +90,32 @@ describe("Groups", () => {
     expect(await screen.findByText("Enregistré.")).toBeInTheDocument();
   });
 
+  it("n'envoie QUE les fiches modifiées — Support N1 n'est pas réécrit au passage", async () => {
+    // `set_eligibility` écrit par `ext_id` : renvoyer une ligne inchangée écrase la version
+    // d'un autre onglet par celle qu'on avait lue avant lui.
+    renderWithToast(<Groups />);
+    await screen.findByText("Support N2");
+    await userEvent.click(screen.getByRole("checkbox", { name: /Support N2/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer la sélection" }));
+
+    await waitFor(() => expect(Api.saveGroups).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(Api.saveGroups).mock.calls[0][0]).toEqual([
+      { ext_id: 6, eligible: true, skills: "", skill_tags: [] },
+    ]);
+  });
+
+  it("retient un rechargement qui emporterait les modifications non enregistrées", async () => {
+    // Le compteur promettait « N modifications non enregistrées » et un F5 les emportait
+    // sans un mot. (Le blocage du menu latéral exigerait un data router : cf. App.tsx.)
+    const recharge = () => !window.dispatchEvent(new Event("beforeunload", { cancelable: true }));
+    renderWithToast(<Groups />);
+    await screen.findByText("Aucune modification en attente");
+    expect(recharge()).toBe(false);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: /Support N2/ }));
+    expect(recharge()).toBe(true);
+  });
+
   it("avertit quand aucun groupe n'est éligible : plus aucun filet de repli", async () => {
     vi.mocked(Api.discovery).mockResolvedValue([ref({ ext_id: 5, name: "Support N1" })]);
     renderWithToast(<Groups />);

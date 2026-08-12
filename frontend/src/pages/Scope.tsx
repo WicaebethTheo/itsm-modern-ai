@@ -117,17 +117,20 @@ function CheckList({
   );
 }
 
+/** Cible de repli du SERVEUR, encodée comme le contrôle de la ligne (`g:<id>` / `t:<id>`). */
+function repliServeur(e: RefItem): string {
+  return e.fallback_group_id != null
+    ? `g:${e.fallback_group_id}`
+    : e.fallback_technician_id != null
+      ? `t:${e.fallback_technician_id}`
+      : "";
+}
+
 /** Réglages d'une entité tels que le SERVEUR les a enregistrés (comparés au brouillon). */
 function reglagesServeur(e: RefItem): string {
   const mode = e.mode ?? "";
   const conf = mode === "semi_auto" && e.auto_min_confidence != null ? e.auto_min_confidence : null;
-  const repli =
-    e.fallback_group_id != null
-      ? `g:${e.fallback_group_id}`
-      : e.fallback_technician_id != null
-        ? `t:${e.fallback_technician_id}`
-        : "";
-  return `${mode}|${conf}|${repli}`;
+  return `${mode}|${conf}|${repliServeur(e)}`;
 }
 
 export function Scope() {
@@ -153,39 +156,87 @@ export function Scope() {
   const [catQuery, setCatQuery] = useState("");
   const [entQuery, setEntQuery] = useState("");
 
-  // Une saisie locale est en attente. « Scanner GLPI » recharge les référentiels, donc
-  // `categories.data` / `entities.data` changent et les effets d'initialisation ci-dessous
-  // se rejouent : sans ce garde, ils repartaient du serveur et effaçaient en silence les
-  // cases cochées, les modes et les seuils que l'admin venait de régler. Remis à faux après
-  // un enregistrement réussi — l'état serveur redevient alors la référence.
-  const touched = useRef(false);
+  // Ce que l'admin a RÉELLEMENT modifié, ligne par ligne.
+  //
+  // C'était un unique drapeau `touched` GLOBAL à la page, alors que les deux effets
+  // d'initialisation sont PAR RESSOURCE : `categories` et `entities` sont deux `useResource`
+  // indépendants. Cocher une catégorie pendant que le panneau des entités chargeait encore
+  // levait le drapeau AVANT l'arrivée d'`entities.data` — l'effet des entités était alors
+  // définitivement sauté, `ents`/`modes`/`thresholds`/`fallbacks` restaient vides, l'écran
+  // annonçait « 0 / N sélectionnée(s) » et « Défaut global » partout, et « Enregistrer »
+  // envoyait `entity_ids: []` à `set_scope`, qui REMPLACE : tout le périmètre entités
+  // effacé, sans que rien ne l'ait demandé.
+  //
+  // On ne protège donc plus la page entière mais les seuls identifiants touchés ; tout le
+  // reste se refusionne depuis le serveur à chaque arrivée de données (« Scanner GLPI »
+  // compris). Vidés après un enregistrement réussi : le serveur redevient la référence.
+  const modifCats = useRef<Set<number>>(new Set());
+  const modifEntsSel = useRef<Set<number>>(new Set());
+  const modifEntsCfg = useRef<Set<number>>(new Set());
 
   useEffect(() => {
-    if (categories.data && !touched.current)
-      setCats(new Set(categories.data.filter((c) => c.selected).map((c) => c.ext_id)));
+    const items = categories.data;
+    if (!items) return;
+    setCats((prev) => {
+      const next = new Set<number>();
+      for (const c of items) {
+        if (modifCats.current.has(c.ext_id) ? prev.has(c.ext_id) : c.selected) next.add(c.ext_id);
+      }
+      return next;
+    });
   }, [categories.data]);
+
   useEffect(() => {
-    if (entities.data && !touched.current) {
-      setEnts(new Set(entities.data.filter((e) => e.selected).map((e) => e.ext_id)));
-      setModes(new Map(entities.data.map((e) => [e.ext_id, e.mode ?? ""])));
-      setThresholds(new Map(entities.data.map((e) => [e.ext_id, e.auto_min_confidence ?? ""])));
-      setFallbacks(
+    const items = entities.data;
+    if (!items) return;
+    setEnts((prev) => {
+      const next = new Set<number>();
+      for (const e of items) {
+        if (modifEntsSel.current.has(e.ext_id) ? prev.has(e.ext_id) : e.selected)
+          next.add(e.ext_id);
+      }
+      return next;
+    });
+    // Mode, seuil et repli forment un seul réglage aux yeux de l'admin : ils sont protégés
+    // ensemble, par entité. Une entité jamais touchée reprend intégralement le serveur.
+    const garde = (id: number) => modifEntsCfg.current.has(id);
+    setModes(
+      (prev) =>
         new Map(
-          entities.data.map((e) => [
+          items.map((e) => [
             e.ext_id,
-            e.fallback_group_id != null
-              ? `g:${e.fallback_group_id}`
-              : e.fallback_technician_id != null
-                ? `t:${e.fallback_technician_id}`
-                : "",
+            garde(e.ext_id) ? (prev.get(e.ext_id) ?? "") : (e.mode ?? ""),
           ]),
         ),
-      );
-    }
+    );
+    setThresholds(
+      (prev) =>
+        new Map(
+          items.map((e) => [
+            e.ext_id,
+            garde(e.ext_id) ? (prev.get(e.ext_id) ?? "") : (e.auto_min_confidence ?? ""),
+          ]),
+        ),
+    );
+    setFallbacks(
+      (prev) =>
+        new Map(
+          items.map((e) => [
+            e.ext_id,
+            garde(e.ext_id) ? (prev.get(e.ext_id) ?? "") : repliServeur(e),
+          ]),
+        ),
+    );
   }, [entities.data]);
 
-  function toggle(set: Set<number>, setter: (s: Set<number>) => void, id: number, on: boolean) {
-    touched.current = true;
+  function toggle(
+    marque: Set<number>,
+    set: Set<number>,
+    setter: (s: Set<number>) => void,
+    id: number,
+    on: boolean,
+  ) {
+    marque.add(id);
     const next = new Set(set);
     if (on) next.add(id);
     else next.delete(id);
@@ -193,21 +244,21 @@ export function Scope() {
   }
 
   function setMode(id: number, mode: ExecutionMode | "") {
-    touched.current = true;
+    modifEntsCfg.current.add(id);
     const next = new Map(modes);
     next.set(id, mode);
     setModes(next);
   }
 
   function setFallback(id: number, value: string) {
-    touched.current = true;
+    modifEntsCfg.current.add(id);
     const next = new Map(fallbacks);
     next.set(id, value);
     setFallbacks(next);
   }
 
   function setThreshold(id: number, value: number | "") {
-    touched.current = true;
+    modifEntsCfg.current.add(id);
     const next = new Map(thresholds);
     next.set(id, value);
     setThresholds(next);
@@ -239,7 +290,48 @@ export function Scope() {
     return n;
   }, [categories.data, entities.data, cats, ents, reglagesLocaux]);
 
+  // Garde de sortie : annoncer « N modifications non enregistrées » puis laisser un F5 les
+  // emporter sans un mot était une demi-promesse. Seul le RECHARGEMENT est gardé : le
+  // blocage de navigation interne (`useBlocker`) exige un data router, et `App.tsx` monte
+  // un `<BrowserRouter>` déclaratif — l'appeler ici ferait planter la page entière.
+  useEffect(() => {
+    if (enAttente === 0) return;
+    const retenir = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", retenir);
+    return () => window.removeEventListener("beforeunload", retenir);
+  }, [enAttente]);
+
+  /**
+   * Entités dont le brouillon ARME une écriture GLPI : enregistrées en « suggestion » ou en
+   * « défaut global », passées à semi/full-auto. `EngineSettings` demande déjà cette
+   * confirmation pour le mode par défaut ; sans elle ici, le garde-fou se contournait en
+   * changeant d'écran — un `<select>` sur /scope arme exactement la même écriture.
+   */
+  const entitesArmees = useMemo(
+    () =>
+      (entities.data ?? []).filter((e) => {
+        const local = modes.get(e.ext_id) ?? "";
+        const serveur = e.mode ?? "";
+        return (
+          (local === "semi_auto" || local === "full_auto") &&
+          serveur !== "semi_auto" &&
+          serveur !== "full_auto"
+        );
+      }),
+    [entities.data, modes],
+  );
+
   async function save() {
+    if (entitesArmees.length > 0) {
+      const noms = entitesArmees.map((e) => e.name).join(", ");
+      const ok = window.confirm(
+        t(
+          `Autoriser l'IA à écrire dans GLPI pour : ${noms} ?\n\nPour ces entités, elle modifiera catégorie, priorité, assignation et répondra au demandeur — après le garde-fou.`,
+          `Allow the AI to write to GLPI for: ${noms}?\n\nFor these entities it will modify category, priority, assignment and reply to the requester — after the guardrail.`,
+        ),
+      );
+      if (!ok) return;
+    }
     setSaving(true);
     try {
       await Api.setScope({ category_ids: [...cats], entity_ids: [...ents] });
@@ -261,7 +353,9 @@ export function Scope() {
       // Le serveur redevient la référence : un scan ultérieur peut rafraîchir sans risque,
       // et la relecture remet le compteur de modifications en attente à zéro sur ce que le
       // serveur a RÉELLEMENT accepté — pas sur ce qu'on croit lui avoir envoyé.
-      touched.current = false;
+      modifCats.current.clear();
+      modifEntsSel.current.clear();
+      modifEntsCfg.current.clear();
       reload();
       toast.success(t("Périmètre et modes enregistrés.", "Scope and modes saved."));
     } catch (e: unknown) {
@@ -278,8 +372,13 @@ export function Scope() {
    * mettre les 200 catégories de l'instance dans le périmètre. Les lignes masquées par la
    * recherche gardent leur état — d'où l'union/soustraction plutôt qu'un remplacement.
    */
-  function toggleAll(ids: number[], current: Set<number>, setter: (s: Set<number>) => void) {
-    touched.current = true;
+  function toggleAll(
+    marque: Set<number>,
+    ids: number[],
+    current: Set<number>,
+    setter: (s: Set<number>) => void,
+  ) {
+    for (const id of ids) marque.add(id);
     const allOn = ids.length > 0 && ids.every((id) => current.has(id));
     const next = new Set(current);
     for (const id of ids) {
@@ -316,6 +415,7 @@ export function Scope() {
 
   /** Bouton de cochage en masse — porte le nombre d'AFFICHÉS, pour ne rien promettre d'autre. */
   const boutonMasse = (
+    marque: Set<number>,
     affiches: RefItem[],
     current: Set<number>,
     setter: (s: Set<number>) => void,
@@ -325,7 +425,7 @@ export function Scope() {
     const ids = affiches.map((it) => it.ext_id);
     const tous = ids.every((id) => current.has(id));
     return (
-      <Button variant="ghost" size="sm" onClick={() => toggleAll(ids, current, setter)}>
+      <Button variant="ghost" size="sm" onClick={() => toggleAll(marque, ids, current, setter)}>
         {tous ? <Square className="h-3.5 w-3.5" /> : <CheckSquare className="h-3.5 w-3.5" />}
         {filtreActif
           ? tous
@@ -431,7 +531,13 @@ export function Scope() {
                 {catQuery.trim() !== "" && ` · ${catsFiltrees.length} ${t("affichée(s)", "shown")}`}
               </span>
             }
-            right={boutonMasse(catsFiltrees, cats, setCats, catQuery.trim() !== "")}
+            right={boutonMasse(
+              modifCats.current,
+              catsFiltrees,
+              cats,
+              setCats,
+              catQuery.trim() !== "",
+            )}
           />
           {(categories.data?.length ?? 0) > 0 &&
             barreRecherche(
@@ -443,7 +549,7 @@ export function Scope() {
           <CheckList
             items={catsFiltrees}
             selected={cats}
-            onToggle={(id, on) => toggle(cats, setCats, id, on)}
+            onToggle={(id, on) => toggle(modifCats.current, cats, setCats, id, on)}
             loading={categories.loading}
             error={categories.error}
             empty={
@@ -462,7 +568,13 @@ export function Scope() {
                 {entQuery.trim() !== "" && ` · ${entsFiltrees.length} ${t("affichée(s)", "shown")}`}
               </span>
             }
-            right={boutonMasse(entsFiltrees, ents, setEnts, entQuery.trim() !== "")}
+            right={boutonMasse(
+              modifEntsSel.current,
+              entsFiltrees,
+              ents,
+              setEnts,
+              entQuery.trim() !== "",
+            )}
           />
           {(entities.data?.length ?? 0) > 0 &&
             barreRecherche(
@@ -474,7 +586,7 @@ export function Scope() {
           <CheckList
             items={entsFiltrees}
             selected={ents}
-            onToggle={(id, on) => toggle(ents, setEnts, id, on)}
+            onToggle={(id, on) => toggle(modifEntsSel.current, ents, setEnts, id, on)}
             loading={entities.loading}
             error={entities.error}
             empty={

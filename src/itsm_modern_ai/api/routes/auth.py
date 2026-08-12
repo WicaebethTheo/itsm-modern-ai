@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from ...admin_setup import AdminSetupError, set_admin_password
@@ -32,7 +32,23 @@ from ..deps import get_config_service
 
 logger = logging.getLogger("itsm.security")
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+def _no_store(response: Response) -> None:
+    """Interdit la CONSERVATION des réponses d'authentification (`Cache-Control: no-store`).
+
+    `GET /api/auth/me` est la seule route du produit qui porte l'adresse du compte.
+    `Vary: Cookie` empêchait déjà un cache PARTAGÉ de la servir à un anonyme, mais rien
+    n'interdisait de l'écrire sur disque (cache navigateur, proxy d'entreprise) : l'identité
+    de l'administrateur survivait alors à la session qui l'avait obtenue.
+
+    Posé sur TOUT le préfixe, et non sur la seule route concernée : aucune réponse
+    d'authentification (statut, création, connexion, rotation) n'a de raison d'être
+    conservée, et l'oubli du jour où une route s'ajoutera coûterait plus cher que l'en-tête.
+    """
+    response.headers["Cache-Control"] = "no-store"
+
+
+router = APIRouter(prefix="/api/auth", tags=["auth"], dependencies=[Depends(_no_store)])
 
 # Bornes de saisie : rien de fonctionnel, juste de quoi ne pas hasher un mégaoctet ni
 # stocker un roman. La politique réelle (longueur MINIMALE, format d'email) vit dans
@@ -83,6 +99,24 @@ def _client_key(request: Request) -> str:
     trust = bool(getattr(settings, "trust_proxy_headers", False))
     hops = int(getattr(settings, "trusted_proxy_hops", 1))
     return client_ip(request, trust, trusted_hops=hops)
+
+
+def _password_key(key: str) -> str:
+    """Sous-clé de rate-limit PROPRE à `/api/auth/password`, dérivée de la clé IP.
+
+    Les échecs de la rotation restent comptés sur la clé PARTAGÉE (`/login`, `/setup`) :
+    cette route dit « oui / non » sur un mot de passe, c'est un oracle de vérification, et
+    ne pas l'y compter rouvrirait un canal de force brute parallèle.
+
+    Mais le PRÉ-CONTRÔLE, lui, se fait sur cette sous-clé, alimentée uniquement par les
+    échecs de la rotation elle-même. Sinon un tiers qui martèle `/api/auth/login` — route
+    PUBLIQUE — interdirait à l'admin déjà authentifié de changer son mot de passe ; et
+    derrière un reverse proxy sans `trust_proxy_headers`, tout le monde partage une seule
+    clé IP, donc n'importe quel visiteur suffirait. Or la rotation est précisément ce qu'on
+    déclenche quand on soupçonne un cookie volé : la fermer à l'admin sur une nuisance
+    anonyme, c'est convertir un déni de service en perte de contrôle du compte.
+    """
+    return f"password:{key}"
 
 
 def _reject_if_rate_limited(request: Request, key: str) -> None:
@@ -232,9 +266,12 @@ def change_password(
     1. **le mot de passe courant est REVÉRIFIÉ** (`verify_login`), même si l'appelant porte
        une session valide : sans ça, un cookie volé — ou un onglet laissé ouvert — suffirait
        à s'approprier définitivement le compte ;
-    2. **le MÊME limiteur que `/login`, à la MÊME clé IP.** Cette route dit « oui / non » sur
-       un mot de passe : c'est un oracle de vérification, exactement comme le login. Non
-       comptée, elle offrirait un canal de force brute qui contourne le limiteur de `/login`.
+    2. **le MÊME limiteur que `/login`, à la MÊME clé IP, POUR COMPTER.** Cette route dit
+       « oui / non » sur un mot de passe : c'est un oracle de vérification, exactement comme
+       le login. Non comptée, elle offrirait un canal de force brute qui contourne le
+       limiteur de `/login`. Le PRÉ-CONTRÔLE, lui, lit une sous-clé propre à la route
+       (`_password_key`) : la porte d'entrée du compteur partagé est publique, s'y fier
+       pour REFUSER laisserait un anonyme verrouiller la rotation (cf. `_password_key`).
 
     ⚠️ EFFET VOULU : `set_admin_password` incrémente la génération de session, donc TOUTES
     les sessions tombent — y compris CELLE DE L'APPELANT. C'est le prix (assumé) de la
@@ -243,16 +280,21 @@ def change_password(
     """
     limiter = request.app.state.login_limiter
     key = _client_key(request)
-    _reject_if_rate_limited(request, key)
+    cle_rotation = _password_key(key)
+    _reject_if_rate_limited(request, cle_rotation)
 
     # L'email n'est pas demandé au formulaire : le compte est UNIQUE, celui de la session.
     if not security.verify_login(cfg, cfg.admin_email() or "", body.current_password):
+        # Les DEUX clés : la partagée pour que l'oracle continue de bloquer `/login`, la
+        # sous-clé pour que le martèlement de CETTE route finisse par la fermer aussi.
         limiter.record_failure(key)
+        limiter.record_failure(cle_rotation)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "bad_credentials", "message": "Mot de passe actuel incorrect."},
         )
     limiter.reset(key)
+    limiter.reset(cle_rotation)
 
     try:
         # `force=True` : un compte existe forcément ici (require_auth l'a établi). L'email et

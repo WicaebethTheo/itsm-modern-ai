@@ -246,8 +246,12 @@ _DECISIONS_CSV_HEADER = [
     # même de l'art. 22 RGPD, donc la première chose qu'une DPO doit pouvoir isoler dans un
     # export « pour l'audit ». Ajoutés EN FIN de ligne : les colonnes existantes gardent
     # leur position, un tableur/script d'audit déjà en place ne casse pas.
+    # `fallback_applied` pour la MÊME raison : un « à trier » repris par le repli (un acteur
+    # a bien été assigné, sur une Décision pourtant refusée) et un « à trier » resté
+    # orphelin sont autrement indiscernables dans le CSV — la console les distingue, pas
+    # l'artefact d'audit, ce qui est exactement l'inverse du besoin.
     # `subject` reste volontairement HORS export (décision assumée : titre de ticket = PII).
-    "mode", "applied",
+    "mode", "applied", "fallback_applied",
 ]
 
 _LLM_CALLS_CSV_HEADER = [
@@ -293,7 +297,7 @@ def decisions_csv_stream(session: Session) -> Iterator[str]:
     rows = (
         (d.id, d.ticket_id, d.ts.isoformat(), d.accepted, d.reason, d.category,
          d.priority, d.technician_id, d.group_id, d.confidence, d.glpi_link, d.annotation,
-         d.mode, d.applied)
+         d.mode, d.applied, d.fallback_applied)
         for d in _pages_antechronologiques(session, DecisionLog)
     )
     return _csv_stream(_DECISIONS_CSV_HEADER, rows)

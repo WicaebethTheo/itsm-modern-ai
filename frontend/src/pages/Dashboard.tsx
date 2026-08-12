@@ -56,11 +56,13 @@ export function Dashboard() {
   const num = (n: number) => n.toLocaleString(locale);
 
   // Coût : le backend arrondit à 4 décimales (« 1.8325 € » à l'écran sans formatage).
-  const cost = m?.cost_eur_last_24h ?? 0;
-  const cap = m?.cost_cap_eur_per_day ?? 0;
+  // `?? 0` confondait « pas de plafond » et « plafond INCONNU » (/api/metrics en échec) :
+  // la carte affirmait alors « aucun plafond configuré » sans avoir rien lu. Nullable.
+  const cost = m?.cost_eur_last_24h ?? null;
+  const cap = m?.cost_cap_eur_per_day ?? null;
   const money = (v: number) =>
     `${v.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-  const capPct = cap > 0 ? Math.round((cost / cap) * 100) : null;
+  const capPct = cost != null && cap != null && cap > 0 ? Math.round((cost / cap) * 100) : null;
   const overCap = capPct != null && capPct >= 100;
 
   // GET en échec : on le signale au lieu d'afficher des « — » muets partout.
@@ -170,7 +172,7 @@ export function Dashboard() {
         </KpiCard>
         <KpiCard
           label={t("Coût LLM (24 h)", "LLM cost (24h)")}
-          value={m ? money(cost) : "—"}
+          value={cost != null ? money(cost) : "—"}
           tag={
             m
               ? capPct != null
@@ -182,26 +184,36 @@ export function Dashboard() {
           loading={metricsLoading}
         >
           {/* Il n'existe AUCUNE série de coût côté API : la sparkline d'origine traçait
-              ici la série tickets/jour. Une jauge vers le plafond dit, elle, la vérité. */}
-          <div className="mt-3 space-y-1">
-            {cap > 0 ? (
-              <>
-                <ProgressBar
-                  ratio={cost / cap}
-                  tone={
-                    overCap ? "destructive" : capPct != null && capPct >= 80 ? "warning" : "primary"
-                  }
-                />
+              ici la série tickets/jour. Une jauge vers le plafond dit, elle, la vérité.
+              Rien n'est peint tant que les métriques ne sont pas là : sous un « — »,
+              « aucun plafond configuré » et une jauge à 0 % sont deux affirmations que
+              la page n'a pas mesurées (/api/metrics en erreur). */}
+          {m && cap != null && (
+            <div className="mt-3 space-y-1">
+              {cap > 0 && cost != null ? (
+                <>
+                  <ProgressBar
+                    ratio={cost / cap}
+                    label={t("Consommation du plafond", "Cap consumption")}
+                    tone={
+                      overCap
+                        ? "destructive"
+                        : capPct != null && capPct >= 80
+                          ? "warning"
+                          : "primary"
+                    }
+                  />
+                  <div className="text-caption text-muted-foreground">
+                    {t("plafond", "cap")} {money(cap)}/{t("jour", "day")}
+                  </div>
+                </>
+              ) : (
                 <div className="text-caption text-muted-foreground">
-                  {t("plafond", "cap")} {money(cap)}/{t("jour", "day")}
+                  {t("aucun plafond configuré", "no cap configured")}
                 </div>
-              </>
-            ) : (
-              <div className="text-caption text-muted-foreground">
-                {t("aucun plafond configuré", "no cap configured")}
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </KpiCard>
         <KpiCard
           label={t("Confiance moy.", "Avg. confidence")}
@@ -210,9 +222,16 @@ export function Dashboard() {
           value={m?.avg_confidence != null ? `${Math.round(m.avg_confidence * 100)}%` : "—"}
           loading={metricsLoading}
         >
-          <div className="mt-3">
-            <ProgressBar ratio={m?.avg_confidence ?? 0} />
-          </div>
+          {/* Pas de jauge sans mesure : peinte à 0 % sous un « — », elle se lisait
+              « confiance moyenne nulle » alors que rien n'avait été lu. */}
+          {m?.avg_confidence != null && (
+            <div className="mt-3">
+              <ProgressBar
+                ratio={m.avg_confidence}
+                label={t("Confiance moyenne", "Average confidence")}
+              />
+            </div>
+          )}
         </KpiCard>
       </div>
 
@@ -234,7 +253,12 @@ export function Dashboard() {
             </div>
           }
         />
-        <div className="p-5">{trend}</div>
+        {/* Région NOMMÉE : le squelette, l'erreur et l'état vide de la tendance vivent ici
+            et nulle part ailleurs — un lecteur d'écran y navigue, et un test peut
+            vérifier CE squelette-là sans compter ceux du reste de la page. */}
+        <section aria-label={t("Tendance sur 14 jours", "14-day trend")} className="p-5">
+          {trend}
+        </section>
       </Card>
 
       {/* Pourquoi les tickets partent « à trier » — `by_reason` est la seule donnée
@@ -405,15 +429,25 @@ export function Dashboard() {
             </tbody>
           </table>
         </div>
-        {decisions.data?.length === 0 && (
-          <EmptyState
-            icon={ScrollText}
-            title={t("Aucune décision pour le moment", "No decisions yet")}
-            description={t(
-              "Les tickets traités et les « à trier » s'afficheront ici.",
-              "Handled tickets and “to triage” entries will appear here.",
-            )}
-          />
+        {/* Journal en échec : le tableau ne rendait QUE ses en-têtes, sans un mot — un
+            journal vide et un journal illisible se ressemblaient trait pour trait. */}
+        {decisions.error ? (
+          <div className="p-5">
+            <Banner kind="error" role="alert">
+              {t("Journal indisponible :", "Journal unavailable:")} {decisions.error}
+            </Banner>
+          </div>
+        ) : (
+          decisions.data?.length === 0 && (
+            <EmptyState
+              icon={ScrollText}
+              title={t("Aucune décision pour le moment", "No decisions yet")}
+              description={t(
+                "Les tickets traités et les « à trier » s'afficheront ici.",
+                "Handled tickets and “to triage” entries will appear here.",
+              )}
+            />
+          )
         )}
       </Card>
 

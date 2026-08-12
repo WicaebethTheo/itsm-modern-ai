@@ -54,6 +54,8 @@ const submitButton = () => screen.getByRole("button", { name: /Créer le compte/
 describe("Setup — première installation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Ceintures anti-boucle (sessionStorage, portée onglet) : remises à zéro entre tests.
+    sessionStorage.clear();
     vi.mocked(Api.authStatus).mockResolvedValue({
       authenticated: false,
       auth_configured: false,
@@ -120,7 +122,15 @@ describe("Setup — première installation", () => {
     expect(screen.getByLabelText("Adresse email")).not.toHaveAttribute("aria-invalid");
   });
 
-  it("lève l'erreur de confirmation dès qu'on corrige la frappe", async () => {
+  it("lève l'erreur de confirmation dès qu'on corrige VRAIMENT la frappe", async () => {
+    // La correction doit en être une : effacer le `f` fautif et taper le `e` attendu. Une
+    // frappe qui laisse les deux champs divergents (l'ancienne version de ce test ajoutait
+    // un `e` à « …pilf ») ne prouvait rien — l'erreur serait tombée même sans validation.
+    vi.mocked(Api.setup).mockResolvedValue({
+      authenticated: true,
+      auth_configured: true,
+      setup_required: false,
+    });
     renderSetup();
     const user = await fill({
       email: "admin@exemple.fr",
@@ -132,11 +142,19 @@ describe("Setup — première installation", () => {
       await screen.findByText("Les deux mots de passe ne correspondent pas."),
     ).toBeInTheDocument();
     const field = screen.getByLabelText("Confirmation du mot de passe");
-    await user.type(field, "e");
+    await user.type(field, "{backspace}e");
+    expect(field).toHaveValue("correct-cheval-pile");
     expect(
       screen.queryByText("Les deux mots de passe ne correspondent pas."),
     ).not.toBeInTheDocument();
     expect(field).not.toHaveAttribute("aria-invalid");
+    // Et la preuve que la validation existe toujours : l'envoi suivant PART.
+    await user.click(submitButton());
+    expect(await screen.findByText("DASHBOARD-OK")).toBeInTheDocument();
+    expect(Api.setup).toHaveBeenCalledWith({
+      email: "admin@exemple.fr",
+      password: "correct-cheval-pile",
+    });
   });
 
   it("lève l'erreur serveur portée par un champ dès qu'on y retouche", async () => {
@@ -290,6 +308,24 @@ describe("Setup — première installation", () => {
     expect(screen.getByRole("button", { name: /Réessayez dans 45 s/ })).toBeDisabled();
   });
 
+  it("n'invente aucun délai quand le 429 arrive sans Retry-After", async () => {
+    // Sans en-tête (nginx, Traefik, WAF en coupure), on dit le refus et on laisse la main :
+    // verrouiller une minute sur un chiffre inventé bloquerait une première installation.
+    vi.mocked(Api.setup).mockRejectedValue(
+      new ApiError(429, { detail: { code: "too_many_attempts", message: "Trop de tentatives." } }),
+    );
+    renderSetup();
+    const user = await fill({
+      email: "admin@exemple.fr",
+      password: "correct-cheval-pile",
+      confirm: "correct-cheval-pile",
+    });
+    await user.click(submitButton());
+    expect(await screen.findByText("Trop de tentatives.")).toBeInTheDocument();
+    expect(screen.queryByText(/Réessayez dans/)).not.toBeInTheDocument();
+    expect(submitButton()).toBeEnabled();
+  });
+
   it("distingue une panne réseau d'un refus d'installation", async () => {
     vi.mocked(Api.setup).mockRejectedValue(
       new ApiError(502, { detail: { message: "Passerelle injoignable" } }),
@@ -357,11 +393,22 @@ describe("Setup — première installation", () => {
     expect(await screen.findByText("DASHBOARD-OK")).toBeInTheDocument();
   });
 
-  it("ne renvoie jamais un moteur muet (champ absent) vers la création de compte", async () => {
-    // Moteur antérieur à cette page : pas de `setup_required` → surtout pas de formulaire.
+  it("ne renvoie jamais vers la création de compte un moteur dont l'auth est configurée", async () => {
+    // Moteur antérieur à cette page : pas de `setup_required`. C'est `auth_configured` qui
+    // tranche alors — vrai ici, donc un compte existe : surtout pas de formulaire.
     vi.mocked(Api.authStatus).mockResolvedValue({ authenticated: false, auth_configured: true });
     renderSetup();
     expect(await screen.findByText("PAGE-CONNEXION")).toBeInTheDocument();
+  });
+
+  it("affiche le formulaire sur le MÊME critère que celui qui envoie ici depuis /login", async () => {
+    // `/login` renvoie ici sur `setup_required || !auth_configured` : cet écran doit donc
+    // s'afficher sur le même statut, sinon les deux pages se renvoient la balle (88 appels
+    // à /api/auth/status en 300 ms, mesurés). Champ absent + auth non configurée = le cas.
+    vi.mocked(Api.authStatus).mockResolvedValue({ authenticated: false, auth_configured: false });
+    renderSetup();
+    expect(await form()).toBeInTheDocument();
+    expect(screen.queryByText("PAGE-CONNEXION")).not.toBeInTheDocument();
   });
 
   it("bascule l'affichage du mot de passe sans jamais le pré-remplir ailleurs", async () => {

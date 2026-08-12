@@ -83,6 +83,26 @@ describe("Dashboard", () => {
       expect(screen.getByText("aucun plafond configuré")).toBeInTheDocument();
     });
 
+    it("métriques en échec : ni plafond affirmé, ni jauge peinte sous un « — »", async () => {
+      vi.mocked(Api.metrics).mockRejectedValue(new Error("503 Service Unavailable"));
+      renderPage();
+      await screen.findByText(/Données du tableau de bord indisponibles/);
+      // « aucun plafond configuré » serait une affirmation sur une valeur JAMAIS lue.
+      expect(screen.queryByText("aucun plafond configuré")).not.toBeInTheDocument();
+      expect(screen.queryByText(/du plafond/)).not.toBeInTheDocument();
+      expect(screen.queryByText("sans plafond")).not.toBeInTheDocument();
+      // Aucune jauge : une barre à 0 % se lit « zéro mesuré », pas « inconnu ».
+      expect(screen.queryAllByRole("progressbar")).toHaveLength(0);
+    });
+
+    it("plafond nul : une seule jauge (la confiance), aucune jauge de plafond", async () => {
+      vi.mocked(Api.metrics).mockResolvedValue(metricsWith({ cost_cap_eur_per_day: 0 }));
+      renderPage();
+      await screen.findByText("aucun plafond configuré");
+      expect(screen.getAllByRole("progressbar")).toHaveLength(1);
+      expect(screen.getByRole("progressbar", { name: "Confiance moyenne" })).toBeInTheDocument();
+    });
+
     it("alerte en rouge au dépassement du plafond", async () => {
       vi.mocked(Api.metrics).mockResolvedValue(
         metricsWith({ cost_eur_last_24h: 6, cost_cap_eur_per_day: 5 }),
@@ -115,11 +135,14 @@ describe("Dashboard", () => {
     it("montre un squelette pendant le chargement, pas « aucun ticket »", async () => {
       const d = deferred<Metrics>();
       vi.mocked(Api.metrics).mockReturnValue(d.promise);
-      const { container } = renderPage();
+      renderPage();
       expect(screen.queryByText(/Aucun ticket analysé/)).not.toBeInTheDocument();
-      expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+      // Squelette de LA TENDANCE : compter ceux de toute la page restait vert même si
+      // celui-ci disparaissait (5 KPI + 4 lignes de journal en rendent déjà).
+      const trend = screen.getByRole("region", { name: "Tendance sur 14 jours" });
+      expect(trend.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
       d.resolve(demo.metrics);
-      await screen.findByText("Tendance sur 14 jours");
+      await waitFor(() => expect(trend.querySelectorAll(".animate-pulse").length).toBe(0));
     });
 
     it("signale l'erreur au lieu d'un état vide trompeur", async () => {
@@ -190,6 +213,45 @@ describe("Dashboard", () => {
       renderPage();
       expect(await screen.findByText("Aucune décision pour le moment")).toBeInTheDocument();
     });
+
+    it("journal en échec : le tableau ne reste pas réduit à ses en-têtes muets", async () => {
+      vi.mocked(Api.decisions).mockRejectedValue(new Error("500 Internal Server Error"));
+      renderPage();
+      expect(await screen.findByText(/Journal indisponible/)).toBeInTheDocument();
+      // Un journal ILLISIBLE n'est pas un journal VIDE : les deux ne doivent pas se dire
+      // avec les mêmes mots.
+      expect(screen.queryByText("Aucune décision pour le moment")).not.toBeInTheDocument();
+      expect(screen.getByRole("columnheader", { name: "Statut" })).toBeInTheDocument();
+    });
+  });
+
+  it("aucun ticket analysé (total = 0) : des zéros mesurés, jamais de NaN", async () => {
+    vi.mocked(Api.metrics).mockResolvedValue(
+      metricsWith({
+        total: 0,
+        accepted: 0,
+        a_trier: 0,
+        useful_coverage: 0,
+        by_reason: {},
+        avg_confidence: null,
+        cost_eur_last_24h: 0,
+        series: zeroSeries(),
+      }),
+    );
+    const { container } = renderPage();
+    expect(await screen.findByText(/Aucun ticket analysé sur 14 jours/)).toBeInTheDocument();
+    expect(screen.getByText(/Aucun ticket « à trier »/)).toBeInTheDocument();
+    expect(screen.getByText(/Couverture utile 0%/)).toBeInTheDocument();
+    // `avg_confidence` nul = NON MESURÉ : « — » et aucune jauge peinte à 0 %.
+    expect(
+      screen.queryByRole("progressbar", { name: "Confiance moyenne" }),
+    ).not.toBeInTheDocument();
+    expect(document.body.textContent ?? "").not.toMatch(/NaN/);
+    // Sparklines : un jour à zéro ne peint AUCUNE barre. Le plancher de 8 % rendait un
+    // jour à zéro indiscernable d'un jour à un ticket.
+    const bars = container.querySelectorAll<HTMLElement>(".spark span");
+    expect(bars.length).toBeGreaterThan(0);
+    for (const bar of bars) expect(bar.style.height).toBe("0px");
   });
 
   describe("opérationnel GLPI", () => {
@@ -230,15 +292,31 @@ describe("Dashboard", () => {
     expect(await screen.findByText(/Données du tableau de bord indisponibles/)).toBeInTheDocument();
   });
 
-  it("anti-mouchard : aucun agrégat par technicien", async () => {
+  it("anti-mouchard : aucun nom hors des lignes du journal, donc aucun agrégat nominatif", async () => {
     renderPage();
     await screen.findByText("Journal des décisions");
-    // Les noms de techniciens n'apparaissent QUE sur les lignes du journal (une décision =
-    // une ligne) : aucun panneau, titre ou palmarès ne les regroupe.
-    for (const h of screen.getAllByRole("heading")) {
-      expect(h.textContent ?? "").not.toMatch(/technicien|agent|classement|palmarès/i);
-    }
     const journal = screen.getByRole("table");
-    expect(within(journal).getAllByText("Marc Lefèvre").length).toBeGreaterThan(0);
+    // L'invariant N'EST PAS « aucun titre ne contient le mot technicien » (un panneau
+    // « Top routage » y échapperait sans effort) : c'est qu'AUCUN nom de personne ou de
+    // groupe n'apparaît hors des lignes du journal, où une ligne = une décision.
+    const names = [
+      ...new Set(
+        demo.decisions
+          .flatMap((d) => [d.technician_name, d.group_name])
+          .filter((n): n is string => !!n),
+      ),
+    ];
+    expect(names.length).toBeGreaterThan(0);
+    const horsJournal = document.body.cloneNode(true) as HTMLElement;
+    for (const tbl of horsJournal.querySelectorAll("table")) tbl.remove();
+    for (const name of names) {
+      expect(horsJournal.textContent ?? "").not.toContain(name);
+      // …et dans le journal, le nom ne paraît qu'une fois par décision qui le porte :
+      // pas de total, pas de palmarès glissé dans le tableau.
+      const rows = demo.decisions.filter(
+        (d) => d.technician_name === name || d.group_name === name,
+      ).length;
+      expect(within(journal).getAllByText(name)).toHaveLength(rows);
+    }
   });
 });

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
 import { Api, ApiError, errorCode, setupSettled } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { needsSetup, setupHandoff } from "@/pages/Setup";
 
 /** Commande de récupération — le SEUL chemin quand le mot de passe est perdu. */
 const RESET_CMD = "docker compose exec itsm python -m itsm_modern_ai.admin_setup --force";
@@ -29,13 +30,20 @@ export function Login() {
   // - aucun compte administrateur → l'installation n'est pas finie → /setup. C'est ce qui
   //   remplace l'ancien bandeau « définissez ITSM_ADMIN_PASSWORD puis redémarrez » : il n'y
   //   a plus rien à faire hors de l'interface, donc plus rien à expliquer ;
-  // - sinon on reste ici. Pas de boucle possible : /setup est une route publique qui rend
-  //   un formulaire, elle ne renvoie pas ici tant que le compte n'existe pas.
+  // - sinon on reste ici.
+  //
+  // Le renvoi passe par le MÊME prédicat que celui qui décide d'afficher le formulaire
+  // d'installation (`needsSetup`, exporté par /setup) : les deux pages ne peuvent plus se
+  // contredire, donc plus se renvoyer la balle. `setupHandoff` est la ceinture, pour les
+  // désaccords qu'un prédicat partagé ne couvre pas (statut en cache, second onglet, moteur
+  // qui bascule entre deux réponses) : au-delà de quelques allers-retours, on reste ici.
   useEffect(() => {
     Api.authStatus()
       .then((s) => {
-        if (s.authenticated) navigate("/", { replace: true });
-        else if ((s.setup_required || !s.auth_configured) && !setupSettled.get()) {
+        if (s.authenticated) {
+          setupHandoff.clear();
+          navigate("/", { replace: true });
+        } else if (needsSetup(s) && !setupSettled.get() && setupHandoff.take()) {
           navigate("/setup", { replace: true });
         }
       })
@@ -82,7 +90,11 @@ export function Login() {
       if (status === 401) {
         setError(t("Identifiants incorrects.", "Incorrect credentials."));
       } else if (status === 429 || errorCode(e) === "too_many_attempts") {
-        setRetryIn((e instanceof ApiError && e.retryAfter) || 60);
+        // Décompte SEULEMENT si le moteur a donné `Retry-After` (cf. `lib/api.ts`) : un
+        // limiteur intermédiaire (nginx, Traefik, WAF) renvoie couramment un 429 sans
+        // l'en-tête, et une minute inventée bloquerait l'admin sur un chiffre faux.
+        const wait = e instanceof ApiError ? e.retryAfter : undefined;
+        if (wait) setRetryIn(wait);
         setError((e as Error).message);
       } else {
         setError((e as Error).message);

@@ -63,10 +63,34 @@ def test_paste_valid_key_activates_features(client):
     assert body["edition"] == "supporter" and body["valid"] is True
     assert body["customer"] == "ACME DSI"
     assert all(f["entitled"] for f in body["features"])
-    # …et le code est livré dans l'image unique → features ACTIVES.
-    assert all(f["installed"] is True and f["active"] is True for f in body["features"])
+    # …et le code est livré dans l'image unique → features ACTIVES, SAUF celles annoncées
+    # « prévu » : payer ne rend pas opérationnel un module sans surface d'usage.
+    par_cle = {f["key"]: f for f in body["features"]}
+    assert all(f["installed"] is True for f in body["features"])
+    assert par_cle["pii_advanced"]["active"] is True
     # Persistance : un GET ultérieur reflète l'édition supporter.
     assert client.get("/api/license").json()["edition"] == "supporter"
+
+
+def test_un_module_prevu_n_est_jamais_annonce_actif(client):
+    """`active` est le contrat « ça fonctionne réellement » — il ne doit pas mentir.
+
+    `multi_entity` et `scheduled_exports` enregistrent bien un provider (donc `installed`),
+    mais AUCUN code ne les consomme : pas un `require_feature`, pas un chemin de moteur.
+    Un client d'API qui lit `active` seul se verrait annoncer opérationnel un module sans
+    surface d'usage. Verrou : `coming_soon` ⇒ jamais `active`, licence valide ou non.
+    """
+    for corps in (
+        client.get("/api/license").json(),  # community
+        client.post("/api/license", json={"key": VALID}).json(),  # supporter
+    ):
+        prevus = [f for f in corps["features"] if f["coming_soon"]]
+        assert {f["key"] for f in prevus} == {"multi_entity", "scheduled_exports"}
+        assert all(f["active"] is False for f in prevus), (
+            "un module annoncé « prévu » a été déclaré actif"
+        )
+        # …et l'invariant, indépendamment du catalogue du jour.
+        assert all(not (f["coming_soon"] and f["active"]) for f in corps["features"])
 
 
 def test_paste_invalid_key_is_rejected_and_not_stored(client):

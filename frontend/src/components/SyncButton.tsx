@@ -1,7 +1,7 @@
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Api, type SyncResult } from "@/lib/api";
+import { Api, type RefItem, type SyncResult } from "@/lib/api";
 import { type Lang, localeFor, useLang, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -134,14 +134,15 @@ export function SyncButton({
 /**
  * Horodatage le plus RÉCENT d'une liste de référentiels — la fraîcheur du dernier scan.
  *
- * Lecture défensive : `updated_at` est servi par `/api/discovery/*` mais n'est pas (encore)
- * déclaré sur `RefItem` côté client, et une instance plus ancienne ne le renvoie pas du
- * tout. Absent ⇒ on ne prétend rien, la mention de fraîcheur disparaît simplement.
+ * `updated_at` est déclaré sur `RefItem` mais reste OPTIONNEL : une instance plus ancienne
+ * ne le renvoie pas. Absent partout ⇒ on ne prétend rien, la mention de fraîcheur
+ * disparaît simplement (elle n'est jamais remplacée par une date inventée). Le paramètre
+ * ne réclame QUE ce champ : c'est le seul que la fonction lit.
  */
-export function dernierScan(items: readonly unknown[]): string | null {
+export function dernierScan(items: readonly Pick<RefItem, "updated_at">[]): string | null {
   let max: string | null = null;
   for (const it of items) {
-    const v = (it as { updated_at?: string | null } | null)?.updated_at;
+    const v = it.updated_at;
     if (v && (max === null || v > max)) max = v;
   }
   return max;

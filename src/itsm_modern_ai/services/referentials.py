@@ -9,6 +9,9 @@ Flux (repris du pattern validé en alpha, réécrit pour la prod) :
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..domain import skills as domain_skills
@@ -32,12 +35,35 @@ def _row(session: Session, kind: str, ext_id: int) -> ReferentialCache | None:
     ).first()
 
 
+def cache_size(session: Session) -> int:
+    """Nombre d'objets actuellement en cache, tous types confondus.
+
+    Sert à qualifier un scan qui ne rapporte RIEN : sur une base vierge c'est banal, sur
+    un cache déjà peuplé c'est GLPI qui désavoue tout le périmètre connu (cf. la route).
+    """
+    return int(session.exec(select(func.count()).select_from(ReferentialCache)).one())
+
+
 def sync(session: Session, referentials: Referentials) -> dict[str, int]:
     """Met à jour le cache depuis un scan GLPI, en PRÉSERVANT les sélections existantes.
 
     Renvoie le nombre d'entrées par type. Les objets disparus de GLPI sont conservés
     (l'admin peut nettoyer manuellement) ; seuls les noms sont rafraîchis.
+
+    `updated_at` est posé ICI, ligne par ligne, et UNIQUEMENT sur les objets que le scan a
+    RÉELLEMENT vus. Deux raisons, dans cet ordre :
+
+    1. **un objet disparu de GLPI ne doit pas être rajeuni.** Il est conservé en base, donc
+       toujours proposé à l'admin ; lui coller la date du scan qui ne l'a PAS vu certifie
+       « vu à l'instant » exactement l'objet que l'horodatage existe pour dénoncer — le
+       technicien parti depuis trois mois. Un `UPDATE` global (sans `WHERE`) faisait
+       précisément ça et vidait le champ de son seul contenu utile ;
+    2. **un scan sans changement doit quand même rajeunir les lignes vues.** L'écriture est
+       inconditionnelle sur la branche « vu » : sinon, sur une instance scannée chaque
+       semaine mais dont GLPI ne bouge pas, aucune ligne ne serait modifiée et la console
+       crierait « référentiels anciens » sur des référentiels frais.
     """
+    vu_le = datetime.now(UTC)
     mapping = {
         KIND_CATEGORY: referentials.categories,
         KIND_ENTITY: referentials.entities,
@@ -51,11 +77,16 @@ def sync(session: Session, referentials: Referentials) -> dict[str, int]:
             profile = profiles.get(ext_id, "") if kind == KIND_TECHNICIAN else ""
             row = _row(session, kind, ext_id)
             if row is None:
-                session.add(ReferentialCache(kind=kind, ext_id=ext_id, name=name, profile=profile))
+                session.add(
+                    ReferentialCache(
+                        kind=kind, ext_id=ext_id, name=name, profile=profile, updated_at=vu_le
+                    )
+                )
             else:
                 row.name = name
                 if kind == KIND_TECHNICIAN:
                     row.profile = profile
+                row.updated_at = vu_le
                 session.add(row)
         counts[kind] = len(items)
     session.commit()

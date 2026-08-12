@@ -26,10 +26,16 @@ type T = (fr: string, en: string) => string;
  *    production (création de faux comptes, suppression d'utilisateurs). D'où les deux
  *    intertitres : ce qui lit et ce qui écrit ne se mélangent pas.
  *
- * Ce que la page rend n'est jamais un secret : des booléens, des compteurs, des chemins
- * de routes et des messages d'erreur déjà masqués côté moteur. En revanche le masquage
- * laisse passer les IP et noms d'hôtes internes — c'est le diagnostic lui-même — et
- * c'est exactement ce que dit la légende sous le rapport.
+ * CE QUE LA PAGE PEUT RENDRE, ET LA LÉGENDE NE DOIT PAS EN PROMETTRE PLUS. L'essentiel est
+ * inoffensif (booléens, compteurs, chemins de routes), mais les messages d'erreur, eux,
+ * traversent tels quels : le masqueur du moteur (`domain/masking.py`) est ANCRÉ SUR
+ * MOTS-CLÉS (`token`, `api_key`, `password`…) plus deux préfixes de clés cloud. Une clé
+ * posée seule dans un corps d'erreur, sans mot-clé devant, en ressort en clair — et sa
+ * docstring dit elle-même qu'il ne masque ni les noms de personnes ni les adresses, or un
+ * corps d'erreur GLPI peut porter le titre d'un ticket, donc le nom du demandeur.
+ * Ce rapport est fait pour être collé dans une issue publique : la légende dit donc un fait
+ * vérifiable (les secrets RECONNUS sont masqués) et énumère les résidus possibles, plutôt
+ * qu'une garantie que personne ne tient.
  */
 
 function J({ data, label }: { data: unknown; label: string }) {
@@ -158,9 +164,10 @@ function StateRow({ name, view }: { name: string; view: StateView }) {
 }
 
 /**
- * Rapport texte à coller dans une issue ou un ticket de support. Aucun jeton, aucune
- * clé : uniquement ce que la page affiche déjà (les messages d'erreur sont masqués par
- * le moteur avant d'arriver ici).
+ * Rapport texte à coller dans une issue ou un ticket de support : exactement ce que la page
+ * affiche déjà, y compris les messages d'erreur du moteur, repris TELS QUELS. Cette
+ * fonction ne masque rien — elle ne le prétend pas, et la légende affichée sous le rapport
+ * dit la même chose (cf. l'en-tête de ce fichier).
  */
 function buildReport(
   t: T,
@@ -302,8 +309,8 @@ export function Debug() {
           </div>
           <p className="mt-4 text-caption leading-snug text-muted-foreground">
             {t(
-              "Ce rapport ne contient aucun jeton ni clé d'API : le moteur les masque avant de les journaliser. Il peut en revanche contenir vos adresses internes (IP, noms d'hôtes) — relisez-le avant de le publier ailleurs qu'en support privé.",
-              "This report contains no token and no API key: the engine masks them before logging. It can however contain your internal addresses (IPs, host names) — read it through before posting it anywhere other than private support.",
+              "Le moteur masque les secrets qu'il RECONNAÎT (jeton, clé d'API, mot de passe annoncés comme tels). Ce n'est pas une garantie : une clé isolée dans un message d'erreur peut lui échapper, et il ne masque ni les noms de personnes ni les adresses. Ce rapport peut donc porter vos adresses internes (IP, noms d'hôtes), du contenu de ticket et des noms de personnes — relisez-le avant de le publier ailleurs qu'en support privé.",
+              "The engine masks the secrets it RECOGNISES (token, API key, password announced as such). That is not a guarantee: a key sitting alone in an error message can slip through, and it masks neither people's names nor addresses. So this report may carry your internal addresses (IPs, host names), ticket content and people's names — read it through before posting it anywhere other than private support.",
             )}
           </p>
         </CardContent>

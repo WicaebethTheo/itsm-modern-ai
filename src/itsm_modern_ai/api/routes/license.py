@@ -5,7 +5,12 @@ Vérification 100 % hors-ligne (Ed25519). Protégé par l'auth locale (FR-24).
 Une feature est :
 - **installed** : son code est présent dans l'image (toujours vrai en édition unique) ;
 - **entitled** : la licence l'autorise ;
-- **active**  : installed ET entitled (seul cas où elle fonctionne réellement).
+- **active**  : installed ET entitled ET pas `coming_soon` (seul cas où elle fonctionne
+  réellement). Un module annoncé « prévu » enregistre bien un provider — donc `installed`
+  est vrai — mais AUCUN code ne le consomme : ni `require_feature`, ni chemin de moteur.
+  Le déclarer actif annoncerait opérationnel un module sans surface d'usage à tout client
+  d'API qui lit `active` seul, et l'UI et l'API se contrediraient (l'écran affiche
+  « Prévu »). L'invariant est verrouillé par un test : `coming_soon` ⇒ jamais `active`.
 
 Sans licence valide, `entitled=False` partout → les features restent verrouillées
 (« devenez Supporter »), même si le code est livré dans l'image.
@@ -33,9 +38,10 @@ class FeatureView(BaseModel):
     description_en: str
     installed: bool  # code présent dans l'image (toujours vrai en édition unique)
     entitled: bool  # autorisé par la licence
-    active: bool  # installed ET entitled
+    active: bool  # installed ET entitled ET pas coming_soon — « fonctionne réellement »
     # Module annoncé, sans surface d'usage : l'UI affiche « Prévu » et non « Débloqué »,
     # même quand la licence l'autorise (payer ne doit pas peindre une promesse en vert).
+    # `active` s'aligne sur cette règle : un module « prévu » n'est JAMAIS actif.
     coming_soon: bool = False
 
 
@@ -72,7 +78,11 @@ def _view_from_status(request: Request, status: LicenseStatus) -> LicenseView:
             description_en=spec.description_en,
             installed=spec.key in installed_keys,
             entitled=status.has_feature(spec.key),
-            active=(spec.key in installed_keys) and status.has_feature(spec.key),
+            active=(
+                (spec.key in installed_keys)
+                and status.has_feature(spec.key)
+                and not spec.coming_soon
+            ),
             coming_soon=spec.coming_soon,
         )
         for spec in FEATURE_CATALOG

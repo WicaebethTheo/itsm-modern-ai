@@ -144,16 +144,53 @@ function formatCounts(c: PollCycle, t: T): string {
 }
 
 /**
- * Piste de diagnostic dérivée des compteurs — les 5 causes réelles de « aucun ticket
- * n'est trié » sont toutes lisibles ici, alors qu'aucune ne l'était dans les tuiles.
+ * Santé d'un cycle, à partir de compteurs qui ne disent PAS ce qu'on leur faisait dire.
+ *
+ * `errors` est incrémenté PAR TICKET par le poller (`scheduler/poller.py`) : une erreur
+ * sur cent tickets n'est pas un cycle en panne. Deux états, jamais confondus :
+ * - `failed` : des erreurs ET aucun ticket trié → le cycle n'a rien produit ;
+ * - `partial` : des erreurs mais des tickets triés → un avertissement chiffré, pas une
+ *   panne (« 1 ticket en échec sur 100 » et non « le moteur ne trie plus »).
+ */
+export interface CycleHealth {
+  errors: number;
+  processed: number;
+  /** Dénominateur affichable : tickets lus, à défaut triés + en échec. */
+  total: number;
+  failed: boolean;
+  partial: boolean;
+}
+
+export function readCycleHealth(cycle: PollCycle | null): CycleHealth {
+  const errors = cycle?.errors ?? 0;
+  const processed = cycle?.processed ?? 0;
+  return {
+    errors,
+    processed,
+    total: cycle?.fetched ?? processed + errors,
+    failed: errors > 0 && processed === 0,
+    partial: errors > 0 && processed > 0,
+  };
+}
+
+/** « 1 ticket en échec sur 100 » — le compte réel, mesuré, sans extrapolation. */
+export function partialLabel(h: CycleHealth, t: T): string {
+  const s = h.errors > 1 ? "s" : "";
+  return t(
+    `${h.errors} ticket${s} en échec sur ${h.total}`,
+    `${h.errors} ticket${s} failed out of ${h.total}`,
+  );
+}
+
+/**
+ * Piste de diagnostic dérivée des compteurs — les causes réelles de « aucun ticket n'est
+ * trié » sont toutes lisibles ici, alors qu'aucune ne l'était dans les tuiles.
+ *
+ * Les erreurs, elles, ne sont plus traitées ici : elles ont leur propre bandeau (échec du
+ * cycle) ou leur propre avertissement chiffré (échecs partiels), qui disent COMBIEN de
+ * tickets sont concernés au lieu de conclure à l'arrêt du moteur.
  */
 export function cycleHint(c: PollCycle, t: T): string | null {
-  if ((c.errors ?? 0) > 0) {
-    return t(
-      "Le dernier cycle a échoué : le moteur ne trie plus tant que la cause n'est pas levée.",
-      "The last cycle failed: the engine stops triaging until the cause is fixed.",
-    );
-  }
   if (c.fetched === 0) {
     return t(
       "Aucun ticket lu dans GLPI. Causes usuelles : périmètre d'entités trop étroit, fenêtre de lecture trop courte, ou une règle métier GLPI qui affecte déjà les tickets avant le moteur.",
@@ -200,19 +237,34 @@ const verdictStyle: Record<VerdictKind, string> = {
 };
 
 /**
+ * Pourquoi la page ne sait rien — deux causes DISTINCTES : l'API n'a pas (encore) répondu,
+ * ou elle a répondu sans le bloc de cycle. Les confondre faisait dire au verdict « l'API
+ * n'a pas répondu » à propos d'une réponse qu'il venait de lire.
+ */
+export type UnknownReason = "api" | "cycle";
+
+/**
  * Verdict unique — la seule question de l'exploitant est binaire : « est-ce que ça trie ? ».
  * Les 7 tuiles portaient déjà tous les signaux, mais à poids égal : à lui de recomposer.
  * Priorité STRICTE des causes ; ne jamais réutiliser ici les libellés « En marche » /
  * « En pause » des tuiles (ils doivent rester identifiables un par un).
+ *
+ * Ordre : ce qu'on n'a PAS mesuré, puis la mise en service (une instance neuve n'est pas
+ * en panne), puis les pannes, puis les choix de configuration, puis les avertissements.
+ * Le cas nominal est le DERNIER, et il exige une fraîcheur réellement mesurée.
  */
-function computeVerdict(args: {
+export function computeVerdict(args: {
   unknown: boolean;
-  failed: boolean;
+  unknownReason: UnknownReason;
+  health: CycleHealth;
   neverRan: boolean;
   pollingEnabled: boolean;
   stale: boolean;
+  /** Le dernier cycle est horodaté : sans ça, « dans son intervalle » n'est pas mesurable. */
+  ageKnown: boolean;
   glpiConfigured: boolean;
   glpiReachable: boolean;
+  llmConfigured: boolean;
   t: T;
 }): Verdict {
   const { t } = args;
@@ -221,24 +273,84 @@ function computeVerdict(args: {
       kind: "unknown",
       tone: "muted",
       title: t("Statut du moteur inconnu", "Engine status unknown"),
+      detail:
+        args.unknownReason === "cycle"
+          ? t(
+              "Le moteur a répondu, mais sans l'état de son dernier cycle : cette page ne peut ni confirmer ni infirmer qu'il trie.",
+              "The engine answered, but without its last cycle state: this page can neither confirm nor deny that it triages.",
+            )
+          : t(
+              "Rien n'a encore été mesuré : tant que l'API n'a pas répondu, cette page n'affirme ni marche ni arrêt.",
+              "Nothing has been measured yet: until the API answers, this page claims neither running nor stopped.",
+            ),
+    };
+  }
+  // MISE EN SERVICE avant tout diagnostic de panne. Sans connexion GLPI, le cycle sort
+  // avant même de persister ses compteurs : « le moteur n'a jamais trié » nommait le
+  // symptôme en taisant la cause, qu'on a pourtant sous la main.
+  if (!args.glpiConfigured) {
+    return {
+      kind: "warn",
+      tone: "amber",
+      title: t("GLPI n'est pas encore configuré", "GLPI is not configured yet"),
       detail: t(
-        "Rien n'a encore été mesuré : tant que l'API n'a pas répondu, cette page n'affirme ni marche ni arrêt.",
-        "Nothing has been measured yet: until the API answers, this page claims neither running nor stopped.",
+        "Aucune connexion GLPI n'est enregistrée : le moteur n'a aucun ticket à lire, la boucle tourne à vide. Renseignez la connexion pour mettre le triage en service.",
+        "No GLPI connection is stored: the engine has no ticket to read, the loop spins empty. Set the connection to put triage into service.",
       ),
     };
   }
-  if (args.failed) {
+  if (!args.glpiReachable) {
+    return {
+      kind: "bad",
+      tone: "red",
+      title: t(
+        "GLPI est injoignable — rien ne peut être trié",
+        "GLPI is unreachable — nothing can be triaged",
+      ),
+      detail: t(
+        "La connexion GLPI est enregistrée mais elle a échoué : sans lecture des tickets, la boucle tourne à vide.",
+        "The GLPI connection is stored but it failed: with no ticket to read, the loop spins empty.",
+      ),
+    };
+  }
+  // Sans fournisseur IA, la boucle tourne, lit ses tickets et incrémente ses compteurs :
+  // des cycles verts, zéro erreur… et zéro triage. Le verdict le dit avant de conclure.
+  if (!args.llmConfigured) {
+    return {
+      kind: "warn",
+      tone: "amber",
+      title: t("Aucun fournisseur IA n'est configuré", "No AI provider is configured"),
+      detail: t(
+        "Aucune clé n'est enregistrée : les cycles peuvent se dérouler sans erreur, mais rien n'est analysé et tout part « à trier ».",
+        "No key is stored: cycles may complete without error, yet nothing is analyzed and everything falls back to « to triage ».",
+      ),
+    };
+  }
+  if (args.health.failed) {
     return {
       kind: "bad",
       tone: "red",
       title: t("Le moteur ne trie plus", "The engine has stopped triaging"),
       detail: t(
-        "Le dernier cycle s'est terminé en erreur. Les tickets partent « à trier » tant que la cause n'est pas levée — le détail est dans la carte du dernier cycle.",
-        "The last cycle ended in error. Tickets fall back to « to triage » until the cause is fixed — details in the last cycle card below.",
+        "Le dernier cycle a remonté des erreurs sans trier un seul ticket. Les tickets partent « à trier » tant que la cause n'est pas levée — le détail est dans la carte du dernier cycle.",
+        "The last cycle reported errors without triaging a single ticket. Tickets fall back to « to triage » until the cause is fixed — details in the last cycle card below.",
       ),
     };
   }
   if (args.neverRan) {
+    // « Jamais exécuté » + polling coupé = un choix de configuration, pas une panne : la
+    // carte du dernier cycle le disait déjà correctement, le verdict la contredisait.
+    if (!args.pollingEnabled) {
+      return {
+        kind: "warn",
+        tone: "amber",
+        title: t("Triage en pause", "Triage paused"),
+        detail: t(
+          "La boucle de polling est coupée et aucun cycle n'a jamais tourné : c'est attendu tant qu'elle n'est pas réactivée. C'est un choix de configuration, pas une panne.",
+          "The polling loop is switched off and no cycle has ever run: expected until it is re-enabled. This is a configuration choice, not a failure.",
+        ),
+      };
+    }
     return {
       kind: "bad",
       tone: "red",
@@ -260,6 +372,20 @@ function computeVerdict(args: {
       ),
     };
   }
+  if (args.health.partial) {
+    return {
+      kind: "warn",
+      tone: "amber",
+      title: t(
+        "Des tickets sont partis « à trier » sur erreur",
+        "Some tickets fell back to « to triage » on error",
+      ),
+      detail: t(
+        `Le dernier cycle a bien trié, mais ${partialLabel(args.health, t)} : ces tickets-là partent « à trier ». Le moteur, lui, continue de tourner.`,
+        `The last cycle did triage, but ${partialLabel(args.health, t)}: those tickets fall back to « to triage ». The engine itself keeps running.`,
+      ),
+    };
+  }
   if (args.stale) {
     return {
       kind: "warn",
@@ -271,23 +397,17 @@ function computeVerdict(args: {
       ),
     };
   }
-  if (!args.glpiReachable) {
+  // Sans horodatage, « cycle trop ancien » est neutralisé en silence : affirmer ici
+  // « dans son intervalle » serait affirmer une fraîcheur qu'on n'a PAS pu mesurer.
+  if (!args.ageKnown) {
     return {
-      kind: "bad",
-      tone: "red",
-      title: t(
-        "GLPI est injoignable — rien ne peut être trié",
-        "GLPI is unreachable — nothing can be triaged",
+      kind: "unknown",
+      tone: "muted",
+      title: t("Fraîcheur du dernier cycle inconnue", "Last cycle freshness unknown"),
+      detail: t(
+        "Le dernier cycle n'est pas horodaté : impossible de vérifier d'ici qu'il tourne encore dans son intervalle. Ses compteurs restent lisibles ci-dessous.",
+        "The last cycle carries no timestamp: there is no way to check from here that it still runs within its interval. Its counters remain readable below.",
       ),
-      detail: args.glpiConfigured
-        ? t(
-            "La connexion GLPI a échoué : sans lecture des tickets, la boucle tourne à vide.",
-            "The GLPI connection failed: with no ticket to read, the loop spins empty.",
-          )
-        : t(
-            "Aucune connexion GLPI n'est enregistrée : la boucle tourne à vide.",
-            "No GLPI connection is stored: the loop spins empty.",
-          ),
     };
   }
   return {
@@ -321,7 +441,7 @@ function LastCycleCard({
   runAt,
   ageSeconds,
   stale,
-  failed,
+  health,
   t,
   locale,
 }: {
@@ -331,7 +451,7 @@ function LastCycleCard({
   runAt: Date | null;
   ageSeconds: number | null;
   stale: boolean;
-  failed: boolean;
+  health: CycleHealth;
   t: T;
   locale: string;
 }) {
@@ -383,14 +503,14 @@ function LastCycleCard({
   }
 
   const cycle = cycleState.cycle;
-  const tone: DotTone = failed ? "red" : stale ? "amber" : "green";
+  const tone: DotTone = health.failed ? "red" : health.partial || stale ? "amber" : "green";
   const hint = cycleHint(cycle, t);
 
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between">
         <h2 className="text-ui font-medium">{title}</h2>
-        <StateDot tone={tone} pulse={!failed && !stale} t={t} />
+        <StateDot tone={tone} pulse={!health.failed && !health.partial && !stale} t={t} />
       </div>
       <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-metric font-semibold tracking-tight">
@@ -412,7 +532,7 @@ function LastCycleCard({
         {intervalSeconds != null &&
           t(` · intervalle ${intervalSeconds} s`, ` · every ${intervalSeconds} s`)}
       </div>
-      {stale && !failed && (
+      {stale && !health.failed && (
         <div className="mt-3">
           <Banner kind="warning">
             {t(
@@ -422,7 +542,7 @@ function LastCycleCard({
           </Banner>
         </div>
       )}
-      {failed && (
+      {health.failed && (
         <div className="mt-3">
           <Banner kind="error">
             {cycle.error_message ??
@@ -430,7 +550,22 @@ function LastCycleCard({
           </Banner>
         </div>
       )}
-      {hint && !failed && <div className="mt-2 text-caption text-muted-foreground">{hint}</div>}
+      {/* Échecs PARTIELS : un avertissement chiffré, jamais un constat de panne — le
+          compteur `errors` du moteur est incrémenté ticket par ticket. */}
+      {health.partial && (
+        <div className="mt-3">
+          <Banner kind="warning">
+            {t(
+              `${partialLabel(health, t)} : ces tickets-là sont partis « à trier », les autres ont été traités normalement.`,
+              `${partialLabel(health, t)}: those tickets fell back to « to triage », the others were handled normally.`,
+            )}
+            {cycle.error_message ? ` — ${cycle.error_message}` : ""}
+          </Banner>
+        </div>
+      )}
+      {hint && !health.failed && (
+        <div className="mt-2 text-caption text-muted-foreground">{hint}</div>
+      )}
     </Card>
   );
 }
@@ -518,21 +653,23 @@ export function Status() {
   // sur un intervalle très court juste après un redémarrage).
   const staleAfter = Math.max((s?.polling_interval_seconds ?? 60) * 3, 300);
   const stale = ageSeconds != null && ageSeconds > staleAfter;
-  const failed = (cycle?.errors ?? 0) > 0;
+  // Un cycle en PANNE (rien de trié) ≠ des tickets en échec parmi d'autres traités.
+  const cycleHealth = readCycleHealth(cycle);
 
+  // « Pas encore répondu / muette » et « a répondu sans le bloc de cycle » sont deux
+  // ignorances différentes : le verdict doit expliquer la bonne.
+  const apiSilent = statusLoading || healthLoading || statusMute || healthMute;
   const verdict = computeVerdict({
-    unknown:
-      statusLoading ||
-      healthLoading ||
-      statusMute ||
-      healthMute ||
-      cycleState.kind === "unavailable",
-    failed,
+    unknown: apiSilent || cycleState.kind === "unavailable",
+    unknownReason: apiSilent ? "api" : "cycle",
+    health: cycleHealth,
     neverRan: cycleNeverRan,
     pollingEnabled: s?.polling_enabled === true,
     stale,
+    ageKnown: ageSeconds != null,
     glpiConfigured: h?.glpi.configured === true,
-    glpiReachable: h?.glpi.configured === true && h.glpi.reachable === true,
+    glpiReachable: h?.glpi.reachable === true,
+    llmConfigured: h?.llm.configured === true,
     t,
   });
 
@@ -771,7 +908,7 @@ export function Status() {
         runAt={runAt}
         ageSeconds={ageSeconds}
         stale={stale}
-        failed={failed}
+        health={cycleHealth}
         t={t}
         locale={locale}
       />

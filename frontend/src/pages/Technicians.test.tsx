@@ -12,6 +12,7 @@ vi.mock("@/lib/api", async (orig) => {
     Api: {
       ...actual.Api,
       discovery: vi.fn(),
+      syncGlpi: vi.fn(),
       saveTechnicians: vi.fn(),
       skillCatalog: vi.fn(),
       skillCoverage: vi.fn(),
@@ -71,12 +72,11 @@ describe("Technicians (éditeur d'éligibilité)", () => {
     await userEvent.click(bouton);
 
     await waitFor(() => expect(Api.saveTechnicians).toHaveBeenCalledTimes(1));
-    expect(Api.saveTechnicians).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        { ext_id: 11, eligible: true, skills: "AD, comptes", skill_tags: [] },
-        { ext_id: 12, eligible: true, skills: "", skill_tags: [] },
-      ]),
-    );
+    // SEULE la fiche modifiée part : `set_eligibility` écrit par `ext_id`, renvoyer une
+    // ligne inchangée écrasait la version d'un autre onglet par celle qu'on avait lue avant.
+    expect(Api.saveTechnicians).toHaveBeenCalledWith([
+      { ext_id: 12, eligible: true, skills: "", skill_tags: [] },
+    ]);
     expect(await screen.findByText("Enregistré.")).toBeInTheDocument();
   });
 
@@ -124,8 +124,76 @@ describe("Technicians (éditeur d'éligibilité)", () => {
     await waitFor(() => expect(Api.saveTechnicians).toHaveBeenCalledTimes(1));
     const envoyes = vi.mocked(Api.saveTechnicians).mock.calls[0][0];
     expect(envoyes.find((x) => x.ext_id === 12)?.eligible).toBe(true);
-    // Karim, masqué par le filtre, garde son état : il n'a pas été balayé au passage.
-    expect(envoyes.find((x) => x.ext_id === 13)?.eligible).toBe(false);
+    // Karim, masqué par le filtre, n'a pas bougé : il ne part même pas au serveur.
+    expect(envoyes.map((x) => x.ext_id)).toEqual([12]);
+  });
+});
+
+/**
+ * La fusion du brouillon promettait « on ne reprend du serveur que les acteurs dont l'admin
+ * n'a rien touché » — mais elle ne savait pas ce qui avait été touché : le brouillon était
+ * peuplé de TOUTES les lignes dès le premier chargement, donc la branche serveur n'était
+ * atteinte que par un acteur nouvellement apparu dans GLPI.
+ */
+describe("Fusion du brouillon avec le serveur", () => {
+  const SYNCED = { ok: true, detail: "Référentiels synchronisés.", counts: { technician: 2 } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(Api.skillCatalog).mockResolvedValue([]);
+    vi.mocked(Api.skillCoverage).mockResolvedValue([]);
+    vi.mocked(Api.absences).mockResolvedValue([]);
+    vi.mocked(Api.saveTechnicians).mockResolvedValue([]);
+  });
+
+  it("un scan RAMÈNE la valeur serveur d'une fiche que l'admin n'a pas touchée", async () => {
+    // Une fiche modifiée dans un autre onglet restait invisible ici, le compteur imputait
+    // l'écart à l'admin, et « Enregistrer » réécrasait le serveur avec la valeur périmée.
+    let scanne = false;
+    const APRES: RefItem[] = [
+      ref({ ext_id: 11, name: "Sylvain Martin", eligible: true, skills: "AD, comptes, VPN" }),
+      ref({ ext_id: 12, name: "Nadia Bouaziz", eligible: false }),
+    ];
+    vi.mocked(Api.discovery).mockImplementation(() => Promise.resolve(scanne ? APRES : TECHS));
+    vi.mocked(Api.syncGlpi).mockImplementation(() => {
+      scanne = true;
+      return Promise.resolve(SYNCED);
+    });
+
+    renderWithToast(<Technicians />);
+    expect(await screen.findByDisplayValue("AD, comptes")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Scanner GLPI" }));
+
+    expect(await screen.findByDisplayValue("AD, comptes, VPN")).toBeInTheDocument();
+    // Et rien n'est présenté comme une modification non enregistrée de l'admin.
+    expect(screen.getByText("Aucune modification en attente")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enregistrer la sélection" })).toBeDisabled();
+  });
+
+  it("mais ce même scan ne jette PAS la saisie en cours", async () => {
+    // L'inverse est tout aussi grave : c'est pour ça que la fusion existe.
+    let scanne = false;
+    const APRES: RefItem[] = [
+      ref({ ext_id: 11, name: "Sylvain Martin", eligible: true, skills: "AD, comptes" }),
+      ref({ ext_id: 12, name: "Nadia Bouaziz", eligible: true }),
+    ];
+    vi.mocked(Api.discovery).mockImplementation(() => Promise.resolve(scanne ? APRES : TECHS));
+    vi.mocked(Api.syncGlpi).mockImplementation(() => {
+      scanne = true;
+      return Promise.resolve(SYNCED);
+    });
+
+    renderWithToast(<Technicians />);
+    const zone = await screen.findByDisplayValue("AD, comptes");
+    await userEvent.type(zone, " et VPN");
+
+    await userEvent.click(screen.getByRole("button", { name: "Scanner GLPI" }));
+
+    // La fiche touchée garde la saisie ; la fiche non touchée prend le serveur.
+    expect(await screen.findByRole("checkbox", { name: /Nadia Bouaziz/ })).toBeChecked();
+    expect(screen.getByDisplayValue("AD, comptes et VPN")).toBeInTheDocument();
+    expect(screen.getByText("1 modification(s) non enregistrée(s)")).toBeInTheDocument();
   });
 });
 

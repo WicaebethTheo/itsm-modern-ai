@@ -374,6 +374,49 @@ def test_le_changement_est_soumis_au_limiteur_de_tentatives(db_url, tmp_path):
         ).status_code == 429
 
 
+def test_un_martelage_anonyme_du_login_ne_verrouille_pas_la_rotation(db_url, tmp_path):
+    """Un tiers NON authentifié ne doit pas pouvoir interdire à l'admin de changer son
+    mot de passe.
+
+    `/api/auth/login` est PUBLIQUE : n'importe qui peut la marteler depuis la même clé IP
+    — et derrière un reverse proxy sans `trust_proxy_headers`, TOUT le monde partage une
+    seule clé. Si le pré-contrôle de `/password` lisait ce compteur-là, le martèlement
+    fermerait précisément la porte qu'on ouvre quand on soupçonne un cookie volé.
+    Les échecs de `/password` restent, eux, comptés sur la clé partagée (c'est un oracle
+    de vérification) — cf. le test précédent.
+    """
+    with TestClient(create_app(_settings(db_url, tmp_path, login_max_attempts=3))) as c:
+        c.post("/api/auth/setup", json={"email": EMAIL, "password": MOT_DE_PASSE})
+
+        for _ in range(3):  # le martèlement anonyme, depuis la même IP
+            assert c.post(
+                "/api/auth/login", json={"email": EMAIL, "password": "faux-mot-de-passe"}
+            ).status_code == 401
+        assert c.post(
+            "/api/auth/login", json={"email": EMAIL, "password": MOT_DE_PASSE}
+        ).status_code == 429  # le login est bien bloqué : le compteur partagé fait son office
+
+        r = c.post(
+            "/api/auth/password",
+            json={"current_password": MOT_DE_PASSE, "new_password": NOUVEAU},
+        )
+        assert r.status_code == 200, "un anonyme a verrouillé la rotation du mot de passe"
+
+
+def test_l_identite_du_compte_n_est_jamais_mise_en_cache(vierge):
+    """`GET /api/auth/me` est la seule route qui porte l'adresse du compte.
+
+    `Vary: Cookie` empêche un cache PARTAGÉ de la servir à un anonyme, mais rien
+    n'interdisait de l'écrire sur disque (cache navigateur, proxy d'entreprise).
+    """
+    vierge.post("/api/auth/setup", json={"email": EMAIL, "password": MOT_DE_PASSE})
+    r = vierge.get("/api/auth/me")
+    assert r.status_code == 200
+    assert r.headers.get("Cache-Control") == "no-store"
+    # Tout le préfixe d'authentification est logé à la même enseigne.
+    assert vierge.get("/api/auth/status").headers.get("Cache-Control") == "no-store"
+
+
 # ── Avertissement de démarrage (risque de revendication, assumé) ──────────────
 class _Recorder(logging.Handler):
     def __init__(self) -> None:
