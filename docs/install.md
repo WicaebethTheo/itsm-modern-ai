@@ -25,7 +25,7 @@
 | Tag | Ce que c'est | Pour qui |
 |---|---|---|
 | **`latest`** | dernière version **publiée** (release). **Défaut recommandé.** | tout le monde |
-| `X.Y.Z` / `X.Y` | version figée (ex. `0.10.0`, `0.10`) | qui veut épingler une version |
+| `X.Y.Z` / `X.Y` | version figée (ex. `0.9.80`, `0.9`) | qui veut épingler une version |
 | `edge` | pointe de `main`, **entre deux releases** | tests, avant-première — jamais en production |
 | `sha-<court>` | un commit précis de `main` | reproduction d'un incident |
 
@@ -170,7 +170,7 @@ Le stack crée **deux volumes nommés** : `itsm_data` (master.key, sauvegardes) 
 
 Le stack utilise `${ITSM_IMAGE_TAG:-latest}`. Pour **épingler une version** — recommandé en
 production, afin qu'un redéploiement ne tire pas silencieusement une version plus récente —
-définissez `ITSM_IMAGE_TAG=0.10.0` dans les variables du stack. Sans cette variable, le
+définissez `ITSM_IMAGE_TAG=0.9.80` dans les variables du stack. Sans cette variable, le
 comportement reste `latest`.
 
 ### (c) `docker run` durci (deux conteneurs)

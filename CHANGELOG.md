@@ -1,4 +1,4 @@
-## 2026-08-12 — 0.12.0 — L'interface cesse d'affirmer ce qu'elle n'a pas mesuré
+## 2026-08-12 — 0.9.80 — L'interface cesse d'affirmer ce qu'elle n'a pas mesuré
 
 Une revue écran par écran de la console. Le fil rouge n'était pas esthétique : à plusieurs
 endroits l'interface affirmait des choses qu'elle n'avait pas mesurées, ou nommait mal ce
@@ -58,7 +58,7 @@ formulaire enfin associés à leur champ, contraste du jaune corrigé en thème 
 Couverture front : cliquets remontés de 65/56/65 à **85/78/86**. **668 tests pytest**
 (652 avant), **358 Vitest** (194 avant), 7 Playwright.
 
-## 2026-08-11 — 0.11.0 — Le compte administrateur se crée à la première visite
+## 2026-08-11 — 0.9.70 — Le compte administrateur se crée à la première visite
 
 > ⚠️ **Version de rupture.** `ITSM_ADMIN_PASSWORD` et `ADMIN_PASSWORD` **ne sont plus lus**.
 > Une instance existante continue de fonctionner — le compte déjà en base n'est pas touché —
@@ -133,7 +133,7 @@ identifiants créés (200).
 **596 → 652** backend, **153 → 194** frontend (26 fichiers), 7 parcours Playwright. Couverture
 backend 89 %.
 
-## 2026-08-11 — 0.10.0 — PostgreSQL exclusif : SQLite est retiré du produit
+## 2026-08-11 — 0.9.60 — PostgreSQL exclusif : SQLite est retiré du produit
 
 > ⚠️ **Version de rupture.** Le moteur ne sait plus lire une base SQLite. Une instance
 > existante **ne peut pas être mise à jour en place** : la base repart vierge. Aucun outil de
