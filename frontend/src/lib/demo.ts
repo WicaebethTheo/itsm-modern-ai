@@ -3,6 +3,7 @@
  * rendu final sans GLPI/LLM configurés. Aucune donnée réelle ; valeurs illustratives.
  */
 import type {
+  AdminIdentity,
   AuthStatus,
   ConfigView,
   CostView,
@@ -52,6 +53,7 @@ const DEMO_GROUP: Record<number, string> = { 5: "Support N1", 6: "Sys / Sécu" }
 
 export const demo: {
   authStatus: AuthStatus;
+  me: AdminIdentity;
   health: Health;
   healthProbed: Health;
   status: EngineStatus;
@@ -77,6 +79,8 @@ export const demo: {
   // jamais atterrir sur l'écran de première installation — on y créerait un compte qui
   // n'existe nulle part, en confiant un vrai mot de passe à un serveur statique.
   authStatus: { authenticated: true, auth_configured: false, setup_required: false },
+  // La démo montre une console déjà installée : elle a donc un compte, comme une vraie.
+  me: { email: "admin@demo.local", display_name: "Alex Martin" },
   info: {
     version: "0.11.0",
     title: "ITSM Modern AI — moteur de triage (headless)",
@@ -138,6 +142,9 @@ export const demo: {
     cost_eur_last_24h: 1.83,
     cost_cap_eur_per_day: 5,
     last_poll: {
+      // Fidèle au contrat réel du moteur (`LastPoll`, routes/status.py) : le drapeau est
+      // toujours présent. L'omettre ici faisait valider à la démo un contrat mort.
+      has_run: true,
       // Getter : la démo tourne longtemps dans un onglet ; un horodatage figé à l'import
       // finirait par être signalé « cycle trop ancien » alors que tout va bien.
       get run_at() {
@@ -348,7 +355,7 @@ export const demo: {
           "Masquage des IBAN/cartes et des secrets (mots de passe, tokens, clés API), identifiants FR (NIR, SIRET), patterns regex personnalisés et règles par entité. En Community, seuls e-mail et téléphone sont masqués.",
         description_en:
           "Masking of IBANs/cards and secrets (passwords, tokens, API keys), French identifiers (NIR, SIRET), custom regex patterns and per-entity rules. In Community, only email and phone are masked.",
-        installed: false,
+        installed: true,
         entitled: false,
         active: false,
       },
@@ -360,9 +367,10 @@ export const demo: {
           "À VENIR. Gestion fine multi-entités : politiques de triage et seuils par entité, héritage hiérarchique, tableaux de bord par entité.",
         description_en:
           "COMING SOON. Fine-grained multi-entity management: per-entity triage policies and thresholds, hierarchical inheritance, per-entity dashboards.",
-        installed: false,
+        installed: true,
         entitled: false,
         active: false,
+        coming_soon: true,
       },
       {
         key: "scheduled_exports",
@@ -372,9 +380,10 @@ export const demo: {
           "À VENIR. Exports CSV planifiés (cron), rapports DPO enrichis et envois automatiques. L'export CSV manuel reste inclus en Community.",
         description_en:
           "COMING SOON. Scheduled CSV exports (cron), enriched DPO reports and automatic delivery. Manual CSV export remains included in Community.",
-        installed: false,
+        installed: true,
         entitled: false,
         active: false,
+        coming_soon: true,
       },
     ],
   },

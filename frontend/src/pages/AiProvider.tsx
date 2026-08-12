@@ -239,7 +239,10 @@ export function AiProvider() {
             >
               <Input
                 key={`${provider}-key`}
+                name={`${provider}-api-key`}
                 type="password"
+                autoComplete="off"
+                spellCheck={false}
                 placeholder={t("(inchangée)", "(unchanged)")}
                 onChange={(e) => set(f.secretKey as keyof ConfigUpdate, e.target.value)}
               />

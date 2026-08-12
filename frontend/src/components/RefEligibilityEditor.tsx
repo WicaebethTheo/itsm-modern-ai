@@ -97,13 +97,24 @@ export function RefEligibilityEditor({
           "Fallback targets. Tick eligible groups and describe them.",
         );
 
+  // FUSION, jamais écrasement : « Scanner GLPI » appelle `res.reload()`, donc `res.data`
+  // change et cet effet se rejoue alors que l'admin est en pleine saisie. En repartant du
+  // serveur on jetait sans un mot des fiches entières (prose + compétences cochées). On ne
+  // reprend donc du serveur que les acteurs dont l'admin n'a rien touché ; un acteur
+  // disparu de GLPI sort de la liste, un acteur nouveau y entre avec ses valeurs serveur.
+  // Après un vrai enregistrement le brouillon égale déjà le serveur : la fusion est neutre.
   useEffect(() => {
-    if (res.data) {
-      setDraft(
+    const items = res.data;
+    if (items) {
+      setDraft((prev) =>
         Object.fromEntries(
-          res.data.map((r) => [
+          items.map((r) => [
             r.ext_id,
-            { eligible: r.eligible, skills: r.skills, skill_tags: r.skill_tags ?? [] },
+            prev[r.ext_id] ?? {
+              eligible: r.eligible,
+              skills: r.skills,
+              skill_tags: r.skill_tags ?? [],
+            },
           ]),
         ),
       );

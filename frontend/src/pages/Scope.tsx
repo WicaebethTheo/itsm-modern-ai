@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckSquare, FolderTree, Layers, Save, Square } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Banner } from "@/components/Banner";
 import { SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
@@ -86,12 +86,19 @@ export function Scope() {
   const technicians = useResource(useCallback(() => Api.discovery("technician"), []));
   const [saving, setSaving] = useState(false);
 
+  // Une saisie locale est en attente. « Scanner GLPI » recharge les référentiels, donc
+  // `categories.data` / `entities.data` changent et les effets d'initialisation ci-dessous
+  // se rejouent : sans ce garde, ils repartaient du serveur et effaçaient en silence les
+  // cases cochées, les modes et les seuils que l'admin venait de régler. Remis à faux après
+  // un enregistrement réussi — l'état serveur redevient alors la référence.
+  const touched = useRef(false);
+
   useEffect(() => {
-    if (categories.data)
+    if (categories.data && !touched.current)
       setCats(new Set(categories.data.filter((c) => c.selected).map((c) => c.ext_id)));
   }, [categories.data]);
   useEffect(() => {
-    if (entities.data) {
+    if (entities.data && !touched.current) {
       setEnts(new Set(entities.data.filter((e) => e.selected).map((e) => e.ext_id)));
       setModes(new Map(entities.data.map((e) => [e.ext_id, e.mode ?? ""])));
       setThresholds(new Map(entities.data.map((e) => [e.ext_id, e.auto_min_confidence ?? ""])));
@@ -111,6 +118,7 @@ export function Scope() {
   }, [entities.data]);
 
   function toggle(set: Set<number>, setter: (s: Set<number>) => void, id: number, on: boolean) {
+    touched.current = true;
     const next = new Set(set);
     if (on) next.add(id);
     else next.delete(id);
@@ -118,18 +126,21 @@ export function Scope() {
   }
 
   function setMode(id: number, mode: ExecutionMode | "") {
+    touched.current = true;
     const next = new Map(modes);
     next.set(id, mode);
     setModes(next);
   }
 
   function setFallback(id: number, value: string) {
+    touched.current = true;
     const next = new Map(fallbacks);
     next.set(id, value);
     setFallbacks(next);
   }
 
   function setThreshold(id: number, value: number | "") {
+    touched.current = true;
     const next = new Map(thresholds);
     next.set(id, value);
     setThresholds(next);
@@ -156,6 +167,8 @@ export function Scope() {
           };
         }),
       );
+      // Le serveur redevient la référence : un scan ultérieur peut rafraîchir sans risque.
+      touched.current = false;
       toast.success(t("Périmètre et modes enregistrés.", "Scope and modes saved."));
     } catch (e: unknown) {
       toast.error((e as Error).message);
@@ -166,6 +179,7 @@ export function Scope() {
 
   /** Bascule tout sélectionné / tout désélectionné selon l'état courant. */
   function toggleAll(ids: number[], current: Set<number>, setter: (s: Set<number>) => void) {
+    touched.current = true;
     const allOn = ids.length > 0 && ids.every((id) => current.has(id));
     setter(allOn ? new Set() : new Set(ids));
   }

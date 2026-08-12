@@ -19,6 +19,22 @@ function detailMessage(payload: unknown): string | null {
     // Défensif : le style FastAPI par défaut est `{"detail": "…"}` (string). Notre
     // backend n'en émet pas aujourd'hui, mais un futur endpoint pourrait.
     if (typeof detail === "string" && detail) return detail;
+    // 422 : FastAPI sérialise les erreurs de validation en TABLEAU. C'est là que
+    // ressortent les seuls diagnostics actionnables de l'enregistrement — les messages
+    // anti-SSRF des validateurs d'URL (`api/routes/config.py`). Sans ce cas, ils se
+    // perdaient et l'exploitant lisait « API 422 » à la place de la cause.
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((item) =>
+          item && typeof item === "object" && typeof (item as { msg?: unknown }).msg === "string"
+            ? // Pydantic v2 préfixe les ValueError levées par un validateur ; le préfixe
+              // est du bruit pour l'exploitant, le message utile est derrière.
+              (item as { msg: string }).msg.replace(/^Value error, /, "")
+            : null,
+        )
+        .filter((m): m is string => !!m);
+      if (messages.length > 0) return messages.join(" · ");
+    }
   }
   return null;
 }
@@ -177,6 +193,12 @@ export type RefKind = "category" | "entity" | "technician" | "group";
 
 export type GlpiApiVersion = "legacy" | "v2";
 
+/** Identité de l'unique compte administrateur (réponse de `GET /api/auth/me`). */
+export interface AdminIdentity {
+  email: string;
+  display_name: string | null;
+}
+
 export interface AuthStatus {
   authenticated: boolean;
   auth_configured: boolean;
@@ -259,6 +281,7 @@ export interface EngineStatus {
  * cycle. Tous les champs sont nullables : un moteur qui n'a jamais tourné n'a rien à dire.
  */
 export interface PollCycle {
+  has_run: boolean | null; // le moteur a-t-il déjà bouclé au moins une fois ?
   run_at: string | null; // ISO 8601
   fetched: number | null;
   processed: number | null;
@@ -272,6 +295,7 @@ export interface PollCycle {
 // moteur : plutôt que de casser la page au moindre renommage, on lit le premier alias
 // présent. Le 1er de chaque liste est le nom des clés runtime (`poll_last_*`).
 const POLL_CYCLE_ALIASES: Record<keyof PollCycle, string[]> = {
+  has_run: ["poll_last_has_run", "has_run", "ran"],
   run_at: ["poll_last_run_at", "run_at", "ran_at", "last_run_at", "started_at", "at", "timestamp"],
   fetched: ["poll_last_fetched", "fetched", "tickets_fetched", "seen"],
   processed: ["poll_last_processed", "processed", "triaged"],
@@ -296,6 +320,14 @@ function asNumber(v: unknown): number | null {
 
 function asText(v: unknown): string | null {
   return typeof v === "string" && v.trim() !== "" ? v : null;
+}
+
+/** Booléen tolérant : un moteur plus ancien peut rendre le drapeau en texte JSON. */
+function asBoolean(v: unknown): boolean | null {
+  if (typeof v === "boolean") return v;
+  if (v === "true") return true;
+  if (v === "false") return false;
+  return null;
 }
 
 /**
@@ -338,7 +370,14 @@ export function readPollCycle(status: EngineStatus | null | undefined): PollCycl
     }
     return null;
   };
+  // Verdict EXPLICITE du moteur, à lire avant tout : `LastPoll.has_run` (routes/status.py)
+  // est un booléen non nul, donc il survit à `response_model_exclude_none=True`. Les
+  // compteurs, eux, valent 0 — et non `null` — quand aucun cycle n'a tourné : s'en remettre
+  // à eux classait « jamais exécuté » en « a tourné » (0 !== null), et la page affichait une
+  // pastille verte sur un moteur qui n'avait jamais bouclé. C'est le symptôme n°1.
+  const hasRun = asBoolean(find(POLL_CYCLE_ALIASES.has_run));
   const cycle: PollCycle = {
+    has_run: hasRun,
     run_at: asText(find(POLL_CYCLE_ALIASES.run_at)),
     fetched: asNumber(find(POLL_CYCLE_ALIASES.fetched)),
     processed: asNumber(find(POLL_CYCLE_ALIASES.processed)),
@@ -347,7 +386,12 @@ export function readPollCycle(status: EngineStatus | null | undefined): PollCycl
     errors: asNumber(find(POLL_CYCLE_ALIASES.errors)),
     error_message: asText(find(POLL_CYCLE_ALIASES.error_message)),
   };
-  if (Object.values(cycle).some((v) => v !== null)) return { kind: "ran", cycle };
+  if (hasRun === false) return { kind: "never" };
+  if (hasRun === true) return { kind: "ran", cycle };
+  // Moteur qui n'annonce pas `has_run` (clés à plat d'une version antérieure) : on retombe
+  // sur les compteurs, en excluant `has_run` lui-même du test — sinon il se répondrait.
+  const { has_run: _hasRun, ...counters } = cycle;
+  if (Object.values(counters).some((v) => v !== null)) return { kind: "ran", cycle };
   if (containerSeen) return { kind: "never" };
   // `/api/status` est sérialisé avec `response_model_exclude_none=True` : le moteur OMET
   // `last_poll` au lieu de l'écrire à `null`. « Aucun cycle exécuté » arriverait donc sur
@@ -522,6 +566,14 @@ export interface DecisionEntry {
   glpi_link: string;
   annotation: string;
   mode?: string; // mode d'exécution résolu (suggestion | semi_auto | full_auto)
+  /**
+   * Un acteur de repli a été assigné MALGRÉ le refus (colonne distincte de `applied`,
+   * cf. persistence/tables.py). Sans ce champ, un « à trier » repris par le repli et un
+   * « à trier » resté orphelin sont indiscernables — or c'est exactement la distinction
+   * qui dit à l'exploitant où il doit mettre la main. Optionnel : un moteur antérieur
+   * ne le renvoie pas, et `undefined` se lit comme « on ne sait pas », pas comme « non ».
+   */
+  fallback_applied?: boolean;
   applied?: boolean; // la Décision a-t-elle muté les champs du Ticket GLPI
 }
 
@@ -688,6 +740,13 @@ export interface SandboxResult {
   group_name?: string | null; // nom GLPI du groupe routé
   confidence: number | null;
   draft: string | null;
+  // Coût réel de l'essai : la sandbox est déjà comptée dans le plafond (routes/sandbox.py)
+  // mais ne disait pas ce qu'elle venait de dépenser — deux chiffres décisifs avant
+  // d'autoriser le moteur sur un flux réel. Optionnels : moteur antérieur = absents.
+  model?: string | null;
+  cost_eur?: number | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
 }
 
 // ── Licence Supporter (open-core) ────────────────────────────────────────────
@@ -703,6 +762,12 @@ export interface LicenseFeature {
   installed: boolean; // code présent dans l'image (Supporter)
   entitled: boolean; // autorisé par la licence
   active: boolean; // installed && entitled (= réellement débloqué)
+  /**
+   * Module annoncé mais sans surface d'usage. Une licence l'« autorise » déjà, donc sans
+   * ce drapeau l'UI affichait « Débloqué » en vert pour quelque chose qui ne fait encore
+   * rien — le client paie et voit une promesse peinte en réussite.
+   */
+  coming_soon?: boolean;
 }
 
 export interface LicenseView {
@@ -799,6 +864,21 @@ export const Api = {
   setup: (body: SetupRequest) =>
     DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/setup", body),
   logout: () => (DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/logout")),
+  /**
+   * Identité du compte connecté. Route SÉPARÉE et authentifiée, à ne jamais fusionner
+   * dans `/api/auth/status` : celle-ci est publique, et y faire figurer l'adresse
+   * offrirait à un anonyme la moitié du couple à deviner (cf. routes/auth.py).
+   */
+  me: () => (DEMO ? ok(demo.me) : api.get<AdminIdentity>("/api/auth/me")),
+  /**
+   * Change le mot de passe de l'unique administrateur. Le moteur incrémente la génération
+   * de session : TOUTES les sessions tombent, y compris la nôtre — l'appelant doit donc
+   * renvoyer vers `/login` après un succès.
+   */
+  changePassword: (current_password: string, new_password: string) =>
+    DEMO
+      ? ok({ ok: true })
+      : api.post<{ ok: boolean }>("/api/auth/password", { current_password, new_password }),
 
   // `probe` déclenche une VRAIE requête sortante vers le fournisseur LLM (facturée, et
   // réservée aux sessions authentifiées côté moteur) : jamais au chargement d'une page,
@@ -876,7 +956,10 @@ export const Api = {
   saveModes: (items: ModeItem[]) =>
     DEMO ? ok([] as RefItem[]) : api.put<RefItem[]>("/api/modes", items),
 
-  decisions: () => (DEMO ? ok(demo.decisions) : api.get<DecisionEntry[]>("/api/decisions")),
+  decisions: (limit?: number) =>
+    DEMO
+      ? ok(demo.decisions)
+      : api.get<DecisionEntry[]>(`/api/decisions${limit ? `?limit=${limit}` : ""}`),
   annotate: (id: number, annotation: string) =>
     DEMO
       ? ok({ ...demo.decisions[0], id, annotation })

@@ -21,6 +21,8 @@ function statusWith(cycle: Partial<PollCycle> | null | undefined): EngineStatus 
       cycle == null
         ? cycle
         : {
+            // Contrat reel du moteur : le drapeau est toujours present (`LastPoll`).
+            has_run: true,
             run_at: new Date().toISOString(),
             fetched: 0,
             processed: 0,

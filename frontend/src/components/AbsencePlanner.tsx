@@ -406,14 +406,6 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
                 "Toute l'équipe est disponible aujourd'hui.",
                 "The whole team is available today.",
               )}
-              {aVenir.length > 0 && (
-                <span>
-                  {t(
-                    `· ${aVenir.length} absence(s) à venir — prochaine : ${aVenir[0].technician_name}, à partir du ${formatJour(aVenir[0].start_date, lang)}.`,
-                    `· ${aVenir.length} upcoming — next: ${aVenir[0].technician_name}, from ${formatJour(aVenir[0].start_date, lang)}.`,
-                  )}
-                </span>
-              )}
             </p>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
@@ -427,6 +419,18 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
                 <PastilleAbsent key={a.id} a={a} />
               ))}
             </div>
+          )}
+
+          {/* Les absences À VENIR, hors du ternaire ci-dessus : elles y étaient enfermées
+            dans la branche « personne n'est absent aujourd'hui », donc un seul absent du
+            jour masquait toute la semaine à venir — sur la seule vue de planification. */}
+          {aVenir.length > 0 && (
+            <p className="text-[12.5px] text-muted-foreground">
+              {t(
+                `${aVenir.length} absence(s) à venir — prochaine : ${aVenir[0].technician_name}, à partir du ${formatJour(aVenir[0].start_date, lang)}.`,
+                `${aVenir.length} upcoming — next: ${aVenir[0].technician_name}, from ${formatJour(aVenir[0].start_date, lang)}.`,
+              )}
+            </p>
           )}
 
           {/* Le risque métier que cet écran existe pour rendre visible : un domaine tenu par

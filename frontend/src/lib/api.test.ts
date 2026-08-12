@@ -118,10 +118,32 @@ describe("readPollCycle — état du dernier cycle de polling", () => {
     expect(readPollCycle({ ...base, last_poll: null })).toEqual({ kind: "never" });
   });
 
+  it("`has_run: false` avec des compteurs à 0 → « aucun cycle exécuté »", () => {
+    // Charge utile RÉELLE du moteur : `LastPoll` sérialise toujours ses clés, compteurs
+    // à 0 compris. S'en remettre à eux classait ce cas en « a tourné » (0 !== null) et la
+    // page Statut affichait une pastille verte sur un moteur qui n'avait jamais bouclé.
+    expect(
+      readPollCycle({
+        ...base,
+        last_poll: {
+          has_run: false,
+          run_at: null,
+          fetched: 0,
+          processed: 0,
+          skipped_done: 0,
+          skipped_scope: 0,
+          errors: 0,
+          error_message: null,
+        },
+      }),
+    ).toEqual({ kind: "never" });
+  });
+
   it("bloc imbriqué → compteurs normalisés", () => {
     const state = readPollCycle({
       ...base,
       last_poll: {
+        has_run: true,
         run_at: "2026-08-08T19:42:03Z",
         fetched: 12,
         processed: 3,
@@ -134,6 +156,7 @@ describe("readPollCycle — état du dernier cycle de polling", () => {
     expect(state).toEqual({
       kind: "ran",
       cycle: {
+        has_run: true,
         run_at: "2026-08-08T19:42:03Z",
         fetched: 12,
         processed: 3,
