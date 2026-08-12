@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Api, type PrivacyView } from "@/lib/api";
+import { Api, type PrivacyView, type RetentionView } from "@/lib/api";
 import { Privacy } from "./Privacy";
 
 // On mocke le module Api : on garde les exports réels (types, DEMO, URLs…) et on
@@ -10,7 +11,9 @@ vi.mock("@/lib/api", async (orig) => {
   const actual = await orig<typeof import("@/lib/api")>();
   return {
     ...actual,
-    Api: { ...actual.Api, privacy: vi.fn(), testMask: vi.fn() },
+    // `retention` DOIT figurer ici : la carte Rétention lit l'état réel de la purge,
+    // sans ce mock la page part en erreur au chargement.
+    Api: { ...actual.Api, privacy: vi.fn(), testMask: vi.fn(), retention: vi.fn() },
   };
 });
 
@@ -70,14 +73,27 @@ const COMMUNITY: PrivacyView = {
       active: false,
     },
     {
+      // `roadmap` = capacité pas encore livrée (cf. routes/privacy.py) : ni masquée,
+      // ni verrouillable par une licence.
       key: "custom",
       label_fr: "Regex personnalisée",
       label_en: "Custom regex",
       example: "[CUSTOM]",
-      scope: "supporter",
+      scope: "roadmap",
       active: false,
     },
   ],
+};
+
+const RETENTION_ON: RetentionView = {
+  enabled: true,
+  decisions_days: 30,
+  llm_calls_days: 30,
+  hour_utc: 3,
+  last_run_at: "2026-05-30T03:00:00Z",
+  last_decisions_deleted: 12,
+  last_llm_calls_deleted: 47,
+  last_run_by: "scheduler",
 };
 
 function renderPrivacy() {
@@ -92,6 +108,7 @@ describe("Privacy", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(Api.privacy).mockResolvedValue(COMMUNITY);
+    vi.mocked(Api.retention).mockResolvedValue(RETENTION_ON);
     vi.mocked(Api.testMask).mockResolvedValue({ masked: "[EMAIL]", counts: { email: 1 } });
   });
 
@@ -109,9 +126,28 @@ describe("Privacy", () => {
     expect(screen.getAllByText("Supporter").length).toBeGreaterThan(0);
   });
 
-  it("affiche le bandeau d'alerte Community", async () => {
+  it("rend trois états de sortie : masqué, en clair, non implémenté", async () => {
     renderPrivacy();
-    expect(await screen.findByText(/Édition Community/)).toBeInTheDocument();
+    await screen.findByText("Adresses e-mail");
+    // La colonne répond « qu'est-ce qui sort ? », pas « qu'est-ce qui est payant ? ».
+    expect(screen.getByText("Envoyé au LLM", { selector: "th" })).toBeInTheDocument();
+    expect(screen.getAllByText("Masqué")).toHaveLength(2); // email + phone
+    expect(screen.getAllByText("Envoyé en clair")).toHaveLength(4); // les 4 catégories Supporter
+    expect(screen.getByText("Non implémenté")).toBeInTheDocument(); // roadmap
+  });
+
+  it("dit « envoyé en clair » pour une catégorie Community DÉSACTIVÉE (sans badge Supporter)", async () => {
+    vi.mocked(Api.privacy).mockResolvedValue({
+      ...COMMUNITY,
+      categories: COMMUNITY.categories.map((c) =>
+        c.key === "email" ? { ...c, active: false } : c,
+      ),
+    });
+    renderPrivacy();
+    await screen.findByText("Adresses e-mail");
+    // Un masquage e-mail décoché est PLUS grave qu'un verrou Supporter : il doit se voir.
+    expect(screen.getAllByText("Envoyé en clair")).toHaveLength(5);
+    expect(screen.getAllByText("Masqué")).toHaveLength(1); // phone seulement
   });
 
   it("rend l'outil de test du masquage (textarea + bouton)", async () => {
@@ -119,5 +155,43 @@ describe("Privacy", () => {
     await screen.findByText("Adresses e-mail");
     expect(screen.getByRole("button", { name: "Tester" })).toBeInTheDocument();
     expect(document.querySelector("textarea")).not.toBeNull();
+  });
+
+  it("affiche les compteurs du testeur et ce qui n'est PAS masqué", async () => {
+    renderPrivacy();
+    await screen.findByText("Adresses e-mail");
+    await userEvent.click(screen.getByRole("button", { name: "Tester" }));
+    expect(await screen.findByText(/E-mails × 1/)).toBeInTheDocument();
+    expect(screen.getByText(/Non masqué dans l'état actuel/)).toBeInTheDocument();
+  });
+
+  it("annonce « aucun remplacement » quand rien n'a été masqué", async () => {
+    vi.mocked(Api.testMask).mockResolvedValue({ masked: "rien à masquer", counts: {} });
+    renderPrivacy();
+    await screen.findByText("Adresses e-mail");
+    await userEvent.click(screen.getByRole("button", { name: "Tester" }));
+    expect(await screen.findByText(/Aucun remplacement/)).toBeInTheDocument();
+  });
+
+  it("purge ACTIVE : affiche l'heure de passage et la dernière exécution", async () => {
+    renderPrivacy();
+    expect(await screen.findByText(/Passage quotidien à 3 h UTC/)).toBeInTheDocument();
+    expect(screen.queryByText(/Purge automatique DÉSACTIVÉE/)).not.toBeInTheDocument();
+  });
+
+  it("purge DÉSACTIVÉE : avertit que les durées affichées ne purgent rien", async () => {
+    vi.mocked(Api.retention).mockResolvedValue({ ...RETENTION_ON, enabled: false });
+    renderPrivacy();
+    expect(await screen.findByText(/Purge automatique DÉSACTIVÉE/)).toBeInTheDocument();
+    // Aucune action destructive sur cette page : la purge se règle sur /automations.
+    expect(screen.getByRole("link", { name: "Régler la purge" })).toBeInTheDocument();
+  });
+
+  it("erreur de chargement : propose « Réessayer »", async () => {
+    vi.mocked(Api.privacy).mockRejectedValue(new Error("boom"));
+    renderPrivacy();
+    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+    await userEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+    expect(Api.privacy).toHaveBeenCalledTimes(2);
   });
 });

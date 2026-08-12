@@ -54,17 +54,27 @@ describe("Technicians (éditeur d'éligibilité)", () => {
     expect(screen.getByText("Nadia Bouaziz")).toBeInTheDocument();
   });
 
-  it("enregistre l'éligibilité (saveTechnicians + confirmation)", async () => {
+  it("n'enregistre que ce qui a changé — bouton inerte tant que rien ne l'est", async () => {
+    // Le bouton est DÉSACTIVÉ à l'arrivée : un enregistrement sans modification n'a pas de
+    // sens, et un bouton toujours actif ne dit RIEN de ce qui reste à enregistrer. C'est le
+    // compteur qui porte l'information, dans une barre collante qu'on ne peut plus rater.
     vi.mocked(Api.discovery).mockResolvedValue(TECHS);
     renderWithToast(<Technicians />);
     await screen.findByText("Sylvain Martin");
-    await userEvent.click(screen.getByRole("button", { name: "Enregistrer la sélection" }));
+
+    const bouton = screen.getByRole("button", { name: "Enregistrer la sélection" });
+    expect(bouton).toBeDisabled();
+    expect(screen.getByText("Aucune modification en attente")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: /Nadia Bouaziz/ }));
+    expect(screen.getByText("1 modification(s) non enregistrée(s)")).toBeInTheDocument();
+    await userEvent.click(bouton);
 
     await waitFor(() => expect(Api.saveTechnicians).toHaveBeenCalledTimes(1));
     expect(Api.saveTechnicians).toHaveBeenCalledWith(
       expect.arrayContaining([
         { ext_id: 11, eligible: true, skills: "AD, comptes", skill_tags: [] },
-        { ext_id: 12, eligible: false, skills: "", skill_tags: [] },
+        { ext_id: 12, eligible: true, skills: "", skill_tags: [] },
       ]),
     );
     expect(await screen.findByText("Enregistré.")).toBeInTheDocument();
@@ -74,6 +84,48 @@ describe("Technicians (éditeur d'éligibilité)", () => {
     vi.mocked(Api.discovery).mockResolvedValue([]);
     renderWithToast(<Technicians />);
     expect(await screen.findByText("Aucun élément")).toBeInTheDocument();
+  });
+
+  it("ne fait pas passer une lecture en ÉCHEC pour une instance jamais scannée", async () => {
+    // Le bug d'origine : /api/discovery en 500 affichait « cliquez sur Scanner GLPI »,
+    // l'admin scannait, ça échouait encore, et rien ne nommait jamais la cause.
+    vi.mocked(Api.discovery).mockRejectedValue(new Error("HTTP 500"));
+    renderWithToast(<Technicians />);
+    expect(await screen.findByText(/Impossible de lire les référentiels/)).toBeInTheDocument();
+    expect(screen.getByText("Liste indisponible")).toBeInTheDocument();
+    expect(screen.queryByText("Aucun élément")).not.toBeInTheDocument();
+  });
+
+  it("alerte quand PERSONNE n'est éligible — l'état le plus grave de la page", async () => {
+    // Sans acteur éligible, `whitelist.check` renvoie NO_ELIGIBLE_ASSIGNEE : 100 % des
+    // tickets partent « à trier ». Le diagnostic se taisait exactement dans ce cas-là.
+    vi.mocked(Api.discovery).mockResolvedValue([ref({ ext_id: 11, name: "Alice" })]);
+    renderWithToast(<Technicians />);
+    expect(await screen.findByText("Aucun technicien éligible")).toBeInTheDocument();
+  });
+
+  it("le cochage en masse ne porte QUE sur les lignes affichées", async () => {
+    // Le piège : filtrer « Sylvain », cliquer le bouton, et rendre éligible toute
+    // l'instance. Le libellé porte le nombre d'affichés, et l'action s'y limite.
+    vi.mocked(Api.discovery).mockResolvedValue([
+      ...TECHS,
+      ref({ ext_id: 13, name: "Karim Haddad", eligible: false }),
+    ]);
+    renderWithToast(<Technicians />);
+    await screen.findByText("Karim Haddad");
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Rechercher un technicien" }),
+      "Nadia",
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: /Cocher les 1 affichés/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer la sélection" }));
+
+    await waitFor(() => expect(Api.saveTechnicians).toHaveBeenCalledTimes(1));
+    const envoyes = vi.mocked(Api.saveTechnicians).mock.calls[0][0];
+    expect(envoyes.find((x) => x.ext_id === 12)?.eligible).toBe(true);
+    // Karim, masqué par le filtre, garde son état : il n'a pas été balayé au passage.
+    expect(envoyes.find((x) => x.ext_id === 13)?.eligible).toBe(false);
   });
 });
 
@@ -146,6 +198,11 @@ describe("Domaines de compétence cochables", () => {
   ];
 
   beforeEach(() => {
+    // `clearAllMocks` indispensable ici : sans lui, l'HISTORIQUE d'appels des blocs
+    // précédents fuit, et `toHaveBeenCalledTimes(1)` compte les enregistrements des autres
+    // tests. Le bloc n'en avait pas et ne passait que parce que aucun test amont
+    // n'appelait `saveTechnicians` avec succès.
+    vi.clearAllMocks();
     vi.mocked(Api.skillCatalog).mockResolvedValue(CATALOGUE);
     vi.mocked(Api.skillCoverage).mockResolvedValue([]);
     vi.mocked(Api.absences).mockResolvedValue([]);

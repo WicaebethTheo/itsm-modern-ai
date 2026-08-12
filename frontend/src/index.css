@@ -740,14 +740,18 @@
 .spark span {
   width: 3px;
   border-radius: 1px;
-  background: rgba(139, 141, 247, 0.55);
+  background: hsl(var(--primary) / 0.55);
 }
 
-/* Barres du graphe de tendance : plein = série principale, .dim = secondaire atténué. */
+/* Barres du graphe de tendance. Tokens OBLIGATOIRES : la version en dur (bleu marine
+   `#2a2c66 → #3d3f8a` pour `.dim`) était plus contrastée que la série principale sur la
+   carte blanche du thème clair — le « à trier » écrasait visuellement le « traité », soit
+   l'inverse de la hiérarchie voulue. `--primary` (traité) et `--warning` (à trier) sont
+   redéfinis par thème et reprennent au passage le couple utilisé partout ailleurs. */
 .bar {
   border-radius: 2px 2px 0 0;
-  background: linear-gradient(to top, #4f52e5, #8b8df7);
+  background: linear-gradient(to top, hsl(var(--primary)), hsl(var(--primary) / 0.7));
 }
 .bar.dim {
-  background: linear-gradient(to top, #2a2c66, #3d3f8a);
+  background: linear-gradient(to top, hsl(var(--warning) / 0.85), hsl(var(--warning) / 0.5));
 }

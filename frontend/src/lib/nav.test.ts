@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { navByPath } from "./nav";
+import { NAV, navByPath } from "./nav";
 
 describe("navByPath", () => {
   it("résout la racine vers le Tableau de bord", () => {
@@ -18,5 +18,14 @@ describe("navByPath", () => {
 
   it("renvoie undefined pour un chemin inconnu", () => {
     expect(navByPath("/inconnu")).toBeUndefined();
+  });
+
+  it("titre une page hors sidebar (ouverte depuis le menu de compte)", () => {
+    expect(navByPath("/account")?.fr).toBe("Compte & sécurité");
+    expect(navByPath("/account")?.en).toBe("Account & security");
+  });
+
+  it("ne publie PAS /account dans la sidebar", () => {
+    expect(NAV.flatMap((s) => s.items).some((i) => i.to === "/account")).toBe(false);
   });
 });

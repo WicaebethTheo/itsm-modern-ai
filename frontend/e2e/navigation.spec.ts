@@ -1,27 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { demo } from "../src/lib/demo";
-import { useFrench } from "./fixtures";
+import { mockAuthSession, mockConsoleApi, useFrench } from "./fixtures";
 
 // Étend l'E2E à un 2e écran : après login, naviguer vers le Journal via la sidebar
 // et y voir une décision. API mockée (fixtures de démo).
 test("login → navigation vers le Journal des décisions", async ({ page }) => {
   await useFrench(page);
-  let authenticated = false;
-  await page.route("**/api/auth/status", (route) =>
-    route.fulfill({ json: { authenticated, auth_configured: true, setup_required: false } }),
-  );
-  await page.route("**/api/auth/login", (route) => {
-    authenticated = true;
-    return route.fulfill({
-      json: { authenticated: true, auth_configured: true, setup_required: false },
-    });
-  });
-  await page.route("**/health", (route) => route.fulfill({ json: demo.health }));
-  await page.route("**/api/metrics", (route) => route.fulfill({ json: demo.metrics }));
-  await page.route("**/api/operational-metrics", (route) =>
-    route.fulfill({ json: demo.operational }),
-  );
-  await page.route("**/api/decisions", (route) => route.fulfill({ json: demo.decisions }));
+  await mockAuthSession(page);
+  await mockConsoleApi(page);
 
   await page.goto("/login");
   await page.getByLabel("Adresse email").fill("admin@exemple.fr");

@@ -6,8 +6,15 @@ Trois routes publiques, un seul compte administrateur :
   compte existe déjà). Ouvre la session dans la foulée ;
 - `POST /api/auth/login`  — email + mot de passe.
 
-⚠️ L'adresse du compte n'apparaît sur AUCUNE de ces réponses : `/api/auth/status` est
-public, et diffuser l'identifiant à un anonyme lui offrirait la moitié du couple à deviner.
+… et deux routes AUTHENTIFIÉES, pour la page « Compte & sécurité » de la console :
+- `GET  /api/auth/me`       — identité du compte connecté (email + nom affiché) ;
+- `POST /api/auth/password` — rotation du mot de passe (mot de passe courant exigé).
+
+⚠️ L'adresse du compte n'apparaît sur AUCUNE des réponses PUBLIQUES : `/api/auth/status`
+est public, et diffuser l'identifiant à un anonyme lui offrirait la moitié du couple à
+deviner. C'est précisément pourquoi `me` est une route SÉPARÉE et gardée, et non un champ
+de plus dans `AuthStatus` — la tentation de fusionner les deux reviendra, il faut la
+refuser (test de non-régression : `test_l_email_n_apparait_sur_aucune_reponse_publique`).
 """
 
 from __future__ import annotations
@@ -43,6 +50,22 @@ class SetupRequest(BaseModel):
     email: str = Field(max_length=EMAIL_INPUT_MAX)
     password: str = Field(max_length=PASSWORD_INPUT_MAX)
     display_name: str | None = Field(default=None, max_length=security.DISPLAY_NAME_MAX_CHARS)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(max_length=PASSWORD_INPUT_MAX)
+    new_password: str = Field(max_length=PASSWORD_INPUT_MAX)
+
+
+class AdminIdentity(BaseModel):
+    """Identité du compte connecté — servie UNIQUEMENT derrière `require_auth`."""
+
+    email: str
+    display_name: str | None = None
+
+
+class PasswordChanged(BaseModel):
+    ok: bool = True
 
 
 class AuthStatus(BaseModel):
@@ -179,3 +202,70 @@ def auth_status(
         auth_configured=configured,
         setup_required=not configured,
     )
+
+
+@router.get("/me", response_model=AdminIdentity, dependencies=[Depends(security.require_auth)])
+def me(cfg: RuntimeConfigService = Depends(get_config_service)) -> AdminIdentity:
+    """Identité du compte connecté, pour l'en-tête de la console et « Compte & sécurité ».
+
+    Route à part, et gardée : l'adresse est la moitié des identifiants. La faire remonter
+    par `/api/auth/status` (publique) l'offrirait à n'importe quel anonyme atteignant le
+    port — cf. la docstring en tête de module.
+    """
+    return AdminIdentity(
+        email=cfg.admin_email() or "", display_name=cfg.admin_display_name() or None
+    )
+
+
+@router.post(
+    "/password", response_model=PasswordChanged, dependencies=[Depends(security.require_auth)]
+)
+def change_password(
+    body: PasswordChangeRequest,
+    request: Request,
+    cfg: RuntimeConfigService = Depends(get_config_service),
+) -> PasswordChanged:
+    """Rotation du mot de passe administrateur depuis la console.
+
+    Deux garde-fous, aucun des deux n'est décoratif :
+
+    1. **le mot de passe courant est REVÉRIFIÉ** (`verify_login`), même si l'appelant porte
+       une session valide : sans ça, un cookie volé — ou un onglet laissé ouvert — suffirait
+       à s'approprier définitivement le compte ;
+    2. **le MÊME limiteur que `/login`, à la MÊME clé IP.** Cette route dit « oui / non » sur
+       un mot de passe : c'est un oracle de vérification, exactement comme le login. Non
+       comptée, elle offrirait un canal de force brute qui contourne le limiteur de `/login`.
+
+    ⚠️ EFFET VOULU : `set_admin_password` incrémente la génération de session, donc TOUTES
+    les sessions tombent — y compris CELLE DE L'APPELANT. C'est le prix (assumé) de la
+    révocation d'un cookie éventuellement volé ; le frontend renvoie vers `/login` après un
+    succès et l'annonce à l'admin avant qu'il valide.
+    """
+    limiter = request.app.state.login_limiter
+    key = _client_key(request)
+    _reject_if_rate_limited(request, key)
+
+    # L'email n'est pas demandé au formulaire : le compte est UNIQUE, celui de la session.
+    if not security.verify_login(cfg, cfg.admin_email() or "", body.current_password):
+        limiter.record_failure(key)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "bad_credentials", "message": "Mot de passe actuel incorrect."},
+        )
+    limiter.reset(key)
+
+    try:
+        # `force=True` : un compte existe forcément ici (require_auth l'a établi). L'email et
+        # le nom affiché ne sont PAS touchés — cette route ne change qu'un secret.
+        set_admin_password(cfg, body.new_password, force=True)
+    except AdminSetupError as exc:
+        raise HTTPException(
+            status_code=422, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
+
+    # Le cookie de l'appelant est désormais d'une génération périmée ; on le vide aussi côté
+    # client pour ne pas laisser traîner un jeton qui ne vaut plus rien.
+    request.session.pop("authenticated", None)
+    request.session.pop(security.SESSION_VERSION_FIELD, None)
+    logger.warning("mot de passe administrateur CHANGÉ depuis %s — sessions révoquées", key)
+    return PasswordChanged()

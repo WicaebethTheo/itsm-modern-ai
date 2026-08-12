@@ -34,6 +34,33 @@ const PLANNED: { fr: string; en: string; descFr: string; descEn: string }[] = [
   },
 ];
 
+/** Squelette aux dimensions de la carte finale : évite le saut de mise en page au chargement. */
+function PurgeSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 px-4 py-4">
+      <div className="flex items-center gap-3">
+        <span className="h-5 w-9 shrink-0 animate-pulse rounded-full bg-muted" />
+        <div className="flex flex-col gap-1.5">
+          <span className="h-3 w-48 animate-pulse rounded bg-muted" />
+          <span className="h-2.5 w-64 animate-pulse rounded bg-muted" />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex flex-col gap-1.5">
+            <span className="h-3 w-32 animate-pulse rounded bg-muted" />
+            <span className="h-8 w-full animate-pulse rounded-md bg-muted" />
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+        <span className="h-2.5 w-56 animate-pulse rounded bg-muted" />
+        <span className="h-8 w-40 animate-pulse rounded-md bg-muted" />
+      </div>
+    </div>
+  );
+}
+
 function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }) {
   const t = useT();
   const toast = useToast();
@@ -194,9 +221,6 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
 export function Automations() {
   const t = useT();
   const retention = useResource(useCallback(() => Api.retention(), []));
-  // « Active » = purge réellement activée, pas simplement la ressource chargée.
-  const activeCount = retention.data?.enabled ? 1 : 0;
-  const total = 1 + PLANNED.length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -215,25 +239,32 @@ export function Automations() {
             )
           }
         />
-        {retention.loading && (
-          <p className="p-6 text-[12.5px] text-muted-foreground">{t("Chargement…", "Loading…")}</p>
+        {retention.loading && <PurgeSkeleton />}
+        {retention.error && (
+          <div className="flex flex-wrap items-center gap-3 px-4 py-4">
+            <p role="alert" className="text-[12.5px] text-destructive">
+              {retention.error}
+            </p>
+            {/* `useResource` sait recharger : sans ce bouton, la seule issue était F5. */}
+            <Button size="sm" variant="outline" onClick={retention.reload}>
+              {t("Réessayer", "Retry")}
+            </Button>
+          </div>
         )}
-        {retention.error && <p className="p-6 text-[12.5px] text-destructive">{retention.error}</p>}
         {retention.data && <PurgeCard data={retention.data} reload={retention.reload} />}
       </Card>
 
       <Card className="overflow-hidden">
         <PanelHead
-          title={t("Automatisations", "Automations")}
+          title={t("Automatisations à venir", "Upcoming automations")}
+          // Le sous-titre décrit CETTE carte : elle ne contient que des automatisations
+          // non encore livrées. Compter la purge ici (« 4 prévues · 1 active ») annonçait
+          // une ligne de plus que ce qu'on liste, et rendait « active » introuvable.
           subtitle={t(
-            `${total} prévues · ${activeCount} active`,
-            `${total} planned · ${activeCount} active`,
+            `${PLANNED.length} automatisations prévues, aucune encore disponible`,
+            `${PLANNED.length} planned automations, none available yet`,
           )}
-          right={
-            <Button size="sm" disabled>
-              {t("+ Nouvelle", "+ New")}
-            </Button>
-          }
+          right={<Tag tone="muted">{t("Feuille de route", "Roadmap")}</Tag>}
         />
         <div>
           {PLANNED.map((a, i, arr) => (
@@ -244,13 +275,11 @@ export function Automations() {
               <Dot tone="muted" />
               <div className="min-w-0 flex-1">
                 <div className="text-[13px] font-medium">{t(a.fr, a.en)}</div>
-                <div className="text-[11px] text-muted-foreground">
-                  {t("Dernière exécution :", "Last run:")} —
-                </div>
+                {/* « Dernière exécution : — » pour un job qui n'existe pas se lit comme un
+                    job cassé. La description dit ce que l'automatisation FERA. Toujours
+                    visible : masquée sous 640 px, la liste se réduisait à trois titres. */}
+                <div className="text-[11px] text-muted-foreground">{t(a.descFr, a.descEn)}</div>
               </div>
-              <span className="hidden text-[11px] text-muted-foreground sm:inline">
-                {t(a.descFr, a.descEn)}
-              </span>
               <Tag tone="muted">{t("Bientôt", "Soon")}</Tag>
             </div>
           ))}

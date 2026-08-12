@@ -593,6 +593,13 @@ export interface RefItem {
   /** Cible de repli (entités) : acteur assigné quand le garde-fou refuse une Décision. */
   fallback_group_id?: number | null;
   fallback_technician_id?: number | null;
+  /**
+   * Horodatage du dernier scan GLPI ayant touché cette ligne (ISO 8601 UTC). Sert à dire
+   * la FRAÎCHEUR du cache : sans lui, un technicien parti il y a trois mois reste dans la
+   * liste sans que rien ne signale que le référentiel date. Optionnel : un moteur
+   * antérieur ne le renvoie pas, et l'UI n'affirme alors rien.
+   */
+  updated_at?: string | null;
 }
 
 export interface ModeItem {

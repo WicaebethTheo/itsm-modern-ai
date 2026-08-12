@@ -34,6 +34,9 @@ class FeatureView(BaseModel):
     installed: bool  # code présent dans l'image (toujours vrai en édition unique)
     entitled: bool  # autorisé par la licence
     active: bool  # installed ET entitled
+    # Module annoncé, sans surface d'usage : l'UI affiche « Prévu » et non « Débloqué »,
+    # même quand la licence l'autorise (payer ne doit pas peindre une promesse en vert).
+    coming_soon: bool = False
 
 
 class LicenseView(BaseModel):
@@ -70,6 +73,7 @@ def _view_from_status(request: Request, status: LicenseStatus) -> LicenseView:
             installed=spec.key in installed_keys,
             entitled=status.has_feature(spec.key),
             active=(spec.key in installed_keys) and status.has_feature(spec.key),
+            coming_soon=spec.coming_soon,
         )
         for spec in FEATURE_CATALOG
     ]

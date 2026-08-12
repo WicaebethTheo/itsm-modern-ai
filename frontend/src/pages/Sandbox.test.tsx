@@ -1,23 +1,36 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Api, ApiError } from "@/lib/api";
+import { Api, ApiError, type ConfigView } from "@/lib/api";
 import { Sandbox } from "./Sandbox";
 
 vi.mock("@/lib/api", async (orig) => {
   const actual = await orig<typeof import("@/lib/api")>();
-  return { ...actual, Api: { ...actual.Api, sandbox: vi.fn() } };
+  return {
+    ...actual,
+    Api: { ...actual.Api, sandbox: vi.fn(), getConfig: vi.fn(), testMask: vi.fn() },
+  };
 });
 
+/** Config minimale : seul le seuil de confiance est lu par l'écran. */
+const CONFIG = { confidence_threshold: "0.7" } as ConfigView;
+
+/** Le champ « Contenu » — `getByRole("textbox")` est ambigu depuis l'ajout du titre. */
+const contenu = () => screen.getByLabelText(/Contenu du ticket/);
+
 describe("Sandbox", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(Api.getConfig).mockResolvedValue(CONFIG);
+    vi.mocked(Api.testMask).mockResolvedValue({ masked: "texte masqué", counts: {} });
+  });
 
   it("désactive le bouton tant que le texte est vide", () => {
     render(<Sandbox />);
     expect(screen.getByRole("button", { name: "Simuler la décision" })).toBeDisabled();
   });
 
-  it("simule une décision et affiche le résultat (déposable + brouillon)", async () => {
+  it("simule une décision et affiche le résultat (accepté + brouillon)", async () => {
     vi.mocked(Api.sandbox).mockResolvedValue({
       accepted: true,
       reason: "accepted",
@@ -32,11 +45,12 @@ describe("Sandbox", () => {
       draft: "Bonjour, nous avons réinitialisé votre mot de passe.",
     });
     render(<Sandbox />);
-    await userEvent.type(screen.getByRole("textbox"), "mdp refusé");
+    await userEvent.type(contenu(), "mdp refusé");
     await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));
 
-    expect(Api.sandbox).toHaveBeenCalledWith("mdp refusé");
-    expect(await screen.findByText("déposable")).toBeInTheDocument();
+    // Le titre est TOUJOURS transmis (vide ici) : le moteur réel concatène titre + contenu.
+    expect(Api.sandbox).toHaveBeenCalledWith("mdp refusé", "");
+    expect(await screen.findByText("passe les garde-fous")).toBeInTheDocument();
     // Noms résolus affichés avec l'id en discrétion : « Nom (#id) ».
     expect(screen.getByText("Sylvain Martin (#11)")).toBeInTheDocument();
     expect(screen.getByText("Poste de travail (#3)")).toBeInTheDocument();
@@ -44,7 +58,44 @@ describe("Sandbox", () => {
     expect(screen.getByText(/réinitialisé votre mot de passe/)).toBeInTheDocument();
   });
 
-  it("retombe sur T#id si le nom n'est pas résolu (référentiel non scanné)", async () => {
+  it("le TITRE saisi est envoyé avec le contenu (essai représentatif)", async () => {
+    vi.mocked(Api.sandbox).mockResolvedValue({
+      accepted: true,
+      reason: "accepted",
+      category: 3,
+      category_name: null,
+      priority: 2,
+      technician_id: null,
+      technician_name: null,
+      group_id: null,
+      group_name: null,
+      confidence: 0.9,
+      draft: null,
+    });
+    render(<Sandbox />);
+    await userEvent.type(screen.getByLabelText(/Titre du ticket/), "Imprimante HS");
+    await userEvent.type(contenu(), "bourrage papier");
+    await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));
+
+    await waitFor(() =>
+      expect(Api.sandbox).toHaveBeenCalledWith("bourrage papier", "Imprimante HS"),
+    );
+  });
+
+  it("un exemple pré-rempli permet de démarrer sans rien taper", async () => {
+    render(<Sandbox />);
+    // Bouton d'exemple (le titre est le libellé) — à ne pas confondre avec le champ.
+    await userEvent.click(screen.getByRole("button", { name: "Mot de passe refusé" }));
+    expect(screen.getByLabelText(/Titre du ticket/)).toHaveValue("Mot de passe refusé");
+    expect((contenu() as HTMLTextAreaElement).value).toContain("mdp refusé");
+    expect(screen.getByRole("button", { name: "Simuler la décision" })).toBeEnabled();
+  });
+
+  // ── Le verdict, cœur de l'écran ───────────────────────────────────────────────
+  // La Décision LLM brute est conservée même REJETÉE (domain/engine.evaluate) pour
+  // expliquer le refus. Rendue sans verdict, elle se lit comme un routage qui aura lieu.
+
+  it("un refus annonce le BLOCAGE et nomme l'étape — pas « liste blanche » par défaut", async () => {
     vi.mocked(Api.sandbox).mockResolvedValue({
       accepted: false,
       reason: "low_confidence",
@@ -59,20 +110,135 @@ describe("Sandbox", () => {
       draft: "Demande à clarifier.",
     });
     render(<Sandbox />);
-    await userEvent.type(screen.getByRole("textbox"), "xx");
+    await userEvent.type(contenu(), "xx");
     await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));
-    expect(await screen.findByText("T#42")).toBeInTheDocument();
+
+    expect(await screen.findByText(/Le moteur BLOQUE cette décision/)).toBeInTheDocument();
+    expect(screen.getByText(/Rien ne serait écrit dans GLPI/)).toBeInTheDocument();
+    // `low_confidence` = le SEUIL, jamais la whitelist : l'étape nommée doit le dire.
+    expect(screen.getByText(/Refus à l'étape : seuil de confiance/)).toBeInTheDocument();
+    expect(screen.getByText("Confiance sous le seuil")).toBeInTheDocument();
+    expect(screen.queryByText(/liste blanche/i)).not.toBeInTheDocument();
+    // Repli sur T#id si le nom n'est pas résolu (référentiel non scanné).
+    expect(screen.getByText("T#42")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();
   });
 
-  it("affiche le message d'erreur du backend (detail.message)", async () => {
+  it("affiche le SEUIL à côté de la confiance (sinon 40 % ne veut rien dire)", async () => {
+    vi.mocked(Api.sandbox).mockResolvedValue({
+      accepted: false,
+      reason: "low_confidence",
+      category: 7,
+      category_name: null,
+      priority: 3,
+      technician_id: null,
+      technician_name: null,
+      group_id: null,
+      group_name: null,
+      confidence: 0.4,
+      draft: null,
+    });
+    render(<Sandbox />);
+    await userEvent.type(contenu(), "xx");
+    await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));
+
+    expect(await screen.findByText("seuil 70 %")).toBeInTheDocument();
+  });
+
+  it("montre le texte réellement envoyé au LLM — et JAMAIS le brut", async () => {
+    vi.mocked(Api.sandbox).mockResolvedValue({
+      accepted: true,
+      reason: "accepted",
+      category: 1,
+      category_name: null,
+      priority: 3,
+      technician_id: null,
+      technician_name: null,
+      group_id: null,
+      group_name: null,
+      confidence: 0.9,
+      draft: null,
+    });
+    vi.mocked(Api.testMask).mockResolvedValue({
+      masked: "mon mail est [EMAIL]",
+      counts: { email: 1 },
+    });
+    render(<Sandbox />);
+    await userEvent.type(contenu(), "mon mail est alice@acme.com");
+    await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));
+
+    const bloc = (await screen.findByText("mon mail est [EMAIL]")).closest(
+      "details",
+    ) as HTMLElement;
+    // Anti-PII : le bloc n'affiche QUE la sortie du masqueur — jamais le brut re-rendu
+    // à côté « pour comparer », ce qui referait fuir la PII sur l'écran censé la protéger.
+    expect(bloc.textContent).not.toContain("alice@acme.com");
+    expect(Api.testMask).toHaveBeenCalledWith("mon mail est alice@acme.com");
+  });
+
+  it("affiche le coût, le modèle et la latence de l'essai", async () => {
+    vi.mocked(Api.sandbox).mockResolvedValue({
+      accepted: true,
+      reason: "accepted",
+      category: 1,
+      category_name: null,
+      priority: 3,
+      technician_id: null,
+      technician_name: null,
+      group_id: null,
+      group_name: null,
+      confidence: 0.9,
+      draft: null,
+      model: "mistral-small-latest",
+      cost_eur: 0.0052,
+      prompt_tokens: 1000,
+      completion_tokens: 500,
+    });
+    render(<Sandbox />);
+    await userEvent.type(contenu(), "pc lent");
+    await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));
+
+    expect(await screen.findByText("mistral-small-latest")).toBeInTheDocument();
+    expect(screen.getByText(/0\.0052 €/)).toBeInTheDocument();
+    expect(screen.getByText(/1000 → 500/)).toBeInTheDocument();
+    expect(screen.getByText(/Latence/)).toBeInTheDocument();
+  });
+
+  it("annonce l'attente (aria-busy) au lieu de laisser « Aucune simulation »", async () => {
+    let resolve!: (v: Awaited<ReturnType<typeof Api.sandbox>>) => void;
+    vi.mocked(Api.sandbox).mockReturnValue(new Promise((r) => (resolve = r)));
+    render(<Sandbox />);
+    await userEvent.type(contenu(), "pc lent");
+    await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));
+
+    const live = document.querySelector('[aria-live="polite"]') as HTMLElement;
+    expect(live).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByText("Aucune simulation")).not.toBeInTheDocument();
+
+    resolve({
+      accepted: true,
+      reason: "accepted",
+      category: 1,
+      category_name: null,
+      priority: 3,
+      technician_id: null,
+      technician_name: null,
+      group_id: null,
+      group_name: null,
+      confidence: 0.9,
+      draft: null,
+    });
+    await waitFor(() => expect(live).toHaveAttribute("aria-busy", "false"));
+  });
+
+  it("affiche le message d'erreur du backend (detail.message) en role=alert", async () => {
     // Depuis la centralisation dans ApiError, `message` porte déjà detail.message.
     vi.mocked(Api.sandbox).mockRejectedValue(
       new ApiError(422, { detail: { message: "Texte hors périmètre." } }),
     );
     render(<Sandbox />);
-    await userEvent.type(screen.getByRole("textbox"), "blabla");
+    await userEvent.type(contenu(), "blabla");
     await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));
-    expect(await screen.findByText("Texte hors périmètre.")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Texte hors périmètre.");
   });
 });

@@ -168,4 +168,50 @@ describe("Automations — purge RGPD", () => {
     expect(await screen.findByText("API 503")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Exécuter maintenant" })).not.toBeInTheDocument();
   });
+
+  it("une erreur de chargement se RATTRAPE sans recharger la page", async () => {
+    // Sans bouton, la seule issue d'un 503 transitoire était un F5 : `useResource`
+    // expose pourtant reload().
+    vi.mocked(Api.retention).mockRejectedValueOnce(new Error("API 503"));
+    renderWithToast(<Automations />);
+    await userEvent.click(await screen.findByRole("button", { name: "Réessayer" }));
+
+    expect(await screen.findByLabelText(/Rétention Journal/)).toHaveValue(365);
+    expect(screen.queryByText("API 503")).not.toBeInTheDocument();
+  });
+});
+
+describe("Automations — carte « à venir »", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(Api.retention).mockResolvedValue(RETENTION);
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("le sous-titre décrit ce que la carte contient RÉELLEMENT", async () => {
+    // Piège corrigé : « 4 prévues · 1 active » comptait la purge, rendue dans la carte
+    // du dessus — la carte annonçait donc une ligne de plus qu'elle n'en liste.
+    renderWithToast(<Automations />);
+    expect(
+      await screen.findByText("3 automatisations prévues, aucune encore disponible"),
+    ).toBeInTheDocument();
+  });
+
+  it("aucune ligne ne prétend avoir une « dernière exécution »", async () => {
+    renderWithToast(<Automations />);
+    await screen.findByText("Rapport hebdomadaire par email");
+    // Le seul « Dernière exécution » légitime est celui de la purge (carte du dessus).
+    expect(screen.getAllByText(/Dernière exécution/)).toHaveLength(1);
+    // La description remplace le tiret, et n'est plus masquée sous 640 px.
+    const desc = screen.getByText("Envoi planifié (SMTP) du bilan de triage au DSI");
+    expect(desc).toBeInTheDocument();
+    expect(desc.className).not.toMatch(/\bhidden\b/);
+  });
+
+  it("remplace l'affordance morte « + Nouvelle » par un marqueur explicite", async () => {
+    renderWithToast(<Automations />);
+    expect(await screen.findByText("Feuille de route")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ Nouvelle" })).not.toBeInTheDocument();
+  });
 });

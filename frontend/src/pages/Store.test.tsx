@@ -68,14 +68,27 @@ describe("Store (licence open-core)", () => {
   it("Community : encart d'activation Supporter + features verrouillées", async () => {
     renderWithToast(<Store />);
     expect(await screen.findByText("Community")).toBeInTheDocument();
-    // Sans code installé, on propose d'activer une licence Supporter (carte d'activation).
+    // Une SEULE carte d'activation (le code Supporter est toujours livré : la branche
+    // « code absent » ne pouvait jamais s'afficher chez un exploitant).
     expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(screen.getByLabelText("Clé de licence")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Activer" })).toBeInTheDocument();
+    // L'argument de souveraineté doit être visible ICI (il vivait dans la branche morte).
     expect(
-      screen.getByRole("button", { name: "Activer ma licence Supporter" }),
+      screen.getByText(/vérifiée hors-ligne \(Ed25519, aucun appel sortant\)/),
     ).toBeInTheDocument();
     // Les 3 features, toutes verrouillées.
     expect(screen.getAllByText("Supporter").length).toBeGreaterThanOrEqual(3);
     expect(screen.queryByText("Débloqué")).not.toBeInTheDocument();
+    // Résumé chiffré en tête : « qu'est-ce qui est actif chez moi ? » en une ligne.
+    expect(
+      screen.getByText("3 module(s) Supporter installés mais verrouillés"),
+    ).toBeInTheDocument();
+    // Anti-DRM : le code est déjà là, la clé autorise, elle ne télécharge rien.
+    expect(screen.getByText(/DÉJÀ installé dans cette image/)).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Code installé, en attente d'une licence qui l'autorise.").length,
+    ).toBe(1);
   });
 
   it("Code Supporter présent : active une clé valide → licence Supporter + features débloquées", async () => {
@@ -90,11 +103,36 @@ describe("Store (licence open-core)", () => {
 
     await waitFor(() => expect(Api.setLicense).toHaveBeenCalledWith("JETON-VALIDE"));
     expect(await screen.findByText("Supporter", { selector: "span" })).toBeInTheDocument();
-    expect(await screen.findAllByText("Débloqué")).toHaveLength(3);
+    // UN seul module a une surface d'usage : les deux « à venir » restent « Prévu ».
+    // Trois pastilles vertes pour deux promesses, c'était payer pour du vert.
+    expect(await screen.findAllByText("Débloqué")).toHaveLength(1);
+    expect(screen.getAllByText("Prévu")).toHaveLength(2);
     expect(await screen.findByText("Licence activée.")).toBeInTheDocument();
+    // Résumé chiffré : 3/3 autorisés par la licence (dont 2 sans surface d'usage).
+    expect(screen.getByText("3 module(s) actif(s) sur 3")).toBeInTheDocument();
+    expect(screen.getByText("Jusqu'au 2027-01-01")).toBeInTheDocument();
   });
 
-  it("Code Supporter présent : clé invalide → bannière d'erreur (valid:false)", async () => {
+  it("licence valide qui ne couvre PAS un module : le catalogue ne réclame pas une licence", async () => {
+    // Un client licencié à qui il manque une clé de feature lisait « Activez votre
+    // licence Supporter » — message faux, et vexant.
+    const partial: LicenseView = {
+      ...ENT_ACTIVE,
+      features: ENT_ACTIVE.features.map((f) =>
+        f.key === "pii_advanced" ? { ...f, entitled: false, active: false } : f,
+      ),
+    };
+    vi.mocked(Api.getLicense).mockResolvedValue(partial);
+    renderWithToast(<Store />);
+    await screen.findByText("ACME Corp");
+    expect(screen.getByText("2 module(s) actif(s) sur 3")).toBeInTheDocument();
+    expect(screen.getByText("Non incluse dans votre licence actuelle.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Code installé, en attente d'une licence qui l'autorise."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("Code Supporter présent : clé invalide → bannière d'erreur traduite et actionnable", async () => {
     vi.mocked(Api.setLicense).mockResolvedValue(ENT_INVALID);
     vi.mocked(Api.getLicense).mockResolvedValueOnce(ENT_UNLICENSED).mockResolvedValue(ENT_INVALID);
     renderWithToast(<Store />);
@@ -103,7 +141,32 @@ describe("Store (licence open-core)", () => {
     await userEvent.type(screen.getByRole("textbox"), "JETON-POURRI");
     await userEvent.click(screen.getByRole("button", { name: "Activer" }));
 
-    expect(await screen.findByText(/Licence invalide.*signature invalide/)).toBeInTheDocument();
+    // Le message brut du backend (« signature invalide ») est traduit en conséquence
+    // + geste à faire, au lieu d'être affiché en français quelle que soit la langue.
+    expect(await screen.findByText(/Licence invalide/)).toBeInTheDocument();
+    expect(screen.getByText(/demandez une clé ré-émise/)).toBeInTheDocument();
+  });
+
+  it("licence expirée : message dédié + date, sans reniflage de sous-chaîne", async () => {
+    const expired: LicenseView = {
+      ...ENT_UNLICENSED,
+      customer: "ACME Corp",
+      expires_at: "2026-01-01",
+      error: "licence expirée",
+    };
+    vi.mocked(Api.getLicense).mockResolvedValue(expired);
+    renderWithToast(<Store />);
+    expect(await screen.findByText(/Licence expirée/)).toBeInTheDocument();
+    expect(screen.getByText(/\(2026-01-01\)/)).toBeInTheDocument();
+  });
+
+  it("message backend inconnu : repli sur le texte brut (jamais d'écran muet)", async () => {
+    vi.mocked(Api.getLicense).mockResolvedValue({
+      ...ENT_UNLICENSED,
+      error: "raison inédite du futur",
+    });
+    renderWithToast(<Store />);
+    expect(await screen.findByText(/raison inédite du futur/)).toBeInTheDocument();
   });
 
   it("MAJ disponible (runtime docker) : la carte propose la commande docker", async () => {

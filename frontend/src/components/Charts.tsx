@@ -17,24 +17,47 @@ export function Sparkline({ values, className }: { values: number[]; className?:
   );
 }
 
-/** Barre de progression horizontale (carte « Confiance moyenne ») — dégradé indigo. */
-export function ProgressBar({ ratio }: { ratio: number }) {
+/**
+ * Ton d'une barre de progression. `warning`/`destructive` servent aux jauges qui
+ * approchent ou dépassent une limite (plafond de coût) : la couleur DIT l'état, elle
+ * n'est pas décorative.
+ */
+export type ProgressTone = "primary" | "warning" | "destructive";
+
+const PROGRESS_TONE: Record<ProgressTone, string> = {
+  primary: "bg-primary",
+  warning: "bg-warning",
+  destructive: "bg-destructive",
+};
+
+/**
+ * Barre de progression horizontale. Couleur prise dans les tokens du thème (et non en
+ * dur) : sans ça la jauge garde le même indigo en clair et en sombre, où le contraste
+ * n'est pas le même.
+ */
+export function ProgressBar({
+  ratio,
+  tone = "primary",
+  className,
+}: {
+  ratio: number;
+  tone?: ProgressTone;
+  className?: string;
+}) {
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+    <div className={cn("h-1.5 w-full overflow-hidden rounded-full bg-muted", className)}>
       <div
-        className="h-full rounded-full"
-        style={{
-          width: `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`,
-          background: "linear-gradient(90deg,#6366f1,#8b8df7)",
-        }}
+        className={cn("h-full rounded-full", PROGRESS_TONE[tone])}
+        style={{ width: `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%` }}
       />
     </div>
   );
 }
 
 /**
- * Barchart vertical empilé (tendance) — style maquette : `.bar` (déposées, dégradé
- * indigo plein) + `.bar.dim` (à trier, atténué). Hauteurs proportionnelles au max.
+ * Barchart vertical empilé (tendance) : `.bar` = traités (primaire), `.bar.dim` = à trier
+ * (ambre). Les deux séries sont peintes depuis les tokens de `index.css`, donc le couple
+ * vert/ambre du reste de la console ne s'inverse pas d'un thème à l'autre.
  */
 export function StackedBars({
   data,

@@ -1,12 +1,13 @@
-import { Heart, LogOut } from "lucide-react";
-import { useCallback, useEffect } from "react";
+import { ChevronDown, Heart, LogOut, UserCog } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { FloatingActions } from "@/components/FloatingActions";
 import { LangToggle } from "@/components/LangToggle";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { Avatar } from "@/components/ui/avatar";
 import { useResource } from "@/hooks/useResource";
-import { Api, updateCommand } from "@/lib/api";
+import { Api, updateCommand, type VersionInfo } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { type IconName, NAV, navByPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,116 @@ function SidebarIcon({ name }: { name: IconName }) {
   );
 }
 
+/**
+ * Chip de compte + menu déroulant : le seul objet « personnel » de la barre.
+ *
+ * Il remplace un rond dégradé purement décoratif, qui occupait la place d'un menu sans en
+ * offrir un, et absorbe les trois contrôles qui traînaient à côté de lui (langue, thème,
+ * déconnexion) plus la ligne de version. L'avatar n'a JAMAIS de `src` : les initiales sont
+ * calculées localement — pas de Gravatar, pas d'appel sortant pour afficher une tête.
+ *
+ * Si `/api/auth/me` échoue (route récente, moteur en cours de démarrage, session qui vient
+ * de tomber), on retombe sur « Administrateur » : la barre ne doit jamais casser pour une
+ * étiquette.
+ */
+function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => void }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const me = useResource(useCallback(() => Api.me(), []));
+
+  const email = me.data?.email || "";
+  const name = me.data?.display_name || email || t("Administrateur", "Administrator");
+
+  // Fermeture au `pointerdown` extérieur (pas au `click` : un menu qui survit au premier
+  // enfoncement de souris se referme après coup, sous le doigt) et à `Escape`.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!root.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const runtimeLabel = v?.runtime === "docker" ? "Docker" : t("Hôte", "Host");
+
+  return (
+    <div ref={root} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex items-center gap-2 rounded-full border border-border py-0.5 pl-0.5 pr-2 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <Avatar name={name} className="size-6 text-[10px]" />
+        <span className="hidden max-w-[9rem] truncate sm:inline">{name}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      </button>
+
+      {open ? (
+        <div
+          role="menu"
+          aria-label={t("Compte", "Account")}
+          className="absolute right-0 top-9 z-50 w-64 rounded-lg border border-border bg-card p-1.5 shadow-lg"
+        >
+          <div className="px-2.5 py-1.5">
+            <p className="truncate text-[12.5px] font-medium text-foreground">{name}</p>
+            {email ? <p className="truncate text-[11.5px] text-muted-foreground">{email}</p> : null}
+          </div>
+          <div className="my-1 h-px bg-border" />
+          <NavLink
+            to="/account"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <UserCog className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {t("Compte & sécurité", "Account & security")}
+          </NavLink>
+          <div className="my-1 h-px bg-border" />
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1 text-[12.5px] text-muted-foreground">
+            <span>{t("Langue", "Language")}</span>
+            <LangToggle />
+          </div>
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1 text-[12.5px] text-muted-foreground">
+            <span>{t("Thème", "Theme")}</span>
+            <ThemeToggle compact />
+          </div>
+          {v ? (
+            <>
+              <div className="my-1 h-px bg-border" />
+              {/* Fait d'installation, pas un signal d'exploitation : il descend ici plutôt
+                  que d'occuper deux badges dans la barre. */}
+              <p className="px-2.5 py-1 text-[11px] text-muted-foreground">
+                {`v${v.current} · ${runtimeLabel}`}
+              </p>
+            </>
+          ) : null}
+          <div className="my-1 h-px bg-border" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={onLogout}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] text-destructive transition-colors hover:bg-destructive/10"
+          >
+            <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {t("Déconnexion", "Sign out")}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function Topbar({ onLogout }: { onLogout: () => void }) {
   const t = useT();
   const { pathname } = useLocation();
@@ -69,117 +180,101 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
     return () => clearInterval(id);
   }, [reloadVersion]);
 
+  // Un SEUL nœud texte, volontairement : `frontend/e2e/login.spec.ts` fait
+  // `getByText("GLPI 10.0.18")`, et une pastille-sœur ou un fragment scindé casserait la
+  // correspondance. La couleur du chip porte désormais l'état — la pastille grise n'a
+  // plus lieu d'être.
+  const glpi = !g?.configured
+    ? {
+        label: t("GLPI non configuré", "GLPI not configured"),
+        cls: "border-border bg-muted text-muted-foreground",
+        title: t("Aucune connexion GLPI configurée", "No GLPI connection configured"),
+      }
+    : g.reachable
+      ? {
+          label: g.version ? `GLPI ${g.version}` : t("GLPI connecté", "GLPI connected"),
+          cls: "border-success/30 bg-success/10 text-success",
+          title: t("GLPI joignable", "GLPI reachable"),
+        }
+      : {
+          label: t("GLPI injoignable", "GLPI unreachable"),
+          cls: "border-destructive/40 bg-destructive/10 text-destructive",
+          title: t(
+            "GLPI ne répond pas — le triage est à l'arrêt",
+            "GLPI is not responding — triage is halted",
+          ),
+        };
+
   return (
     <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-5 sm:px-6">
       <div className="flex min-w-0 items-baseline gap-3">
+        {/* Pas de « · derniers 14 jours » ici : les compteurs du tableau de bord sont des
+            CUMULS depuis la mise en service, seule la tendance porte sur 14 jours. */}
         <h1 className="truncate text-[15px] font-medium tracking-tight">{title}</h1>
-        {pathname === "/" && (
-          <span className="hidden text-[12px] text-muted-foreground sm:inline">
-            {t("· derniers 14 jours", "· last 14 days")}
-          </span>
-        )}
       </div>
-      <div className="flex shrink-0 items-center gap-3">
-        {/* Accès rapide à la page Supporter (licence). Violet, en haut à droite. */}
-        <NavLink
-          to="/store"
-          title={t("Supporter — licence & fonctionnalités", "Supporter — license & features")}
-          className={cn(
-            "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
-            isSupporter
-              ? "border-accent-purple/40 bg-accent-purple/20 text-accent-purple"
-              : "border-accent-purple/30 bg-accent-purple/10 text-accent-purple hover:bg-accent-purple/20",
-          )}
-        >
-          <Heart className="h-3.5 w-3.5" fill={isSupporter ? "currentColor" : "none"} />
-          Supporter
-        </NavLink>
-        {/* Édition courante. Quand une licence est active, le bouton violet ci-dessus
-            indique déjà "Supporter" → on n'affiche le badge que pour l'état Community
-            (sinon double "Supporter" : bouton + badge). */}
-        {license.data && !isSupporter ? (
-          <span
-            className="hidden rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground md:inline"
-            title={t("Édition", "Edition")}
-          >
-            Community
-          </span>
-        ) : null}
-        {/* Runtime : Docker (conteneur) ou Hôte (installé direct). Sert aussi à
-            proposer la bonne commande de MAJ dans l'infobulle ci-dessous. */}
-        {v?.runtime ? (
-          <span
-            className="hidden rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground md:inline"
+      <div className="flex shrink-0 items-center gap-2.5">
+        {/* UN SEUL chip d'édition, qui mène à la page Supporter. Le bouton violet et le
+            badge « Community » disaient la même chose à deux endroits — et le violet
+            captait le regard avant l'état GLPI, qui est le vrai signal d'exploitation.
+            En Community le chip est donc NEUTRE ; il ne redevient violet qu'une fois la
+            licence active. Affiché seulement quand la licence est connue : annoncer une
+            édition avant de l'avoir lue serait un pari, pas une information. */}
+        {license.data ? (
+          <NavLink
+            to="/store"
             title={
-              v.runtime === "docker"
-                ? t("Exécution en conteneur Docker", "Running in a Docker container")
+              isSupporter
+                ? t(
+                    "Édition Supporter — licence & fonctionnalités",
+                    "Supporter edition — license & features",
+                  )
                 : t(
-                    "Exécution directe sur l'hôte (hors conteneur)",
-                    "Running directly on the host (no container)",
+                    "Édition Community — devenir Supporter",
+                    "Community edition — become a Supporter",
                   )
             }
-          >
-            {v.runtime === "docker" ? "Docker" : t("Hôte", "Host")}
-          </span>
-        ) : null}
-        {v ? (
-          v.update_available ? (
-            <a
-              href="https://docs.itsm-modern-ai.com/update/"
-              target="_blank"
-              rel="noopener noreferrer"
-              title={t(
-                `Mise à jour disponible (v${v.latest}) — ${updateCommand(v.runtime)} — voir la doc →`,
-                `Update available (v${v.latest}) — ${updateCommand(v.runtime)} — see docs →`,
-              )}
-              className="hidden items-center gap-1 rounded-full border border-accent-indigo/40 bg-accent-indigo/10 px-2 py-0.5 text-[11px] font-medium text-accent-indigo md:flex"
-            >
-              ↑ v{v.latest}
-            </a>
-          ) : (
-            <span
-              className="hidden text-[11.5px] text-muted-foreground md:inline"
-              title={t("Version installée", "Installed version")}
-            >
-              v{v.current}
-            </span>
-          )
-        ) : null}
-        <span className="hidden items-center gap-1.5 text-[12px] text-muted-foreground md:flex">
-          <span
             className={cn(
-              "h-1.5 w-1.5 rounded-full",
-              !g?.configured
-                ? "bg-muted-foreground/50"
-                : g.reachable
-                  ? "bg-success"
-                  : "bg-destructive",
+              "hidden items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors md:flex",
+              isSupporter
+                ? "border-accent-purple/40 bg-accent-purple/15 text-accent-purple hover:bg-accent-purple/25"
+                : "border-border bg-muted text-muted-foreground hover:bg-accent hover:text-foreground",
             )}
-          />
-          {!g?.configured
-            ? t("GLPI non configuré", "GLPI not configured")
-            : g.reachable
-              ? g.version
-                ? `GLPI ${g.version}`
-                : t("GLPI connecté", "GLPI connected")
-              : t("GLPI injoignable", "GLPI unreachable")}
-        </span>
+          >
+            <Heart
+              className="h-3.5 w-3.5 shrink-0"
+              fill={isSupporter ? "currentColor" : "none"}
+              aria-hidden="true"
+            />
+            {isSupporter ? "Supporter" : "Community"}
+          </NavLink>
+        ) : null}
+        {/* Mise à jour disponible UNIQUEMENT. La version installée n'est pas un signal :
+            elle ne change qu'à une mise à jour et vit désormais dans le menu de compte. */}
+        {v?.update_available ? (
+          <a
+            href="https://docs.itsm-modern-ai.com/update/"
+            target="_blank"
+            rel="noopener noreferrer"
+            title={t(
+              `Mise à jour disponible (v${v.latest}) — ${updateCommand(v.runtime)} — voir la doc →`,
+              `Update available (v${v.latest}) — ${updateCommand(v.runtime)} — see docs →`,
+            )}
+            className="hidden items-center gap-1 rounded-full border border-accent-indigo/40 bg-accent-indigo/10 px-2 py-0.5 text-[11px] font-medium text-accent-indigo md:flex"
+          >
+            ↑ v{v.latest}
+          </a>
+        ) : null}
+        {/* Le signal DOMINANT de la barre : GLPI répond-il ? En couleur sémantique. */}
         <span
-          className="hidden h-7 w-7 rounded-full sm:block"
-          style={{ background: "linear-gradient(135deg,#6366f1,#8b8df7)" }}
-          title={t("Administrateur", "Administrator")}
-        />
-        <LangToggle />
-        <ThemeToggle compact />
-        <button
-          type="button"
-          onClick={onLogout}
-          aria-label={t("Déconnexion", "Sign out")}
-          title={t("Déconnexion", "Sign out")}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          title={glpi.title}
+          className={cn(
+            "hidden rounded-full border px-2.5 py-0.5 text-[11.5px] font-medium md:inline",
+            glpi.cls,
+          )}
         >
-          <LogOut className="h-4 w-4" />
-        </button>
+          {glpi.label}
+        </span>
+        <AccountMenu v={v} onLogout={onLogout} />
       </div>
     </header>
   );

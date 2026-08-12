@@ -1,38 +1,81 @@
-import { ListChecks } from "lucide-react";
+import { ListChecks, RefreshCw, ScrollText } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback } from "react";
+import { Link } from "react-router-dom";
 import { Banner } from "@/components/Banner";
 import { ProgressBar, Sparkline, StackedBars } from "@/components/Charts";
 import { EmptyState } from "@/components/EmptyState";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PanelHead } from "@/components/ui/panel";
-import { Tag } from "@/components/ui/tag";
+import { Tag, type TagTone } from "@/components/ui/tag";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { reasonLabel, reasonTone } from "@/lib/labels";
+import { cn } from "@/lib/utils";
 
-/** Carte KPI (label 11.5px + valeur 22px + tag coloré + sparkline) — style maquette. */
+/** Décisions affichées dans l'aperçu du journal (la page complète est dans Journal). */
+const PREVIEW_ROWS = 8;
+/** Anomalies listées au maximum : une instance avec 300 SLA dépassés ne déroule pas 300 lignes. */
+const ANOMALY_LIMIT = 8;
+
+/** Squelette de chargement — même idiome que GlpiConnection (`animate-pulse bg-muted`). */
+function Skeleton({ className }: { className?: string }) {
+  return <span className={cn("block animate-pulse rounded bg-muted", className)} aria-hidden />;
+}
+
+/** Couleur de la barre d'un motif : reprend le ton du Tag pour que les deux s'accordent. */
+const REASON_BAR: Record<TagTone, string> = {
+  green: "bg-success",
+  red: "bg-destructive",
+  amber: "bg-warning",
+  indigo: "bg-primary",
+  purple: "bg-primary",
+  muted: "bg-muted-foreground",
+};
+
+/**
+ * Carte KPI (label 11.5px + valeur 22px + tag coloré + sparkline) — style maquette.
+ * `loading` rend un squelette : un « — » muet est indiscernable d'une valeur nulle
+ * réellement mesurée, et c'est la première chose que voit l'exploitant en arrivant.
+ */
 function KpiCard({
   label,
   value,
   tag,
   tagClass = "text-muted-foreground",
+  loading = false,
   children,
 }: {
   label: string;
   value: string;
   tag?: string;
   tagClass?: string;
+  loading?: boolean;
   children?: ReactNode;
 }) {
+  const t = useT();
   return (
     <Card className="p-3.5">
       <div className="text-[11.5px] text-muted-foreground">{label}</div>
-      <div className="mt-1.5 flex items-baseline gap-2">
-        <span className="text-[22px] font-semibold tracking-tight">{value}</span>
-        {tag && <span className={`text-[11px] ${tagClass}`}>{tag}</span>}
-      </div>
-      {children}
+      {loading ? (
+        <>
+          <div className="mt-1.5 flex h-[26px] items-center">
+            <Skeleton className="h-[18px] w-20" />
+            <span className="sr-only">{t("Chargement…", "Loading…")}</span>
+          </div>
+          <Skeleton className="mt-2 h-4 w-full" />
+        </>
+      ) : (
+        <>
+          <div className="mt-1.5 flex items-baseline gap-2">
+            <span className="text-[22px] font-semibold tracking-tight">{value}</span>
+            {tag && <span className={`text-[11px] ${tagClass}`}>{tag}</span>}
+          </div>
+          {children}
+        </>
+      )}
     </Card>
   );
 }
@@ -41,7 +84,8 @@ export function Dashboard() {
   const t = useT();
   const metrics = useResource(useCallback(() => Api.metrics(), []));
   const ops = useResource(useCallback(() => Api.operationalMetrics(), []));
-  const decisions = useResource(useCallback(() => Api.decisions(), []));
+  // Aperçu = 8 lignes : inutile de télécharger les 500 dernières décisions pour ça.
+  const decisions = useResource(useCallback(() => Api.decisions(PREVIEW_ROWS), []));
 
   // Locale de formatage des nombres alignée sur la langue de l'UI (comme Journal).
   const locale = t("fr-FR", "en-US");
@@ -50,14 +94,70 @@ export function Dashboard() {
   const op = opView?.metrics ?? null;
   const series = m?.series ?? [];
   const totals = series.map((d) => d.accepted + d.a_trier);
+  const handled = series.map((d) => d.accepted);
   const aTrier = series.map((d) => d.a_trier);
-  const coverage = series.map((d) =>
-    d.accepted + d.a_trier ? Math.round((d.accepted / (d.accepted + d.a_trier)) * 100) : 0,
-  );
   const pct = (n: number) => (m?.total ? Math.round((n / m.total) * 100) : 0);
+  const num = (n: number) => n.toLocaleString(locale);
+
+  // Coût : le backend arrondit à 4 décimales (« 1.8325 € » à l'écran sans formatage).
+  const cost = m?.cost_eur_last_24h ?? 0;
+  const cap = m?.cost_cap_eur_per_day ?? 0;
+  const money = (v: number) =>
+    `${v.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+  const capPct = cap > 0 ? Math.round((cost / cap) * 100) : null;
+  const overCap = capPct != null && capPct >= 100;
 
   // GET en échec : on le signale au lieu d'afficher des « — » muets partout.
   const loadError = metrics.error ?? ops.error ?? decisions.error;
+  const refreshing = metrics.loading || ops.loading || decisions.loading;
+  const reloadAll = useCallback(() => {
+    metrics.reload();
+    ops.reload();
+    decisions.reload();
+  }, [metrics.reload, ops.reload, decisions.reload]);
+
+  // Motifs de refus : `by_reason` porte aussi `accepted`, qui n'est pas un motif de refus.
+  const reasons = Object.entries(m?.by_reason ?? {}).filter(([r, n]) => r !== "accepted" && n > 0);
+  const reasonTotal = reasons.reduce((s, [, n]) => s + n, 0);
+
+  const metricsLoading = metrics.loading && !m;
+  const opLoading = ops.loading && !opView;
+  const seriesTotal = totals.reduce((s, n) => s + n, 0);
+
+  /**
+   * Tendance — QUATRE états distincts. `daily_series` renvoie toujours 14 points (zéros
+   * compris) : tester `series.length` ne détectait que `data === null`, donc « pas encore
+   * de données » s'affichait pendant le chargement et pendant une erreur, et jamais quand
+   * il n'y avait réellement rien (14 barres invisibles, sans un mot).
+   */
+  let trend: ReactNode;
+  if (metricsLoading) {
+    trend = <Skeleton className="h-[120px] w-full" />;
+  } else if (metrics.error) {
+    trend = (
+      <p className="py-10 text-center text-[12.5px] text-destructive">
+        {t("Tendance indisponible :", "Trend unavailable:")} {metrics.error}
+      </p>
+    );
+  } else if (seriesTotal === 0) {
+    trend = (
+      <EmptyState
+        icon={ListChecks}
+        title={t("Aucun ticket analysé sur 14 jours", "No ticket analyzed in 14 days")}
+        description={t(
+          "Le moteur n'a rien enregistré sur la période. Vérifie que le polling tourne et que GLPI est joignable.",
+          "The engine recorded nothing over the period. Check that polling is running and GLPI is reachable.",
+        )}
+        action={
+          <Link to="/status" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            {t("Voir l'état du moteur", "Check engine status")}
+          </Link>
+        }
+      />
+    );
+  } else {
+    trend = <StackedBars data={series} />;
+  }
 
   return (
     <div className="space-y-4">
@@ -67,39 +167,92 @@ export function Dashboard() {
           {loadError}
         </Banner>
       )}
+
+      {/* Cadrage + rafraîchissement manuel. La page charge UNE fois : afficher un badge
+          « live » au-dessus de compteurs figés était le mensonge le plus visible ici. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-3xl text-[12px] text-muted-foreground">
+          {t(
+            "Compteurs cumulés depuis la mise en service — seule la tendance ci-dessous couvre les 14 derniers jours. Cette page ne se rafraîchit pas toute seule.",
+            "Counters are cumulative since first run — only the trend below covers the last 14 days. This page does not refresh on its own.",
+          )}
+        </p>
+        <Button variant="outline" size="sm" onClick={reloadAll} disabled={refreshing}>
+          <RefreshCw className={`h-4 w-4${refreshing ? " animate-spin" : ""}`} />{" "}
+          {refreshing ? t("Vérification…", "Checking…") : t("Rafraîchir", "Refresh")}
+        </Button>
+      </div>
+
       {/* 5 cartes KPI */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard
           label={t("Tickets analysés", "Analyzed tickets")}
-          value={m ? m.total.toLocaleString(locale) : "—"}
+          value={m ? num(m.total) : "—"}
+          loading={metricsLoading}
         >
           <Sparkline values={totals} />
         </KpiCard>
         <KpiCard
           label={t("Traités", "Handled")}
-          value={m ? m.accepted.toLocaleString(locale) : "—"}
+          value={m ? num(m.accepted) : "—"}
           tag={m ? `${pct(m.accepted)}%` : undefined}
           tagClass="text-success"
+          loading={metricsLoading}
         >
-          <Sparkline values={coverage} />
+          {/* Décompte quotidien des traités — la sparkline traçait un POURCENTAGE
+              (`coverage`) sous une valeur annoncée en nombre de tickets. */}
+          <Sparkline values={handled} />
         </KpiCard>
         <KpiCard
           label={t("À trier", "To triage")}
-          value={m ? m.a_trier.toLocaleString(locale) : "—"}
+          value={m ? num(m.a_trier) : "—"}
           tag={m ? `${pct(m.a_trier)}%` : undefined}
+          tagClass="text-warning"
+          loading={metricsLoading}
         >
           <Sparkline values={aTrier} />
         </KpiCard>
         <KpiCard
           label={t("Coût LLM (24 h)", "LLM cost (24h)")}
-          value={m ? `${m.cost_eur_last_24h} €` : "—"}
-          tag={m ? `${t("plafond", "cap")} ${m.cost_cap_eur_per_day} €` : undefined}
+          value={m ? money(cost) : "—"}
+          tag={
+            m
+              ? capPct != null
+                ? `${capPct}% ${t("du plafond", "of cap")}`
+                : t("sans plafond", "no cap")
+              : undefined
+          }
+          tagClass={overCap ? "text-destructive" : "text-muted-foreground"}
+          loading={metricsLoading}
         >
-          <Sparkline values={totals} />
+          {/* Il n'existe AUCUNE série de coût côté API : la sparkline d'origine traçait
+              ici la série tickets/jour. Une jauge vers le plafond dit, elle, la vérité. */}
+          <div className="mt-3 space-y-1">
+            {cap > 0 ? (
+              <>
+                <ProgressBar
+                  ratio={cost / cap}
+                  tone={
+                    overCap ? "destructive" : capPct != null && capPct >= 80 ? "warning" : "primary"
+                  }
+                />
+                <div className="text-[10.5px] text-muted-foreground">
+                  {t("plafond", "cap")} {money(cap)}/{t("jour", "day")}
+                </div>
+              </>
+            ) : (
+              <div className="text-[10.5px] text-muted-foreground">
+                {t("aucun plafond configuré", "no cap configured")}
+              </div>
+            )}
+          </div>
         </KpiCard>
         <KpiCard
           label={t("Confiance moy.", "Avg. confidence")}
-          value={m?.avg_confidence != null ? m.avg_confidence.toFixed(2) : "—"}
+          // Pourcentage comme dans le Journal et la Sandbox : « 0.87 » ici et « 87% »
+          // ailleurs pour la même grandeur oblige le lecteur à convertir de tête.
+          value={m?.avg_confidence != null ? `${Math.round(m.avg_confidence * 100)}%` : "—"}
+          loading={metricsLoading}
         >
           <div className="mt-3">
             <ProgressBar ratio={m?.avg_confidence ?? 0} />
@@ -108,31 +261,80 @@ export function Dashboard() {
       </div>
 
       {/* Tendance 14 jours */}
-      <Card className="p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <div className="text-[13px] font-medium">
-              {t("Tendance sur 14 jours", "14-day trend")}
+      <Card className="overflow-hidden">
+        <PanelHead
+          title={t("Tendance sur 14 jours", "14-day trend")}
+          subtitle={t("Tickets · traités vs à trier", "Tickets · handled vs to triage")}
+          right={
+            <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-primary" />
+                {t("Traités", "Handled")}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-warning/80" />
+                {t("À trier", "To triage")}
+              </span>
             </div>
-            <div className="text-[11px] text-muted-foreground">
-              {t("Tickets · traités vs à trier", "Tickets · handled vs to triage")}
-            </div>
+          }
+        />
+        <div className="p-4">{trend}</div>
+      </Card>
+
+      {/* Pourquoi les tickets partent « à trier » — `by_reason` est la seule donnée
+          actionnable servie par /api/metrics, et elle était jetée. */}
+      <Card className="overflow-hidden">
+        <PanelHead
+          title={t("Pourquoi ces tickets sont « à trier »", "Why these tickets are “to triage”")}
+          subtitle={
+            m
+              ? `${t("Couverture utile", "Useful coverage")} ${Math.round(m.useful_coverage * 100)}% · ${num(m.a_trier)} ${t("à trier sur", "to triage out of")} ${num(m.total)}`
+              : t("Motifs de refus du moteur", "Engine refusal reasons")
+          }
+        />
+        {metricsLoading ? (
+          <div className="space-y-3 p-4">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-full" />
           </div>
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: "#6366f1" }} />
-              {t("Traités", "Handled")}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-sm" style={{ background: "#3d3f8a" }} />
-              {t("À trier", "To triage")}
-            </span>
+        ) : metrics.error ? (
+          <p className="px-4 py-8 text-center text-[12.5px] text-destructive">
+            {t("Motifs indisponibles :", "Reasons unavailable:")} {metrics.error}
+          </p>
+        ) : reasons.length === 0 ? (
+          <div className="px-4 py-8">
+            <EmptyState
+              icon={ListChecks}
+              title={t("Aucun ticket « à trier »", "No ticket left “to triage”")}
+              description={t(
+                "Tous les tickets analysés ont été tranchés par le moteur.",
+                "Every analyzed ticket was decided by the engine.",
+              )}
+            />
           </div>
-        </div>
-        {series.length ? (
-          <StackedBars data={series} />
         ) : (
-          <EmptyState icon={ListChecks} title={t("Pas encore de données", "No data yet")} />
+          <ul className="divide-y divide-border">
+            {reasons.map(([reason, n]) => {
+              const share = Math.round((n / reasonTotal) * 100);
+              return (
+                <li key={reason} className="flex items-center gap-3 px-4 py-2.5 text-[12.5px]">
+                  <span className="w-48 shrink-0 truncate" title={reasonLabel(reason, t)}>
+                    {reasonLabel(reason, t)}
+                  </span>
+                  <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
+                    <span
+                      className={cn("block h-full rounded-full", REASON_BAR[reasonTone(reason)])}
+                      style={{ width: `${Math.max(2, share)}%` }}
+                    />
+                  </span>
+                  <span className="w-28 shrink-0 text-right font-mono text-[12px] text-muted-foreground">
+                    {num(n)} · {share}%
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </Card>
 
@@ -140,92 +342,125 @@ export function Dashboard() {
       <Card className="overflow-hidden">
         <PanelHead
           title={t("Journal des décisions", "Decision journal")}
-          right={<span className="font-mono text-[11px] text-muted-foreground">live</span>}
+          subtitle={t(`${PREVIEW_ROWS} dernières décisions`, `Last ${PREVIEW_ROWS} decisions`)}
+          right={
+            <Link to="/journal" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              {t("Ouvrir le journal", "Open journal")}
+            </Link>
+          }
         />
-        <div className="text-[12px]">
-          <div
-            className="grid gap-3 border-b border-border px-4 py-2 text-[11px] uppercase text-muted-foreground"
-            style={{
-              gridTemplateColumns: "72px 1fr 150px 130px 48px 100px 60px",
-              letterSpacing: "0.08em",
-            }}
-          >
-            <span>{t("Ticket", "Ticket")}</span>
-            <span>{t("Sujet", "Subject")}</span>
-            <span>{t("Catégorie", "Category")}</span>
-            <span>{t("Routage", "Routing")}</span>
-            <span>{t("Urg.", "Urg.")}</span>
-            <span>{t("Statut", "Status")}</span>
-            <span>{t("Conf.", "Conf.")}</span>
-          </div>
-          {(decisions.data ?? []).slice(0, 8).map((d, i, arr) => (
-            <div
-              key={d.id}
-              className={`grid items-center gap-3 px-4 py-2 ${i < arr.length - 1 ? "border-b border-border" : ""}`}
-              style={{ gridTemplateColumns: "72px 1fr 150px 130px 48px 100px 60px" }}
-            >
-              <span className="font-mono">
-                {d.glpi_link ? (
-                  <a
-                    className="text-primary hover:underline"
-                    href={d.glpi_link}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    #{d.ticket_id}
-                  </a>
-                ) : (
-                  <span className="text-muted-foreground">#{d.ticket_id}</span>
-                )}
-              </span>
-              <span className="truncate" title={d.subject}>
-                {d.subject && d.glpi_link ? (
-                  <a
-                    className="text-primary hover:underline"
-                    href={d.glpi_link}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {d.subject}
-                  </a>
-                ) : (
-                  d.subject || d.annotation || "—"
-                )}
-              </span>
-              <span className="truncate text-muted-foreground" title={d.category_name ?? undefined}>
-                {d.category_name ?? (d.category != null ? `#${d.category}` : "—")}
-              </span>
-              <span className="truncate">
-                {d.technician_id != null ? (
-                  <Tag tone="indigo">{d.technician_name ?? `T#${d.technician_id}`}</Tag>
-                ) : d.group_id != null ? (
-                  <Tag tone="indigo">{d.group_name ?? `G#${d.group_id}`}</Tag>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </span>
-              <span className="font-mono text-muted-foreground">{d.urgency ?? "—"}</span>
-              <span>
-                {d.accepted ? (
-                  <Tag tone="green">{t("traité", "handled")}</Tag>
-                ) : (
-                  <Tag tone="amber">{t("à trier", "to triage")}</Tag>
-                )}
-              </span>
-              <span className="font-mono">
-                {d.confidence != null ? d.confidence.toFixed(2) : "—"}
-              </span>
-            </div>
-          ))}
-          {decisions.data?.length === 0 && (
-            <div className="px-4 py-8">
-              <EmptyState
-                icon={ListChecks}
-                title={t("Aucune décision pour le moment", "No decisions yet")}
-              />
-            </div>
-          )}
+        {/* La grille a un plancher d'environ 660px : sans conteneur défilable, les colonnes
+            Statut et Confiance sont coupées par l'`overflow-hidden` de la Card sous ~1000px
+            de fenêtre — information inaccessible, sans même une barre de défilement. */}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-[12px]">
+            <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+              <tr>
+                <th className="w-[72px] px-4 py-2 text-left font-medium">
+                  {t("Ticket", "Ticket")}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">{t("Sujet", "Subject")}</th>
+                <th className="w-[150px] px-4 py-2 text-left font-medium">
+                  {t("Catégorie", "Category")}
+                </th>
+                <th className="w-[140px] px-4 py-2 text-left font-medium">
+                  {t("Routage", "Routing")}
+                </th>
+                <th className="w-[56px] px-4 py-2 text-left font-medium">{t("Urg.", "Urg.")}</th>
+                <th className="w-[100px] px-4 py-2 text-left font-medium">
+                  {t("Statut", "Status")}
+                </th>
+                <th className="w-[72px] px-4 py-2 text-left font-medium">{t("Conf.", "Conf.")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {decisions.loading && !decisions.data
+                ? [0, 1, 2, 3].map((i) => (
+                    <tr key={i} className="border-b border-border last:border-0">
+                      <td className="px-4 py-2.5" colSpan={7}>
+                        <Skeleton className="h-3 w-full" />
+                      </td>
+                    </tr>
+                  ))
+                : (decisions.data ?? []).slice(0, PREVIEW_ROWS).map((d) => (
+                    <tr key={d.id} className="border-b border-border last:border-0">
+                      <td className="px-4 py-2 font-mono">
+                        {d.glpi_link ? (
+                          <a
+                            className="text-primary hover:underline"
+                            href={d.glpi_link}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            #{d.ticket_id}
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground">#{d.ticket_id}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="max-w-[280px] truncate" title={d.subject}>
+                          {d.subject && d.glpi_link ? (
+                            <a
+                              className="text-primary hover:underline"
+                              href={d.glpi_link}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {d.subject}
+                            </a>
+                          ) : (
+                            d.subject || d.annotation || "—"
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 text-muted-foreground">
+                        <div className="truncate" title={d.category_name ?? undefined}>
+                          {d.category_name ?? (d.category != null ? `#${d.category}` : "—")}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="truncate">
+                          {d.technician_id != null ? (
+                            <Tag tone="indigo">{d.technician_name ?? `T#${d.technician_id}`}</Tag>
+                          ) : d.group_id != null ? (
+                            <Tag tone="indigo">{d.group_name ?? `G#${d.group_id}`}</Tag>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 font-mono text-muted-foreground">
+                        {d.urgency ?? "—"}
+                      </td>
+                      <td className="px-4 py-2">
+                        {d.accepted ? (
+                          <Tag tone="green">{t("traité", "handled")}</Tag>
+                        ) : (
+                          <Tag tone="amber">{t("à trier", "to triage")}</Tag>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 font-mono">
+                        {/* Pourcentage : le Journal affiche « 87% » pour la même grandeur. */}
+                        {d.confidence != null ? `${Math.round(d.confidence * 100)}%` : "—"}
+                      </td>
+                    </tr>
+                  ))}
+            </tbody>
+          </table>
         </div>
+        {decisions.data?.length === 0 && (
+          <div className="px-4 py-8">
+            <EmptyState
+              icon={ScrollText}
+              title={t("Aucune décision pour le moment", "No decisions yet")}
+              description={t(
+                "Les tickets traités et les « à trier » s'afficheront ici.",
+                "Handled tickets and “to triage” entries will appear here.",
+              )}
+            />
+          </div>
+        )}
       </Card>
 
       {/* Opérationnel GLPI (FR-23) — métriques d'équipe, jamais par personne */}
@@ -279,9 +514,16 @@ export function Dashboard() {
                       : t("aucune échéance SLA dans GLPI", "no SLA deadline in GLPI"),
                 },
                 {
+                  // `reassignment_rate` / `reassignment_available` sont servis : un « n/d »
+                  // codé en dur mentait dès que l'historique GLPI était lisible.
                   label: t("Réaffectation", "Reassignment"),
-                  value: "n/d",
-                  hint: t("historique GLPI requis (Log)", "GLPI history required (Log)"),
+                  value:
+                    op?.reassignment_rate != null
+                      ? `${Math.round(op.reassignment_rate * 100)}%`
+                      : t("n/d", "n/a"),
+                  hint: op?.reassignment_available
+                    ? t("part des tickets réassignés", "share of reassigned tickets")
+                    : t("historique GLPI requis (Log)", "GLPI history required (Log)"),
                 },
                 {
                   label: t("Anomalies", "Anomalies"),
@@ -292,10 +534,14 @@ export function Dashboard() {
                 },
               ].map((s) => (
                 <div key={s.label} className="bg-card p-4">
-                  <div className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
+                  <div className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
                     {s.label}
                   </div>
-                  <div className="mt-1.5 text-[22px] font-semibold tracking-tight">{s.value}</div>
+                  {opLoading ? (
+                    <Skeleton className="mt-1.5 h-[18px] w-16" />
+                  ) : (
+                    <div className="mt-1.5 text-[22px] font-semibold tracking-tight">{s.value}</div>
+                  )}
                   {s.hint && (
                     <div className="mt-0.5 text-[11px] text-muted-foreground">{s.hint}</div>
                   )}
@@ -304,7 +550,7 @@ export function Dashboard() {
             </div>
             {op && op.anomalies.length > 0 && (
               <div className="border-t border-border">
-                {op.anomalies.map((a) => (
+                {op.anomalies.slice(0, ANOMALY_LIMIT).map((a) => (
                   <div
                     key={`${a.ticket_id}-${a.kind}`}
                     className="flex items-center gap-3 border-b border-border/50 px-4 py-2 text-[12.5px] last:border-0"
@@ -324,11 +570,18 @@ export function Dashboard() {
                     <Tag tone={a.kind === "sla_breached" ? "red" : "amber"}>
                       {a.kind === "sla_breached"
                         ? t("SLA dépassé", "SLA breached")
-                        : t("« New » ancien", "stale « New »")}
+                        : t("« New » ancien", "stale “New”")}
                     </Tag>
                     <span className="truncate text-muted-foreground">{a.detail}</span>
                   </div>
                 ))}
+                {/* Borne : 300 SLA dépassés ne déroulent pas 300 lignes sur l'accueil. */}
+                {op.anomalies.length > ANOMALY_LIMIT && (
+                  <div className="border-t border-border px-4 py-2 text-[12px] text-muted-foreground">
+                    + {num(op.anomalies.length - ANOMALY_LIMIT)}{" "}
+                    {t("autres anomalies", "other anomalies")}
+                  </div>
+                )}
               </div>
             )}
           </>

@@ -7,11 +7,15 @@ d'utiliser — catégories/entités du périmètre, techniciens/groupes éligibl
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import update
 from sqlmodel import Session
 
 from ...domain import skills as domain_skills
+from ...persistence.tables import ReferentialCache
 from ...services import referentials
 from ...services.runtime_config import RuntimeConfigService
 from ..deps import get_config_service, get_session
@@ -34,6 +38,12 @@ class RefItem(BaseModel):
     # Cible de repli (entités) : acteur assigné quand le garde-fou refuse une Décision.
     fallback_group_id: int | None = None
     fallback_technician_id: int | None = None
+    # Date du DERNIER SCAN GLPI qui a vu cet objet. Exposée parce que la console n'avait
+    # aucun moyen de dire de quand datait le cache : un technicien parti il y a trois mois
+    # restait proposé au routage sans que rien ne signale que la liste était périmée.
+    # Côté serveur uniquement — un repli `localStorage` mentirait sur une console partagée
+    # (chaque navigateur aurait « sa » date de dernière synchro).
+    updated_at: datetime | None = None
 
 
 class SyncResult(BaseModel):
@@ -73,7 +83,21 @@ def _item(row) -> RefItem:
         mode=getattr(row, "mode", None), auto_min_confidence=getattr(row, "auto_min_confidence", None),
         fallback_group_id=getattr(row, "fallback_group_id", None),
         fallback_technician_id=getattr(row, "fallback_technician_id", None),
+        updated_at=getattr(row, "updated_at", None),
     )
+
+
+def _stamp_scan_time(session: Session) -> None:
+    """Horodate TOUT le cache au scan — sinon `updated_at` daterait de la CRÉATION des lignes.
+
+    `referentials.sync` ne réécrit que les noms : sur une instance scannée chaque semaine
+    mais dont GLPI ne bouge pas, aucune ligne n'est modifiée et l'horodatage resterait
+    figé au tout premier scan. La console afficherait alors « référentiels anciens » sur
+    des référentiels frais — un faux signal est pire que pas de signal. Ce qu'on veut
+    exposer, c'est la fraîcheur du SCAN, pas la date de naissance des lignes.
+    """
+    session.execute(update(ReferentialCache).values(updated_at=datetime.now(UTC)))
+    session.commit()
 
 
 @router.post("/glpi/sync", response_model=SyncResult)
@@ -87,6 +111,7 @@ async def sync_glpi(request: Request, session: Session = Depends(get_session)) -
     except Exception as exc:  # noqa: BLE001 — surface en message clair
         return SyncResult(ok=False, detail=f"Échec du scan GLPI : {exc}")
     counts = referentials.sync(session, refs)
+    _stamp_scan_time(session)
     return SyncResult(ok=True, detail="Référentiels synchronisés.", counts=counts)
 
 

@@ -88,6 +88,56 @@ def test_sync_requires_glpi_configured(client):
     assert client.post("/api/glpi/sync").status_code == 409
 
 
+def test_discovery_expose_la_fraicheur_du_cache(client):
+    """La console doit pouvoir dire de QUAND date la liste qu'elle affiche.
+
+    Sans cet horodatage, un technicien parti il y a trois mois reste proposé au routage
+    et rien à l'écran ne signale que le cache est périmé.
+    """
+    _seed_cache()
+    techs = client.get("/api/discovery/technician").json()
+    assert all(t["updated_at"] for t in techs)
+
+
+def test_un_scan_rafraichit_l_horodatage_meme_sans_changement(client, monkeypatch):
+    """Un scan qui ne change RIEN doit quand même rajeunir le cache.
+
+    C'est le cas courant : GLPI ne bouge pas d'une semaine sur l'autre. Si seul un vrai
+    changement horodatait, la console crierait « référentiels anciens » sur des
+    référentiels scannés le matin même.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from itsm_modern_ai.api.routes import referentials as route
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import ReferentialCache
+
+    _seed_cache()
+    vieux = datetime.now(UTC) - timedelta(days=90)
+    with db.session_scope() as s:
+        from sqlalchemy import update as sa_update
+
+        s.execute(sa_update(ReferentialCache).values(updated_at=vieux))
+        s.commit()
+
+    class _Connector:
+        async def get_referentials(self):
+            # Exactement le même contenu que le scan précédent : aucune ligne modifiée.
+            return Referentials(
+                categories={1: "Compte", 2: "RH"},
+                technicians={11: "Sylvain", 12: "Nadia"},
+                groups={5: "Support N2"},
+                entities={0: "Racine"},
+            )
+
+    monkeypatch.setattr(route, "build_connector", lambda *a, **k: _Connector())
+    body = client.post("/api/glpi/sync").json()
+    assert body["ok"] is True and body["counts"]["technician"] == 2
+
+    horodatage = client.get("/api/discovery/technician").json()[0]["updated_at"]
+    assert datetime.fromisoformat(horodatage) > vieux + timedelta(days=1)
+
+
 def test_metrics_endpoint(client):
     body = client.get("/api/metrics").json()
     assert body["total"] == 0 and body["cost_cap_eur_per_day"] == 5.0

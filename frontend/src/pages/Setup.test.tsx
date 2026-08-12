@@ -94,6 +94,69 @@ describe("Setup — première installation", () => {
     }
   });
 
+  it("dit la fenêtre de revendication à la seule personne qui peut la refermer", async () => {
+    // Le moteur le journalise à chaque démarrage ; personne ne lit les journaux pendant
+    // une première installation. Ce risque est ASSUMÉ — il doit être dit, pas édulcoré.
+    renderSetup();
+    await form();
+    expect(
+      screen.getByText(/n'importe qui atteignant ce port peut revendiquer l'instance/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/ni jeton d'amorçage ni délai/)).toBeInTheDocument();
+    expect(screen.getByText(/avant d'exposer ce port au-delà du réseau local/)).toBeInTheDocument();
+  });
+
+  it("lève l'erreur d'email dès que le champ change (et avec elle aria-invalid)", async () => {
+    renderSetup();
+    const user = await fill({
+      email: "pas-un-email",
+      password: "correct-cheval-pile",
+      confirm: "correct-cheval-pile",
+    });
+    await user.click(submitButton());
+    expect(await screen.findByText("Adresse email invalide.")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Adresse email"), "@exemple.fr");
+    expect(screen.queryByText("Adresse email invalide.")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Adresse email")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("lève l'erreur de confirmation dès qu'on corrige la frappe", async () => {
+    renderSetup();
+    const user = await fill({
+      email: "admin@exemple.fr",
+      password: "correct-cheval-pile",
+      confirm: "correct-cheval-pilf",
+    });
+    await user.click(submitButton());
+    expect(
+      await screen.findByText("Les deux mots de passe ne correspondent pas."),
+    ).toBeInTheDocument();
+    const field = screen.getByLabelText("Confirmation du mot de passe");
+    await user.type(field, "e");
+    expect(
+      screen.queryByText("Les deux mots de passe ne correspondent pas."),
+    ).not.toBeInTheDocument();
+    expect(field).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("lève l'erreur serveur portée par un champ dès qu'on y retouche", async () => {
+    vi.mocked(Api.setup).mockRejectedValue(
+      new ApiError(422, {
+        detail: { code: "invalid_password", message: "Mot de passe refusé par le moteur." },
+      }),
+    );
+    renderSetup();
+    const user = await fill({
+      email: "admin@exemple.fr",
+      password: "correct-cheval-pile",
+      confirm: "correct-cheval-pile",
+    });
+    await user.click(submitButton());
+    await screen.findByText("Mot de passe refusé par le moteur.");
+    await user.type(screen.getByLabelText("Mot de passe"), "!");
+    expect(screen.queryByText("Mot de passe refusé par le moteur.")).not.toBeInTheDocument();
+  });
+
   it("crée le compte et arrive sur le tableau de bord", async () => {
     vi.mocked(Api.setup).mockResolvedValue({
       authenticated: true,

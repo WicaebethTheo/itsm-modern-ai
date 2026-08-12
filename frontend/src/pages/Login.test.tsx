@@ -116,6 +116,65 @@ describe("Login", () => {
     expect(screen.queryByText("PAGE-INSTALLATION")).not.toBeInTheDocument();
   });
 
+  it("verrouille l'envoi et décompte l'attente sur un 429", async () => {
+    // Le moteur renvoie Retry-After ; sans décompte, le bouton reste actif et l'admin
+    // martèle — chaque coup rallonge le blocage.
+    vi.mocked(Api.login).mockRejectedValue(
+      new ApiError(
+        429,
+        { detail: { code: "too_many_attempts", message: "Trop de tentatives." } },
+        45,
+      ),
+    );
+    renderLogin();
+    await signIn("admin@exemple.fr", "mauvais");
+    expect(await screen.findByText(/Réessayez dans 45 secondes/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Réessayez dans 45 s/ })).toBeDisabled();
+  });
+
+  it("n'envoie rien au moteur quand l'email est vide (une tentative brûlée pour rien)", async () => {
+    renderLogin();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Mot de passe"), "s3cretaire");
+    await user.click(screen.getByRole("button", { name: "Se connecter" }));
+    expect(await screen.findByText("Renseignez votre adresse email.")).toBeInTheDocument();
+    expect(Api.login).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByLabelText("Adresse email"));
+  });
+
+  it("n'envoie rien non plus quand le mot de passe est vide, et vise le bon champ", async () => {
+    renderLogin();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Adresse email"), "admin@exemple.fr");
+    await user.click(screen.getByRole("button", { name: "Se connecter" }));
+    expect(await screen.findByText("Renseignez votre mot de passe.")).toBeInTheDocument();
+    expect(Api.login).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByLabelText("Mot de passe"));
+  });
+
+  it("ne dit toujours RIEN de plus sur un 401 : email inconnu et mot de passe faux se confondent", async () => {
+    // La garde locale ci-dessus ne porte que sur les champs VIDES. Elle ne doit pas
+    // réintroduire côté client la distinction que le backend paie pour ne pas faire.
+    vi.mocked(Api.login).mockRejectedValue(new ApiError(401, null));
+    renderLogin();
+    await signIn("inconnu@exemple.fr", "peu-importe");
+    const first = await screen.findByText("Identifiants incorrects.");
+    expect(first).toBeInTheDocument();
+    expect(screen.queryByText(/inconnu|introuvable|n'existe pas/i)).not.toBeInTheDocument();
+  });
+
+  it("donne le SEUL chemin de récupération, replié par défaut", async () => {
+    renderLogin();
+    const summary = await screen.findByText("Mot de passe oublié ?");
+    const details = summary.closest("details");
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute("open");
+    expect(
+      screen.getByText("docker compose exec itsm python -m itsm_modern_ai.admin_setup --force"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/pas de réinitialisation par email/)).toBeInTheDocument();
+  });
+
   it("place le focus sur le champ email et annonce le bon autocomplete", async () => {
     renderLogin();
     await waitFor(() =>

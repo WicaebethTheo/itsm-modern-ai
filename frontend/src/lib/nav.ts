@@ -54,7 +54,19 @@ export const NAV: NavSection[] = [
   },
 ];
 
-const ALL = NAV.flatMap((s) => s.items);
+/**
+ * Pages atteignables SANS entrée de sidebar (elles ont leur propre porte d'accès) mais qui
+ * doivent quand même donner un titre à la topbar.
+ *
+ * `/account` s'ouvre depuis le menu de compte, en haut à droite : la republier dans la
+ * sidebar ajouterait une ligne de navigation permanente pour un écran qu'on visite deux
+ * fois par an. Elle reste néanmoins une page à part entière — d'où sa présence ici.
+ */
+export const OFF_SIDEBAR: NavItem[] = [
+  { to: "/account", fr: "Compte & sécurité", en: "Account & security" },
+];
+
+const ALL = [...NAV.flatMap((s) => s.items), ...OFF_SIDEBAR];
 
 /** Retrouve l'entrée de nav correspondant à un pathname (pour le titre de la topbar). */
 export function navByPath(pathname: string): NavItem | undefined {

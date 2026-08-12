@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ToastProvider } from "@/components/ui/toast";
 import { DEMO } from "@/lib/api";
+import { Account } from "@/pages/Account";
 import { AiProvider } from "@/pages/AiProvider";
 import { Automations } from "@/pages/Automations";
 import { CostQuotas } from "@/pages/CostQuotas";
@@ -52,6 +53,8 @@ export default function App() {
             <Route path="store" element={<Store />} />
             <Route path="automations" element={<Automations />} />
             <Route path="debug" element={<Debug />} />
+            {/* Hors sidebar : accessible depuis le menu de compte de la topbar. */}
+            <Route path="account" element={<Account />} />
           </Route>
         </Routes>
       </ToastProvider>

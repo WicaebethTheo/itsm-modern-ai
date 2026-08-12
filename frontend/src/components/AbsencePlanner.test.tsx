@@ -171,6 +171,29 @@ describe("Résumé de disponibilité", () => {
     expect(screen.getByText(/1 absence\(s\) à venir/)).toBeInTheDocument();
   });
 
+  it("montre les absences à venir MÊME quand quelqu'un est déjà absent", async () => {
+    // Le bloc « à venir » était enfermé dans la branche « personne n'est absent
+    // aujourd'hui » : un seul absent du jour masquait toute la semaine à venir, sur la
+    // seule vue qui sert à planifier. Les deux informations sont indépendantes.
+    vi.mocked(Api.absences).mockResolvedValue([
+      absence(),
+      absence({
+        id: 2,
+        technician_ext_id: 12,
+        technician_name: "Nadia",
+        replacement_ext_id: 11,
+        replacement_name: "Adrien",
+        start_date: "2099-01-05",
+        end_date: "2099-01-09",
+        active: false,
+      }),
+    ]);
+    renderWithToast(<AbsencePlanner />);
+    expect(await screen.findByText(/Absent\(s\) aujourd'hui/)).toBeInTheDocument();
+    expect(screen.getByText(/1 absence\(s\) à venir/)).toBeInTheDocument();
+    expect(screen.getByText(/prochaine : Nadia/)).toBeInTheDocument();
+  });
+
   it("nomme le domaine qui tombe parce que la seule personne qui le tient est absente", async () => {
     // LE risque métier : Adrien est seul sur « Réseau », il part, personne ne le remplace →
     // tout ticket réseau partira « à trier ». C'est ce croisement qui donne son sens à l'écran.

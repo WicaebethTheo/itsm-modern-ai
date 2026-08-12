@@ -94,6 +94,16 @@ export function Setup() {
     return () => clearInterval(id);
   }, [retryIn]);
 
+  /**
+   * Une erreur de champ tombe dès que le champ change — pas au prochain envoi. Sinon on
+   * corrige sa faute de frappe et le rouge reste, `aria-invalid="true"` avec lui : l'écran
+   * a l'air cassé et un lecteur d'écran annonce un champ invalide qui ne l'est plus.
+   * (La longueur du mot de passe suit la même règle, portée par `tooShort`.)
+   */
+  const clearFieldError = useCallback((key: keyof FieldErrors) => {
+    setFieldErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+  }, []);
+
   function validate(): FieldErrors {
     const errs: FieldErrors = {};
     if (!EMAIL_RE.test(email.trim())) {
@@ -286,6 +296,25 @@ export function Setup() {
           </p>
         </div>
 
+        {/* La fenêtre de revendication, dite à la SEULE personne qui peut la refermer.
+            Le moteur l'écrit dans ses journaux à chaque démarrage ; personne ne les lit
+            pendant une première installation. Ton d'avertissement, pas d'alarme : le
+            geste demandé (créer le compte, maintenant) EST la contre-mesure. */}
+        <Banner kind="warning">
+          <p className="font-medium">
+            {t(
+              "Tant que ce compte n'existe pas, n'importe qui atteignant ce port peut revendiquer l'instance.",
+              "Until this account exists, anyone who can reach this port can claim the instance.",
+            )}
+          </p>
+          <p className="mt-1 leading-relaxed">
+            {t(
+              "Il n'y a ni jeton d'amorçage ni délai qui protège cet écran : c'est un choix délibéré, pour qu'aucun secret ne circule hors de votre réseau. Créez donc le compte maintenant, avant d'exposer ce port au-delà du réseau local.",
+              "No bootstrap token and no time window protects this screen: that is a deliberate choice, so that no secret ever travels outside your network. So create the account now, before exposing this port beyond the local network.",
+            )}
+          </p>
+        </Banner>
+
         {/* Erreurs d'envoi : une seule zone, annoncée dès qu'elle change. */}
         <div aria-live="assertive" className="empty:hidden">
           {error && (
@@ -324,7 +353,10 @@ export function Setup() {
               placeholder="admin@exemple.fr"
               aria-invalid={fieldErrors.email ? true : undefined}
               aria-describedby={fieldErrors.email ? "setup-email-error" : undefined}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clearFieldError("email");
+              }}
               disabled={busy || conflict}
             />
             {fieldErrors.email && (
@@ -374,6 +406,7 @@ export function Setup() {
                 onChange={(e) => {
                   setPassword(e.target.value);
                   if (tooShort) setTooShort(e.target.value.length < MIN_PASSWORD_CHARS);
+                  clearFieldError("password");
                 }}
                 disabled={busy || conflict}
               />
@@ -415,7 +448,10 @@ export function Setup() {
               autoComplete="new-password"
               aria-invalid={fieldErrors.confirm ? true : undefined}
               aria-describedby={fieldErrors.confirm ? "setup-confirm-error" : undefined}
-              onChange={(e) => setConfirm(e.target.value)}
+              onChange={(e) => {
+                setConfirm(e.target.value);
+                clearFieldError("confirm");
+              }}
               disabled={busy || conflict}
             />
             {fieldErrors.confirm && (

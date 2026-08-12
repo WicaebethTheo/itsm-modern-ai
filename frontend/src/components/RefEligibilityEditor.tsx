@@ -1,8 +1,17 @@
-import { CheckCircle2, Search, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  CheckSquare,
+  Loader2,
+  Search,
+  Square,
+  Users,
+} from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { Banner } from "@/components/Banner";
 import { EmptyState } from "@/components/EmptyState";
 import { SkillCoverageBanner } from "@/components/SkillCoverage";
-import { SyncButton } from "@/components/SyncButton";
+import { dernierScan, SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -140,6 +149,50 @@ export function RefEligibilityEditor({
 
   const eligibleCount = items.filter((r) => draft[r.ext_id]?.eligible ?? r.eligible).length;
 
+  // Ce qui est modifié À L'ÉCRAN et pas encore enregistré. Sans ce compteur, le bouton
+  // « Enregistrer » ne disait ni s'il y avait quelque chose à enregistrer, ni combien de
+  // fiches étaient en jeu — et il vivait sous soixante fiches dépliées, hors du champ.
+  const modifies = useMemo(
+    () =>
+      items.filter((r) => {
+        const d = draft[r.ext_id];
+        if (!d) return false;
+        const tags = [...(r.skill_tags ?? [])].sort().join(",");
+        return (
+          d.eligible !== r.eligible ||
+          d.skills !== r.skills ||
+          [...d.skill_tags].sort().join(",") !== tags
+        );
+      }).length,
+    [items, draft],
+  );
+
+  /**
+   * Cochage en masse — sur la liste FILTRÉE, jamais sur tout le référentiel.
+   *
+   * Le piège évident : chercher « réseau », cliquer « Tout sélectionner » et rendre
+   * éligibles les 200 techniciens de l'instance. Le bouton porte donc le nombre d'affichés,
+   * et n'agit que sur eux : les lignes masquées par le filtre gardent leur état.
+   */
+  function basculerAffiches() {
+    const tous = filtered.every((r) => draft[r.ext_id]?.eligible ?? r.eligible);
+    setDraft((d) => {
+      const next = { ...d };
+      for (const r of filtered) {
+        const actuel = next[r.ext_id] ?? {
+          eligible: r.eligible,
+          skills: r.skills,
+          skill_tags: r.skill_tags ?? [],
+        };
+        next[r.ext_id] = { ...actuel, eligible: !tous };
+      }
+      return next;
+    });
+  }
+
+  const tousAffichesCoches =
+    filtered.length > 0 && filtered.every((r) => draft[r.ext_id]?.eligible ?? r.eligible);
+
   // Couverture par domaine telle qu'elle est À L'ÉCRAN (brouillon compris) : le bandeau
   // de diagnostic doit réagir à la case qu'on vient de cocher, pas à l'état enregistré.
   const liveCoverage = useMemo(() => {
@@ -197,25 +250,88 @@ export function RefEligibilityEditor({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-[12px] text-muted-foreground">{desc}</p>
-        <SyncButton onSynced={res.reload} />
+        <SyncButton onSynced={res.reload} lastSync={dernierScan(items)} />
       </div>
 
-      {/* Tant qu'aucun acteur n'est éligible, la carte annoncerait « 14 domaines non
-          couverts » : c'est du bruit sur une instance qu'on vient de scanner, pas un
-          diagnostic. Elle n'apparaît qu'une fois la configuration commencée. */}
-      {eligibleCount > 0 && <SkillCoverageBanner kind={kind} live={liveCoverage} />}
+      {/* Une lecture en échec ne doit PAS ressembler à une instance jamais scannée : sans
+          ce bandeau, un /api/discovery en 500 affichait « Scannez GLPI pour lister… »,
+          l'admin rescannait, ça échouait encore, et rien ne disait pourquoi. */}
+      {res.error && (
+        <Banner kind="error">
+          <span className="flex items-start gap-1.5">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              <strong>
+                {t(
+                  "Impossible de lire les référentiels — vérifiez la connexion GLPI.",
+                  "Cannot read referentials — check the GLPI connection.",
+                )}
+              </strong>{" "}
+              <span className="opacity-80">{res.error}</span>
+            </span>
+          </span>
+        </Banner>
+      )}
 
-      {items.length === 0 ? (
+      {/* Tant qu'aucun acteur n'est éligible, la carte de couverture annoncerait « 14
+          domaines non couverts » : du bruit sur une instance qu'on vient de scanner. Mais
+          se TAIRE dans ce cas était pire — c'est exactement l'état le plus grave : sans
+          acteur éligible, `whitelist.check` renvoie NO_ELIGIBLE_ASSIGNEE et 100 % des
+          tickets partent « à trier ». On remplace donc le silence par l'alerte. */}
+      {eligibleCount > 0 ? (
+        <SkillCoverageBanner kind={kind} live={liveCoverage} />
+      ) : (
+        items.length > 0 && (
+          <Banner kind="error">
+            <span className="flex items-start gap-1.5">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                <strong>
+                  {kind === "technician"
+                    ? t("Aucun technicien éligible", "No eligible technician")
+                    : t("Aucun groupe éligible", "No eligible group")}
+                </strong>{" "}
+                {t(
+                  "— le moteur n'a personne vers qui router : tous les tickets partiront « à trier ». Cochez au moins un acteur.",
+                  "— the engine has no one to route to: every ticket will end up “to sort”. Tick at least one actor.",
+                )}
+              </span>
+            </span>
+          </Banner>
+        )
+      )}
+
+      {res.loading && items.length === 0 ? (
+        <Card>
+          <p className="flex items-center justify-center gap-2 px-4 py-10 text-[12.5px] text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t("Chargement des référentiels…", "Loading referentials…")}
+          </p>
+        </Card>
+      ) : items.length === 0 ? (
+        // Vide, chargement et erreur sont trois écrans DISTINCTS : en erreur, promettre
+        // qu'un scan suffira serait un mensonge, le bandeau ci-dessus a déjà parlé.
         <Card>
           <EmptyState
             icon={Users}
-            title={t("Aucun élément", "Nothing yet")}
-            description={t(
-              "Cliquez sur « Scanner GLPI » pour récupérer la liste depuis votre instance.",
-              "Click “Scan GLPI” to fetch the list from your instance.",
-            )}
+            title={
+              res.error
+                ? t("Liste indisponible", "List unavailable")
+                : t("Aucun élément", "Nothing yet")
+            }
+            description={
+              res.error
+                ? t(
+                    "La lecture des référentiels a échoué — corrigez la connexion GLPI, puis relancez un scan.",
+                    "Reading the referentials failed — fix the GLPI connection, then run a scan.",
+                  )
+                : t(
+                    "Cliquez sur « Scanner GLPI » pour récupérer la liste depuis votre instance.",
+                    "Click “Scan GLPI” to fetch the list from your instance.",
+                  )
+            }
           />
         </Card>
       ) : (
@@ -223,13 +339,36 @@ export function RefEligibilityEditor({
           <PanelHead
             title={title}
             subtitle={
-              <span className="inline-flex items-center gap-1.5">
+              // Compteur annoncé : cocher une case ne change rien d'autre à l'écran, et
+              // filtrer non plus — sans `aria-live`, l'effet de l'action reste invisible
+              // pour un lecteur d'écran.
+              <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5">
                 <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                 {t(
                   `${eligibleCount} éligible(s) · ${filtered.length}/${items.length} affiché(s)`,
                   `${eligibleCount} eligible · ${filtered.length}/${items.length} shown`,
                 )}
               </span>
+            }
+            right={
+              filtered.length > 0 ? (
+                <Button variant="ghost" size="sm" onClick={basculerAffiches}>
+                  {tousAffichesCoches ? (
+                    <Square className="h-3.5 w-3.5" />
+                  ) : (
+                    <CheckSquare className="h-3.5 w-3.5" />
+                  )}
+                  {tousAffichesCoches
+                    ? t(
+                        `Décocher les ${filtered.length} affichés`,
+                        `Untick the ${filtered.length} shown`,
+                      )
+                    : t(
+                        `Cocher les ${filtered.length} affichés`,
+                        `Tick the ${filtered.length} shown`,
+                      )}
+                </Button>
+              ) : undefined
             }
           />
           {/* Barre d'outils */}
@@ -238,6 +377,11 @@ export function RefEligibilityEditor({
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
+                aria-label={
+                  kind === "technician"
+                    ? t("Rechercher un technicien", "Search a technician")
+                    : t("Rechercher un groupe", "Search a group")
+                }
                 placeholder={t("Rechercher par nom ou ID…", "Search by name or ID…")}
                 className="pl-9"
                 onChange={(e) => setQuery(e.target.value)}
@@ -245,6 +389,7 @@ export function RefEligibilityEditor({
             </div>
             {profiles.length > 0 && (
               <select
+                aria-label={t("Filtrer par profil GLPI", "Filter by GLPI profile")}
                 value={profile}
                 onChange={(e) => setProfile(e.target.value)}
                 className="h-9 rounded-md border border-input bg-card px-3 text-[12.5px] transition-colors hover:border-muted-foreground/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
@@ -319,10 +464,17 @@ export function RefEligibilityEditor({
                   {d.eligible && catalog.length > 0 && (
                     <div className="mt-3 pl-[44px]">
                       <p className="mb-1.5 text-[11.5px] text-muted-foreground">
-                        {t(
-                          "Domaines pris en charge — cochez pour décrire ce technicien sans rien rédiger.",
-                          "Supported domains — tick to describe this technician without writing anything.",
-                        )}
+                        {/* Le même éditeur sert les techniciens ET les groupes : la phrase
+                            disait « ce technicien » sur /groups. */}
+                        {kind === "technician"
+                          ? t(
+                              "Domaines pris en charge — cochez pour décrire ce technicien sans rien rédiger.",
+                              "Supported domains — tick to describe this technician without writing anything.",
+                            )
+                          : t(
+                              "Domaines pris en charge — cochez pour décrire ce groupe sans rien rédiger.",
+                              "Supported domains — tick to describe this group without writing anything.",
+                            )}
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {catalog.map((dom) => {
@@ -353,9 +505,11 @@ export function RefEligibilityEditor({
                       <Textarea
                         className="min-h-16 bg-background/40"
                         value={d.skills}
+                        // Plus « disponibilités » : les congés ont leur outil dédié
+                        // (AbsencePlanner), les écrire ici ne serait lu par personne.
                         placeholder={t(
-                          "Précisions libres — exceptions, spécialités, disponibilités…",
-                          "Free-form notes — exceptions, specialties, availability…",
+                          "Précisions libres — exceptions, spécialités, exclusions…",
+                          "Free-form notes — exceptions, specialties, exclusions…",
                         )}
                         onChange={(e) => patch(r.ext_id, { skills: e.target.value })}
                       />
@@ -372,12 +526,40 @@ export function RefEligibilityEditor({
           </div>
         </Card>
       )}
+      {/* Barre d'enregistrement COLLANTE : le bouton vivait sous soixante fiches dépliées,
+          on cochait, on quittait la page, on perdait tout sans le moindre avertissement.
+          Elle porte aussi le compteur — la seule trace visible de ce qui n'est pas encore
+          parti au serveur. Même gabarit que celle d'EngineSettings. */}
       {items.length > 0 && (
-        <Button onClick={onSave} disabled={saving}>
-          {saving
-            ? t("Enregistrement…", "Saving…")
-            : t("Enregistrer la sélection", "Save selection")}
-        </Button>
+        <div
+          className={cn(
+            "sticky bottom-0 z-20 -mx-5 -mb-5 mt-2 border-t border-border bg-card/95 backdrop-blur",
+            "supports-[backdrop-filter]:bg-card/80 sm:-mx-6 sm:-mb-6",
+          )}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 sm:px-6">
+            <p
+              role="status"
+              aria-live="polite"
+              className={cn(
+                "text-[12px]",
+                modifies > 0 ? "font-medium text-warning" : "text-muted-foreground",
+              )}
+            >
+              {modifies > 0
+                ? t(
+                    `${modifies} modification(s) non enregistrée(s)`,
+                    `${modifies} unsaved change(s)`,
+                  )
+                : t("Aucune modification en attente", "No pending change")}
+            </p>
+            <Button onClick={onSave} disabled={saving || modifies === 0}>
+              {saving
+                ? t("Enregistrement…", "Saving…")
+                : t("Enregistrer la sélection", "Save selection")}
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -5,6 +5,10 @@ Contrat servi au frontend (`frontend/src/pages/Setup.tsx`) :
     409 → detail.code = "already_configured"
     422 → detail.code = "invalid_password" | "invalid_email"
     429 → detail.code = "too_many_attempts" + en-tête Retry-After
+
+Couvre aussi les deux routes AUTHENTIFIÉES du même module, servies à la page
+« Compte & sécurité » (`frontend/src/pages/Account.tsx`) : `GET /api/auth/me` et
+`POST /api/auth/password`.
 """
 
 from __future__ import annotations
@@ -218,6 +222,156 @@ def test_la_creation_reussie_efface_le_compteur_d_echecs(db_url, tmp_path):
         assert c.post(
             "/api/auth/login", json={"email": EMAIL, "password": MOT_DE_PASSE}
         ).status_code == 200
+
+
+# ── `GET /api/auth/me` : l'identité, derrière la porte et NULLE PART ailleurs ──
+def test_me_rend_l_identite_du_compte_connecte(vierge):
+    vierge.post(
+        "/api/auth/setup",
+        json={"email": EMAIL, "password": MOT_DE_PASSE, "display_name": "Théo"},
+    )
+    r = vierge.get("/api/auth/me")
+    assert r.status_code == 200
+    assert r.json() == {"email": EMAIL, "display_name": "Théo"}
+
+
+def test_me_rend_un_nom_nul_quand_aucun_nom_n_a_ete_saisi(vierge):
+    """Le nom affiché est facultatif : l'UI retombe alors sur l'adresse, pas sur ""."""
+    vierge.post("/api/auth/setup", json={"email": EMAIL, "password": MOT_DE_PASSE})
+    assert vierge.get("/api/auth/me").json() == {"email": EMAIL, "display_name": None}
+
+
+def test_me_est_refuse_sans_session(vierge, creer_compte_admin):
+    creer_compte_admin(vierge, email=EMAIL, password=MOT_DE_PASSE)
+    r = vierge.get("/api/auth/me")
+    assert r.status_code == 401
+    assert EMAIL not in r.text
+
+
+def test_le_statut_public_ne_porte_jamais_l_email(vierge, creer_compte_admin):
+    """GARDE-FOU de l'invariant : ne JAMAIS enrichir `/api/auth/status` de l'identité.
+
+    Le jour où quelqu'un voudra économiser un aller-retour en fusionnant `me` dans
+    `status`, c'est ce test qui doit tomber : `status` est PUBLIQUE, et l'adresse est la
+    moitié du couple à deviner.
+    """
+    creer_compte_admin(vierge, email=EMAIL, password=MOT_DE_PASSE)
+    r = vierge.get("/api/auth/status")  # sans aucun cookie de session
+    assert r.status_code == 200
+    assert EMAIL not in r.text
+    assert set(r.json()) == {"authenticated", "auth_configured", "setup_required"}
+
+
+# ── `POST /api/auth/password` : rotation depuis la console ────────────────────
+NOUVEAU = "n0uveau-mot-de-passe"
+
+
+def test_le_changement_de_mot_de_passe_bascule_les_identifiants(vierge):
+    vierge.post("/api/auth/setup", json={"email": EMAIL, "password": MOT_DE_PASSE})
+    r = vierge.post(
+        "/api/auth/password",
+        json={"current_password": MOT_DE_PASSE, "new_password": NOUVEAU},
+    )
+    assert r.status_code == 200 and r.json() == {"ok": True}
+
+    vierge.cookies.clear()
+    assert vierge.post(
+        "/api/auth/login", json={"email": EMAIL, "password": MOT_DE_PASSE}
+    ).status_code == 401
+    assert vierge.post(
+        "/api/auth/login", json={"email": EMAIL, "password": NOUVEAU}
+    ).status_code == 200
+
+
+def test_le_changement_revoque_la_session_appelante(vierge):
+    """Effet VOULU : toutes les sessions tombent, y compris celle qui a fait la demande."""
+    vierge.post("/api/auth/setup", json={"email": EMAIL, "password": MOT_DE_PASSE})
+    assert vierge.get("/api/decisions").status_code == 200
+    vierge.post(
+        "/api/auth/password",
+        json={"current_password": MOT_DE_PASSE, "new_password": NOUVEAU},
+    )
+    # Même cookie, même client : la génération de session a changé → refus.
+    assert vierge.get("/api/decisions").status_code == 401
+
+
+def test_le_changement_ne_touche_ni_l_adresse_ni_le_nom(vierge):
+    vierge.post(
+        "/api/auth/setup",
+        json={"email": EMAIL, "password": MOT_DE_PASSE, "display_name": "Théo"},
+    )
+    vierge.post(
+        "/api/auth/password",
+        json={"current_password": MOT_DE_PASSE, "new_password": NOUVEAU},
+    )
+    vierge.cookies.clear()
+    vierge.post("/api/auth/login", json={"email": EMAIL, "password": NOUVEAU})
+    assert vierge.get("/api/auth/me").json() == {"email": EMAIL, "display_name": "Théo"}
+
+
+def test_un_mot_de_passe_courant_faux_est_refuse_sans_rien_changer(vierge):
+    vierge.post("/api/auth/setup", json={"email": EMAIL, "password": MOT_DE_PASSE})
+    r = vierge.post(
+        "/api/auth/password",
+        json={"current_password": "pas-le-bon-mot-passe", "new_password": NOUVEAU},
+    )
+    assert r.status_code == 401 and r.json()["detail"]["code"] == "bad_credentials"
+    # L'ancien mot de passe vaut toujours, le nouveau n'a jamais existé.
+    vierge.cookies.clear()
+    assert vierge.post(
+        "/api/auth/login", json={"email": EMAIL, "password": NOUVEAU}
+    ).status_code == 401
+    assert vierge.post(
+        "/api/auth/login", json={"email": EMAIL, "password": MOT_DE_PASSE}
+    ).status_code == 200
+
+
+def test_un_nouveau_mot_de_passe_trop_court_est_refuse_en_422(vierge):
+    """MÊME longueur minimale qu'à la création : une seule politique, un seul endroit."""
+    vierge.post("/api/auth/setup", json={"email": EMAIL, "password": MOT_DE_PASSE})
+    r = vierge.post(
+        "/api/auth/password",
+        json={"current_password": MOT_DE_PASSE, "new_password": "x" * (MIN_ADMIN_CHARS - 1)},
+    )
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "invalid_password"
+    # Rien n'a bougé : la session de l'appelant tient encore.
+    assert vierge.get("/api/decisions").status_code == 200
+
+
+def test_le_changement_est_refuse_sans_session(vierge, creer_compte_admin):
+    """Sinon la route serait un oracle PUBLIC de vérification du mot de passe."""
+    creer_compte_admin(vierge, email=EMAIL, password=MOT_DE_PASSE)
+    r = vierge.post(
+        "/api/auth/password",
+        json={"current_password": MOT_DE_PASSE, "new_password": NOUVEAU},
+    )
+    assert r.status_code == 401
+    assert vierge.post(
+        "/api/auth/login", json={"email": EMAIL, "password": MOT_DE_PASSE}
+    ).status_code == 200
+
+
+def test_le_changement_est_soumis_au_limiteur_de_tentatives(db_url, tmp_path):
+    """Même limiteur, même clé IP que `/login` : pas de canal de force brute parallèle."""
+    with TestClient(create_app(_settings(db_url, tmp_path, login_max_attempts=3))) as c:
+        c.post("/api/auth/setup", json={"email": EMAIL, "password": MOT_DE_PASSE})
+        for _ in range(3):
+            assert c.post(
+                "/api/auth/password",
+                json={"current_password": "faux-mot-de-passe", "new_password": NOUVEAU},
+            ).status_code == 401
+        bloque = c.post(
+            "/api/auth/password",
+            json={"current_password": "faux-mot-de-passe", "new_password": NOUVEAU},
+        )
+        assert bloque.status_code == 429
+        assert bloque.json()["detail"]["code"] == "too_many_attempts"
+        assert int(bloque.headers["Retry-After"]) > 0
+        # …et le blocage vaut aussi pour le login : c'est bien le MÊME compteur.
+        c.cookies.clear()
+        assert c.post(
+            "/api/auth/login", json={"email": EMAIL, "password": MOT_DE_PASSE}
+        ).status_code == 429
 
 
 # ── Avertissement de démarrage (risque de revendication, assumé) ──────────────

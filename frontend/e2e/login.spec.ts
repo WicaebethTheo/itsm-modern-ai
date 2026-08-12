@@ -19,6 +19,10 @@ test("login → dashboard (API mockée)", async ({ page }) => {
       json: { authenticated: true, auth_configured: true, setup_required: false },
     });
   });
+  // Identité du compte : la topbar l'affiche dans son chip. Non mockée, elle retomberait
+  // sur « Administrateur » — le parcours passerait quand même, mais sans exercer le chemin
+  // réel (`GET /api/auth/me`, route authentifiée).
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: demo.me }));
   await page.route("**/health", (route) => route.fulfill({ json: demo.health }));
   await page.route("**/api/metrics", (route) => route.fulfill({ json: demo.metrics }));
   await page.route("**/api/operational-metrics", (route) =>
