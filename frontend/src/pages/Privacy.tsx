@@ -18,7 +18,7 @@ import {
   type PiiCategory,
   type PrivacyView,
 } from "@/lib/api";
-import { tr, useLang, useT } from "@/lib/i18n";
+import { tr, useLang, useLocale, useT } from "@/lib/i18n";
 
 // Texte d'exemple du testeur : traduit, sinon un utilisateur anglophone teste une
 // phrase française (et n'y reconnaît pas ses propres motifs).
@@ -54,6 +54,7 @@ function HeadTitle({ icon, children }: { icon: ReactNode; children: ReactNode })
 export function Privacy() {
   const t = useT();
   const { lang } = useLang();
+  const locale = useLocale();
   const toast = useToast();
   const privacy = useResource(useCallback(() => Api.privacy(), []));
   // La purge est réglée ailleurs (/automations) mais son ÉTAT conditionne la lecture des
@@ -87,7 +88,7 @@ export function Privacy() {
   const hits = result ? Object.entries(result.counts).filter(([, n]) => n > 0) : [];
 
   const lastRun = ret?.last_run_at
-    ? new Date(ret.last_run_at).toLocaleString(t("fr-FR", "en-US"), {
+    ? new Date(ret.last_run_at).toLocaleString(locale, {
         dateStyle: "short",
         timeStyle: "short",
       })
@@ -118,7 +119,7 @@ export function Privacy() {
             )
           }
         />
-        <CardContent className="p-5 text-[12.5px] text-muted-foreground">
+        <CardContent className="text-body text-muted-foreground">
           {t(
             "Avant d'envoyer un ticket au modèle, le moteur remplace les données sensibles (e-mail, téléphone…) par des marqueurs comme [EMAIL]. Cette page récapitule ce qui est masqué pour le RSSI / la DPO.",
             "Before sending a ticket to the model, the engine replaces sensitive data (email, phone…) with markers like [EMAIL]. This page summarises what is masked for the CISO / DPO.",
@@ -127,15 +128,15 @@ export function Privacy() {
       </Card>
 
       {privacy.loading && (
-        <p role="status" aria-live="polite" className="p-2 text-[12.5px] text-muted-foreground">
+        <p role="status" aria-live="polite" className="p-2 text-body text-muted-foreground">
           {t("Chargement…", "Loading…")}
         </p>
       )}
       {privacy.error && (
         <div className="flex flex-wrap items-center gap-3 p-2">
-          <p role="alert" className="text-[12.5px] text-destructive">
+          <Banner kind="error" role="alert">
             {privacy.error}
-          </p>
+          </Banner>
           {/* `useResource` sait recharger : sans ce bouton, la seule issue était F5. */}
           <Button size="sm" variant="outline" onClick={privacy.reload}>
             {t("Réessayer", "Retry")}
@@ -172,18 +173,18 @@ export function Privacy() {
               {/* Conteneur défilable : sans lui, la table pousse toute la page en
                   défilement horizontal sur mobile. */}
               <div className="overflow-x-auto">
-                <table className="w-full text-[12.5px]">
+                <table className="w-full text-body">
                   <thead>
-                    <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground">
-                      <th scope="col" className="px-4 py-2 font-semibold">
+                    <tr className="border-b border-border text-left text-caption font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      <th scope="col" className="px-5 py-2 font-semibold">
                         {t("Donnée", "Data")}
                       </th>
-                      <th scope="col" className="px-4 py-2 font-semibold">
+                      <th scope="col" className="px-5 py-2 font-semibold">
                         {t("Exemple", "Example")}
                       </th>
                       {/* La colonne répond à la question de la DPO (« qu'est-ce qui sort ? »),
                           pas à celle du commercial (« qu'est-ce qui est payant ? »). */}
-                      <th scope="col" className="px-4 py-2 text-right font-semibold">
+                      <th scope="col" className="px-5 py-2 text-right font-semibold">
                         {t("Envoyé au LLM", "Sent to the LLM")}
                       </th>
                     </tr>
@@ -191,13 +192,13 @@ export function Privacy() {
                   <tbody>
                     {view.categories.map((c) => (
                       <tr key={c.key} className="border-b border-border last:border-0">
-                        <td className="px-4 py-2.5 font-medium">{label(c)}</td>
-                        <td className="px-4 py-2.5">
-                          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11.5px] text-muted-foreground">
+                        <td className="px-5 py-2.5 font-medium">{label(c)}</td>
+                        <td className="px-5 py-2.5">
+                          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-caption text-muted-foreground">
                             {c.example}
                           </code>
                         </td>
-                        <td className="px-4 py-2.5 text-right">
+                        <td className="px-5 py-2.5 text-right">
                           {c.active ? (
                             <Tag tone="green">{t("Masqué", "Masked")}</Tag>
                           ) : c.scope === "roadmap" ? (
@@ -229,11 +230,11 @@ export function Privacy() {
                 "Paste some text: preview what will actually be sent to the LLM.",
               )}
             />
-            <CardContent className="flex flex-col gap-3 p-5">
+            <CardContent className="flex flex-col gap-3">
               <Textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                className="min-h-24 font-mono text-[12px]"
+                className="min-h-24 font-mono text-body"
                 placeholder={t("Texte à tester…", "Text to test…")}
               />
               <div>
@@ -243,17 +244,17 @@ export function Privacy() {
               </div>
               {result !== null && (
                 <div className="flex flex-col gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span className="text-caption font-medium uppercase tracking-[0.08em] text-muted-foreground">
                     {t("Envoyé au LLM", "Sent to the LLM")}
                   </span>
-                  <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-[12px]">
+                  <pre className="overflow-x-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-body">
                     {result.masked}
                   </pre>
                   {/* Les compteurs disent ce qui a été remplacé — sans eux, il fallait
                       comparer les deux blocs à l'œil pour voir ce qui a survécu. */}
                   {hits.length > 0 ? (
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[11.5px] text-muted-foreground">
+                      <span className="text-caption text-muted-foreground">
                         {t("Remplacements :", "Replacements:")}
                       </span>
                       {hits.map(([k, n]) => (
@@ -263,7 +264,7 @@ export function Privacy() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[11.5px] text-muted-foreground">
+                    <p className="text-caption text-muted-foreground">
                       {t(
                         "Aucun remplacement — ce texte part tel quel au LLM.",
                         "No replacement — this text leaves untouched to the LLM.",
@@ -298,9 +299,9 @@ export function Privacy() {
                   </HeadTitle>
                 }
               />
-              <CardContent className="flex flex-col gap-3 p-5 text-[12.5px]">
+              <CardContent className="flex flex-col gap-3 text-body">
                 <div>
-                  <span className="text-2xl font-semibold">{view.llm_calls_count}</span>
+                  <span className="text-metric font-semibold">{view.llm_calls_count}</span>
                   <span className="ml-2 text-muted-foreground">
                     {t("appels enregistrés", "recorded calls")}
                   </span>
@@ -326,7 +327,7 @@ export function Privacy() {
                   ) : null
                 }
               />
-              <CardContent className="flex flex-col gap-2 p-5 text-[12.5px]">
+              <CardContent className="flex flex-col gap-2 text-body">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">{t("Décisions", "Decisions")}</span>
                   <span className="font-medium">
@@ -343,19 +344,19 @@ export function Privacy() {
                   <p
                     role="status"
                     aria-live="polite"
-                    className="text-[11.5px] text-muted-foreground"
+                    className="text-caption text-muted-foreground"
                   >
                     {t("Chargement de l'état de la purge…", "Loading purge state…")}
                   </p>
                 )}
                 {retention.error && (
                   <div className="flex flex-wrap items-center gap-2">
-                    <p role="alert" className="text-[11.5px] text-destructive">
+                    <Banner kind="error" role="alert">
                       {t(
                         "État de la purge indisponible : ces durées ne prouvent RIEN.",
                         "Purge state unavailable: these durations prove NOTHING.",
                       )}
-                    </p>
+                    </Banner>
                     <Button size="sm" variant="outline" onClick={retention.reload}>
                       {t("Réessayer", "Retry")}
                     </Button>
@@ -372,7 +373,7 @@ export function Privacy() {
                   </Banner>
                 )}
                 {ret?.enabled && (
-                  <p className="text-[11.5px] text-muted-foreground/80">
+                  <p className="text-caption text-muted-foreground">
                     {t(
                       `Passage quotidien à ${ret.hour_utc} h UTC · dernière exécution : ${lastRun}.`,
                       `Runs daily at ${ret.hour_utc}:00 UTC · last run: ${lastRun}.`,
@@ -398,7 +399,7 @@ export function Privacy() {
                   </HeadTitle>
                 }
               />
-              <CardContent className="flex flex-col gap-3 p-5 text-[12.5px]">
+              <CardContent className="flex flex-col gap-3 text-body">
                 <p className="text-muted-foreground">
                   {t(
                     "Rapport Markdown récapitulant le masquage et la rétention.",

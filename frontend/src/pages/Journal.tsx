@@ -1,5 +1,6 @@
-import { RefreshCw, ScrollText, Search } from "lucide-react";
+import { RefreshCw, ScrollText, Search, SearchX } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { Banner } from "@/components/Banner";
 import { EmptyState } from "@/components/EmptyState";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,7 +11,7 @@ import { useToast } from "@/components/ui/toast";
 import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, DEMO, type DecisionEntry } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/i18n";
 import { confidenceTone, priorityLabel, priorityTone, reasonLabel, reasonTone } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
@@ -68,7 +69,7 @@ function AnnotationCell({ d, ph }: { d: DecisionEntry; ph: string }) {
       {/* Confirmation ANNONCÉE : le ✓ qui remplaçait le libellé du bouton n'était vu
           que des voyants (et faisait disparaître le nom accessible du bouton).
           La région existe en permanence, sinon rien n'est annoncé à la mise à jour. */}
-      <span role="status" className="text-[10.5px] text-success">
+      <span role="status" className="text-caption text-success">
         {saved === "ok" ? t("enregistrée", "saved") : ""}
       </span>
     </div>
@@ -77,6 +78,7 @@ function AnnotationCell({ d, ph }: { d: DecisionEntry; ph: string }) {
 
 export function Journal() {
   const t = useT();
+  const locale = useLocale();
   // `limit` fait partie des dépendances du fetcher : sans ça, « En charger davantage »
   // changerait l'état sans jamais relancer la requête.
   const [limit, setLimit] = useState(PAGE);
@@ -154,9 +156,13 @@ export function Journal() {
       {/* Chargement / erreur / vide / contenu : EXCLUSIFS. Un <table> monté à vide ne
           montre que ses en-têtes — indiscernable d'un journal vide. */}
       {decisions.loading ? (
-        <p className="p-6 text-[12.5px] text-muted-foreground">{t("Chargement…", "Loading…")}</p>
+        <p className="p-6 text-body text-muted-foreground">{t("Chargement…", "Loading…")}</p>
       ) : decisions.error ? (
-        <p className="p-6 text-[12.5px] text-destructive">{decisions.error}</p>
+        <div className="p-5">
+          <Banner kind="error" role="alert">
+            {decisions.error}
+          </Banner>
+        </div>
       ) : rows.length === 0 ? (
         <EmptyState
           icon={ScrollText}
@@ -169,7 +175,7 @@ export function Journal() {
       ) : (
         <>
           {/* Barre d'outils (même conteneur que RefEligibilityEditor). */}
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-border bg-muted/30 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-border bg-muted/30 px-5 py-3">
             <div className="relative min-w-48 flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -193,41 +199,43 @@ export function Journal() {
           </div>
 
           {filtered.length === 0 ? (
-            <p className="px-4 py-8 text-center text-[12.5px] text-muted-foreground">
-              {t("Aucun résultat pour ce filtre.", "No result for this filter.")}
-            </p>
+            <EmptyState
+              dense
+              icon={SearchX}
+              title={t("Aucun résultat pour ce filtre.", "No result for this filter.")}
+            />
           ) : (
             // 7 colonnes dont une porte un champ + un bouton : sous ~1100 px la dernière
             // sortait du cadre d'une Card `overflow-hidden`, sans barre de défilement.
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[880px] text-[12.5px]">
+              <table className="w-full min-w-[880px] text-body">
                 <caption className="sr-only">
                   {t(
                     "Journal des décisions de triage : date, ticket, sujet, statut, routage, confiance et annotation.",
                     "Triage decision journal: date, ticket, subject, status, routing, confidence and annotation.",
                   )}
                 </caption>
-                <thead className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+                <thead className="border-b border-border bg-muted/30 text-caption font-medium uppercase tracking-[0.08em] text-muted-foreground">
                   <tr>
-                    <th scope="col" className="px-4 py-2 text-left font-medium">
+                    <th scope="col" className="px-5 py-2 text-left font-medium">
                       Date
                     </th>
-                    <th scope="col" className="px-4 py-2 text-left font-medium">
+                    <th scope="col" className="px-5 py-2 text-left font-medium">
                       Ticket
                     </th>
-                    <th scope="col" className="px-4 py-2 text-left font-medium">
+                    <th scope="col" className="px-5 py-2 text-left font-medium">
                       {t("Sujet", "Subject")}
                     </th>
-                    <th scope="col" className="px-4 py-2 text-left font-medium">
+                    <th scope="col" className="px-5 py-2 text-left font-medium">
                       {t("Statut", "Status")}
                     </th>
-                    <th scope="col" className="px-4 py-2 text-left font-medium">
+                    <th scope="col" className="px-5 py-2 text-left font-medium">
                       {t("Routage · cat./urg./prio.", "Routing · cat./urg./prio.")}
                     </th>
-                    <th scope="col" className="px-4 py-2 text-left font-medium">
+                    <th scope="col" className="px-5 py-2 text-left font-medium">
                       {t("Conf.", "Conf.")}
                     </th>
-                    <th scope="col" className="px-4 py-2 text-left font-medium">
+                    <th scope="col" className="px-5 py-2 text-left font-medium">
                       {t("Annotation", "Annotation")}
                     </th>
                   </tr>
@@ -247,13 +255,13 @@ export function Journal() {
                             : "border-l-2 border-l-warning/70 bg-warning/[0.05]"),
                       )}
                     >
-                      <td className="whitespace-nowrap px-4 py-2 tabular-nums text-muted-foreground">
-                        {new Date(d.ts).toLocaleString(t("fr-FR", "en-US"), {
+                      <td className="whitespace-nowrap px-5 py-2 tabular-nums text-muted-foreground">
+                        {new Date(d.ts).toLocaleString(locale, {
                           dateStyle: "short",
                           timeStyle: "short",
                         })}
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-5 py-2">
                         {d.glpi_link ? (
                           <a
                             className="font-mono text-primary hover:underline"
@@ -271,7 +279,7 @@ export function Journal() {
                           <span className="font-mono">#{d.ticket_id}</span>
                         )}
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-5 py-2">
                         <div className="max-w-[280px] truncate" title={d.subject || undefined}>
                           {d.subject ? (
                             d.glpi_link ? (
@@ -291,7 +299,7 @@ export function Journal() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-5 py-2">
                         {d.accepted ? (
                           <Tag tone="green">{t("traité", "handled")}</Tag>
                         ) : (
@@ -301,14 +309,14 @@ export function Journal() {
                             n'ont pas la même suite : le second seul réclame une main.
                             `undefined` = moteur antérieur, on ne prétend pas savoir. */}
                         {!d.accepted && d.fallback_applied !== undefined && (
-                          <div className="mt-1 text-[10.5px] text-muted-foreground">
+                          <div className="mt-1 text-caption text-muted-foreground">
                             {d.fallback_applied
                               ? t("repli assigné", "fallback assigned")
                               : t("aucun destinataire", "no assignee")}
                           </div>
                         )}
                         {d.mode && (
-                          <div className="mt-1 text-[10.5px] text-muted-foreground">
+                          <div className="mt-1 text-caption text-muted-foreground">
                             {d.mode === "full_auto"
                               ? "full-auto"
                               : d.mode === "semi_auto"
@@ -320,7 +328,7 @@ export function Journal() {
                           </div>
                         )}
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-5 py-2">
                         <div className="font-medium">
                           {d.technician_name ??
                             d.group_name ??
@@ -330,7 +338,7 @@ export function Journal() {
                                 ? `G#${d.group_id}`
                                 : "—")}
                         </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-caption text-muted-foreground">
                           <span>
                             {d.category_name ?? (d.category != null ? `#${d.category}` : "—")}
                           </span>
@@ -348,7 +356,7 @@ export function Journal() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-5 py-2">
                         {d.confidence != null ? (
                           <Tag tone={confidenceTone(d.confidence)}>
                             {Math.round(d.confidence * 100)}%
@@ -357,7 +365,7 @@ export function Journal() {
                           <span className="font-mono">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-5 py-2">
                         {/* key sur id+annotation : l'état local (useState initialisé une seule
                             fois) est réinitialisé si l'annotation serveur change après reload. */}
                         <AnnotationCell
@@ -378,7 +386,7 @@ export function Journal() {
       {/* Le plafond doit se DIRE : « 500 décision(s) » laissait croire qu'on voyait
           tout le journal alors qu'on n'en voit que la queue. */}
       {truncated && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3 text-[11.5px] text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3 text-caption text-muted-foreground">
           <span>
             {t(
               `Seules les ${limit} décisions les plus récentes sont affichées.`,

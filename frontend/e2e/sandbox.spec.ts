@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { demo } from "../src/lib/demo";
 import { mockAuthSession, mockConsoleApi, useFrench } from "./fixtures";
 
 // 3e parcours E2E : après login, naviguer vers le Bac à sable, soumettre un

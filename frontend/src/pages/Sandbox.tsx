@@ -72,10 +72,8 @@ const EXAMPLES: { titleFr: string; titleEn: string; bodyFr: string; bodyEn: stri
 function Row({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-border/50 py-2 last:border-0">
-      <span className="text-[12px] text-muted-foreground">{label}</span>
-      <span className={mono ? "font-mono text-[12.5px]" : "text-[12.5px] font-medium"}>
-        {value}
-      </span>
+      <span className="text-body text-muted-foreground">{label}</span>
+      <span className={mono ? "font-mono text-body" : "text-body font-medium"}>{value}</span>
     </div>
   );
 }
@@ -161,7 +159,7 @@ export function Sandbox() {
             "The text is never written to GLPI",
           )}
         />
-        <CardContent className="flex flex-col gap-4 p-5">
+        <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="sandbox-title">{t("Titre du ticket", "Ticket title")}</Label>
             <Input
@@ -170,7 +168,7 @@ export function Sandbox() {
               placeholder={t("Ex. « Mot de passe refusé »", "E.g. “Password rejected”")}
               onChange={(e) => setTitle(e.target.value)}
             />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               {t(
                 "Le moteur réel analyse le titre ET le contenu : un essai sans titre n'est pas représentatif.",
                 "The real engine reads the title AND the content: a title-less run is not representative.",
@@ -191,7 +189,7 @@ export function Sandbox() {
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-caption text-muted-foreground">
               {t("Exemples :", "Examples:")}
             </span>
             {EXAMPLES.map((e) => (
@@ -212,7 +210,7 @@ export function Sandbox() {
             </Button>
           </div>
           {error && (
-            <p role="alert" className="text-[12.5px] text-destructive">
+            <p role="alert" className="text-body text-destructive">
               {error}
             </p>
           )}
@@ -233,7 +231,7 @@ export function Sandbox() {
             ) : undefined
           }
         />
-        <CardContent className="p-5">
+        <CardContent>
           <div aria-live="polite" aria-busy={busy}>
             {busy ? (
               <ResultSkeleton />
@@ -307,7 +305,7 @@ export function Sandbox() {
                           "—"
                         )}
                         {thresholdPct != null && (
-                          <span className="text-[11px] font-normal text-muted-foreground">
+                          <span className="text-caption font-normal text-muted-foreground">
                             {t(`seuil ${thresholdPct} %`, `threshold ${thresholdPct}%`)}
                           </span>
                         )}
@@ -329,10 +327,10 @@ export function Sandbox() {
                 </div>
                 {result.draft && (
                   <div className="mt-4">
-                    <p className="mb-1.5 text-[11px] text-muted-foreground">
+                    <p className="mb-1.5 text-caption text-muted-foreground">
                       {t("Brouillon de réponse (draft)", "Draft reply (draft)")}
                     </p>
-                    <p className="whitespace-pre-wrap rounded-md border border-border bg-background p-3 text-[12.5px] leading-relaxed">
+                    <p className="whitespace-pre-wrap rounded-md border border-border bg-background p-3 text-body leading-relaxed">
                       {result.draft}
                     </p>
                   </div>
@@ -340,7 +338,7 @@ export function Sandbox() {
 
                 {/* Souveraineté : ce qui est SORTI de l'instance, mot pour mot. */}
                 <details className="mt-4 rounded-md border border-border">
-                  <summary className="cursor-pointer px-3 py-2 text-[12px] font-medium">
+                  <summary className="cursor-pointer px-3 py-2 text-body font-medium">
                     {t(
                       "Texte réellement envoyé au LLM (masqué)",
                       "Text actually sent to the LLM (masked)",
@@ -348,15 +346,15 @@ export function Sandbox() {
                   </summary>
                   <div className="border-t border-border px-3 py-2">
                     {masked !== null ? (
-                      <p className="whitespace-pre-wrap rounded-md bg-background p-3 font-mono text-[12px] leading-relaxed">
+                      <p className="whitespace-pre-wrap rounded-md bg-background p-3 font-mono text-body leading-relaxed">
                         {masked}
                       </p>
                     ) : (
-                      <p className="text-[12px] text-muted-foreground">
+                      <p className="text-body text-muted-foreground">
                         {maskError || t("Masquage indisponible.", "Masking preview unavailable.")}
                       </p>
                     )}
-                    <p className="mt-2 text-[11px] text-muted-foreground">
+                    <p className="mt-2 text-caption text-muted-foreground">
                       {t(
                         "En édition Community, seuls l'e-mail et le téléphone sont masqués : IBAN, adresses IP et secrets partent EN CLAIR — c'est ce que montre le bloc ci-dessus.",
                         "In the Community edition only email and phone are masked: IBAN, IP addresses and secrets leave IN CLEAR — that is exactly what the block above shows.",
@@ -366,7 +364,7 @@ export function Sandbox() {
                 </details>
 
                 {/* Ce que l'essai a coûté : la sandbox est comptée dans le plafond. */}
-                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3 text-[11px] text-muted-foreground">
+                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3 text-caption text-muted-foreground">
                   {result.model && (
                     <span>
                       {t("Modèle", "Model")} : <span className="font-mono">{result.model}</span>

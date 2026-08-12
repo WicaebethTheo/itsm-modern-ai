@@ -11,10 +11,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Banner } from "@/components/Banner";
+import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PanelHead } from "@/components/ui/panel";
+import { Select } from "@/components/ui/select";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
@@ -25,7 +27,8 @@ import {
   type RefItem,
   type SkillCoverage,
 } from "@/lib/api";
-import { type Lang, useLang, useT } from "@/lib/i18n";
+import { type Lang, localeFor, useLang, useT } from "@/lib/i18n";
+import { cn, SUBSURFACE } from "@/lib/utils";
 
 /** Brouillon local d'une ligne — `id` sert de clé React, il n'est pas renvoyé au serveur. */
 type Ligne = AbsenceItem & { id: number };
@@ -66,7 +69,7 @@ function nouvelleLigne(id: number, techId: number): Ligne {
 function formatJour(iso: string, lang: Lang): string {
   const [y, m, d] = iso.split("-").map(Number);
   if (!y || !m || !d) return iso;
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-GB", {
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(localeFor(lang), {
     day: "numeric",
     month: "short",
     timeZone: "UTC",
@@ -177,8 +180,10 @@ export function AbsenceRowStatus({
             )}
           </Tag>
         ))}
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-sm"
         onClick={() => onDeclare(tech.ext_id)}
         aria-label={
           absence
@@ -186,10 +191,10 @@ export function AbsenceRowStatus({
             : t(`Déclarer une absence pour ${tech.name}`, `Declare time off for ${tech.name}`)
         }
         title={t("Congés & remplaçant", "Time off & stand-in")}
-        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="text-muted-foreground hover:text-foreground"
       >
-        <CalendarPlus className="h-3.5 w-3.5" />
-      </button>
+        <CalendarPlus />
+      </Button>
     </>
   );
 }
@@ -200,7 +205,7 @@ function PastilleAbsent({ a }: { a: AbsenceView }) {
   const { lang } = useLang();
   const remplacant = a.replacement_name?.trim() ?? "";
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-[12px]">
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-warning/30 bg-warning/10 px-2 py-1 text-body">
       <CalendarOff className="h-3.5 w-3.5 shrink-0 text-warning" />
       <span className="font-medium">{a.technician_name}</span>
       <span className="text-muted-foreground">
@@ -398,9 +403,9 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
         />
 
         {/* RÉSUMÉ — toujours visible, c'est l'information qu'on vient chercher. */}
-        <div className="flex flex-col gap-2 px-4 py-3">
+        <div className="flex flex-col gap-2 px-5 py-3">
           {actives.length === 0 ? (
-            <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-muted-foreground">
+            <p className="flex flex-wrap items-center gap-1.5 text-body text-muted-foreground">
               <UserCheck className="h-3.5 w-3.5 shrink-0 text-success" />
               {t(
                 "Toute l'équipe est disponible aujourd'hui.",
@@ -409,7 +414,7 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
             </p>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[12.5px] text-muted-foreground">
+              <span className="text-body text-muted-foreground">
                 {t(
                   `Absent(s) aujourd'hui — ${actives.length} sur ${eligibles.length} :`,
                   `Away today — ${actives.length} of ${eligibles.length}:`,
@@ -425,7 +430,7 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
             dans la branche « personne n'est absent aujourd'hui », donc un seul absent du
             jour masquait toute la semaine à venir — sur la seule vue de planification. */}
           {aVenir.length > 0 && (
-            <p className="text-[12.5px] text-muted-foreground">
+            <p className="text-body text-muted-foreground">
               {t(
                 `${aVenir.length} absence(s) à venir — prochaine : ${aVenir[0].technician_name}, à partir du ${formatJour(aVenir[0].start_date, lang)}.`,
                 `${aVenir.length} upcoming — next: ${aVenir[0].technician_name}, from ${formatJour(aVenir[0].start_date, lang)}.`,
@@ -462,18 +467,16 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
         {ouvert && (
           <div id="absences-table" className="border-t border-border">
             {lignes.length === 0 ? (
-              <p className="px-4 py-6 text-center text-[12.5px] text-muted-foreground">
-                {t("Aucune absence déclarée.", "No absence declared.")}
-              </p>
+              <EmptyState dense title={t("Aucune absence déclarée.", "No absence declared.")} />
             ) : (
               <div className="flex flex-col">
                 {lignes.map((l) => {
                   const perdusLigne = domainesPerdus([l], eligibles, coverage, lang);
                   return (
-                    <div key={l.id} className="border-b border-border px-4 py-3 last:border-b-0">
+                    <div key={l.id} className="border-b border-border px-5 py-3 last:border-b-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <CalendarOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <select
+                        <Select
                           aria-label={t("Technicien absent", "Absent technician")}
                           value={l.technician_ext_id}
                           ref={(el) => {
@@ -485,22 +488,22 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
                           onChange={(e) =>
                             patch(l.id, { technician_ext_id: Number(e.target.value) })
                           }
-                          className="h-8 rounded-md border border-input bg-card px-2 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                          className="h-8 w-auto px-2"
                         >
                           {eligibles.map((x) => (
                             <option key={x.ext_id} value={x.ext_id}>
                               {x.name}
                             </option>
                           ))}
-                        </select>
+                        </Select>
                         <Input
                           type="date"
                           aria-label={t("Du", "From")}
                           value={l.start_date}
                           onChange={(e) => patch(l.id, { start_date: e.target.value })}
-                          className="h-8 w-36 text-[12px]"
+                          className="h-8 w-36"
                         />
-                        <span className="text-[12px] text-muted-foreground">{t("au", "to")}</span>
+                        <span className="text-body text-muted-foreground">{t("au", "to")}</span>
                         <Input
                           type="date"
                           aria-label={t("Au (inclus)", "To (inclusive)")}
@@ -510,9 +513,9 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
                           )}
                           value={l.end_date}
                           onChange={(e) => patch(l.id, { end_date: e.target.value })}
-                          className="h-8 w-36 text-[12px]"
+                          className="h-8 w-36"
                         />
-                        <select
+                        <Select
                           aria-label={t("Remplaçant", "Stand-in")}
                           title={t(
                             "Le remplaçant hérite des domaines de l'absent dans le prompt de routage.",
@@ -525,7 +528,7 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
                                 e.target.value === "" ? null : Number(e.target.value),
                             })
                           }
-                          className="h-8 rounded-md border border-input bg-card px-2 text-[12px] text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                          className="h-8 w-auto px-2 text-muted-foreground"
                         >
                           <option value="">{t("Sans remplaçant", "No stand-in")}</option>
                           {eligibles
@@ -535,21 +538,23 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
                                 {x.name}
                               </option>
                             ))}
-                        </select>
+                        </Select>
                         {activesIds.has(l.id) && <Tag tone="amber">{t("En cours", "Ongoing")}</Tag>}
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon-sm"
                           aria-label={t("Supprimer cette absence", "Delete this absence")}
                           onClick={() => setLignes((all) => all.filter((x) => x.id !== l.id))}
-                          className="ml-auto rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                          className="ml-auto text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                          <Trash2 />
+                        </Button>
                       </div>
                       {/* Conséquence de CETTE ligne, calculée seule : elle disparaît dès qu'un
                         remplaçant est désigné, ce qui apprend à quoi sert le champ. */}
                       {perdusLigne.length > 0 && (
-                        <p className="mt-2 flex items-start gap-1.5 pl-6 text-[11.5px] text-warning">
+                        <p className="mt-2 flex items-start gap-1.5 pl-6 text-caption text-warning">
                           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                           <span>
                             {t(
@@ -565,13 +570,15 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
               </div>
             )}
 
-            <div className="flex items-center gap-3 border-t border-border bg-muted/30 px-4 py-3">
+            <div
+              className={cn("flex items-center gap-3 border-t border-border px-5 py-3", SUBSURFACE)}
+            >
               <Button onClick={enregistrer} disabled={saving} size="sm">
                 {saving
                   ? t("Enregistrement…", "Saving…")
                   : t("Enregistrer les absences", "Save absences")}
               </Button>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-caption text-muted-foreground">
                 {t(
                   "Dates incluses, évaluées dans le fuseau configuré du moteur.",
                   "Dates are inclusive, evaluated in the engine's configured time zone.",
@@ -580,7 +587,7 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
             </div>
 
             {lignes.some((l) => l.end_date < l.start_date) && (
-              <div className="px-4 pb-3">
+              <div className="px-5 pb-3">
                 <Banner kind="warning">
                   {t(
                     "Une période se termine avant son début — l'enregistrement sera refusé.",

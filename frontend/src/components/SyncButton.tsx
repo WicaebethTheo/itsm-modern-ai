@@ -2,7 +2,7 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Api, type SyncResult } from "@/lib/api";
-import { type Lang, useLang, useT } from "@/lib/i18n";
+import { type Lang, localeFor, useLang, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 /** Au-delà, le cache est présumé périmé : un acteur parti depuis a pu rester dans la liste. */
@@ -14,7 +14,7 @@ const ORDRE_COMPTEURS = ["category", "entity", "technician", "group"] as const;
 function formatDate(iso: string, lang: Lang): string | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString(lang === "fr" ? "fr-FR" : "en-GB", {
+  return d.toLocaleDateString(localeFor(lang), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -89,7 +89,7 @@ export function SyncButton({
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5">
-      <div className="flex flex-col items-end gap-0.5 text-[11.5px]">
+      <div className="flex flex-col items-end gap-0.5 text-caption">
         {/* Résultat annoncé aux lecteurs d'écran : c'est la seule restitution d'une action
             qui, en cas d'échec, ne change rien de visible à l'écran. */}
         <span

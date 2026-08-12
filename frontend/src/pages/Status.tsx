@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Dot, type DotTone } from "@/components/ui/dot";
 import { useResource } from "@/hooks/useResource";
 import { Api, type PollCycle, type PollCycleState, readPollCycle } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type T = (fr: string, en: string) => string;
@@ -69,7 +69,7 @@ function ServicePanel({
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-[13px] font-medium">{name}</h2>
+        <h2 className="text-ui font-medium">{name}</h2>
         {loading ? (
           <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-muted" />
         ) : (
@@ -86,8 +86,8 @@ function ServicePanel({
           </>
         ) : (
           <>
-            <div className="mt-2 text-[18px] font-semibold tracking-tight">{state}</div>
-            <div className="mt-1 text-[11px] text-muted-foreground">{meta}</div>
+            <div className="mt-2 text-metric font-semibold tracking-tight">{state}</div>
+            <div className="mt-1 text-caption text-muted-foreground">{meta}</div>
           </>
         )}
       </div>
@@ -306,9 +306,9 @@ function VerdictCard({ verdict, t }: { verdict: Verdict; t: T }) {
     <Card className={cn("p-4", verdictStyle[verdict.kind])}>
       <div className="flex items-center gap-2">
         <StateDot tone={verdict.tone} pulse={verdict.kind === "ok"} t={t} />
-        <h2 className="text-[17px] font-semibold tracking-tight">{verdict.title}</h2>
+        <h2 className="text-metric font-semibold tracking-tight">{verdict.title}</h2>
       </div>
-      <p className="mt-1 text-[12.5px]">{verdict.detail}</p>
+      <p className="mt-1 text-body">{verdict.detail}</p>
     </Card>
   );
 }
@@ -341,13 +341,13 @@ function LastCycleCard({
     return (
       <Card className="p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-[13px] font-medium">{title}</h2>
+          <h2 className="text-ui font-medium">{title}</h2>
           <StateDot tone="muted" t={t} />
         </div>
-        <div className="mt-2 text-[18px] font-semibold tracking-tight">
+        <div className="mt-2 text-metric font-semibold tracking-tight">
           {t("Non mesuré", "Not measured")}
         </div>
-        <div className="mt-1 text-[12px] text-muted-foreground">
+        <div className="mt-1 text-body text-muted-foreground">
           {t(
             "Ce moteur ne remonte pas l'état de son dernier cycle : impossible de savoir d'ici s'il a réellement tourné.",
             "This engine does not report its last cycle: there is no way to tell from here whether it actually ran.",
@@ -361,13 +361,13 @@ function LastCycleCard({
     return (
       <Card className="p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-[13px] font-medium">{title}</h2>
+          <h2 className="text-ui font-medium">{title}</h2>
           <StateDot tone={pollingEnabled ? "red" : "amber"} t={t} />
         </div>
-        <div className="mt-2 text-[18px] font-semibold tracking-tight">
+        <div className="mt-2 text-metric font-semibold tracking-tight">
           {t("Aucun cycle exécuté", "No cycle has run")}
         </div>
-        <div className="mt-1 text-[12px] text-muted-foreground">
+        <div className="mt-1 text-body text-muted-foreground">
           {pollingEnabled
             ? t(
                 "La boucle de polling est annoncée « En marche » mais n'a jamais bouclé une seule fois : aucun ticket ne peut être trié.",
@@ -389,23 +389,23 @@ function LastCycleCard({
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-[13px] font-medium">{title}</h2>
+        <h2 className="text-ui font-medium">{title}</h2>
         <StateDot tone={tone} pulse={!failed && !stale} t={t} />
       </div>
       <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-[18px] font-semibold tracking-tight">
+        <span className="text-metric font-semibold tracking-tight">
           {ageSeconds != null ? formatAge(ageSeconds, t) : t("date inconnue", "unknown date")}
         </span>
         {stale && (
           // Le sens passe par un fond ambre, pas par du texte ambre de 11 px : en thème
           // clair, `text-warning` sur fond de carte tombe sous le seuil de contraste.
-          <span className="rounded bg-warning/20 px-1.5 py-0.5 text-[11px] font-medium text-foreground">
+          <span className="rounded bg-warning/20 px-1.5 py-0.5 text-caption font-medium text-foreground">
             {t("cycle trop ancien", "cycle overdue")}
           </span>
         )}
       </div>
-      <div className="mt-1 text-[12px]">{formatCounts(cycle, t)}</div>
-      <div className="mt-1 text-[11px] text-muted-foreground">
+      <div className="mt-1 text-body">{formatCounts(cycle, t)}</div>
+      <div className="mt-1 text-caption text-muted-foreground">
         {runAt
           ? runAt.toLocaleString(locale, { dateStyle: "short", timeStyle: "medium" })
           : t("horodatage absent", "no timestamp")}
@@ -430,14 +430,14 @@ function LastCycleCard({
           </Banner>
         </div>
       )}
-      {hint && !failed && <div className="mt-2 text-[11.5px] text-muted-foreground">{hint}</div>}
+      {hint && !failed && <div className="mt-2 text-caption text-muted-foreground">{hint}</div>}
     </Card>
   );
 }
 
 export function Status() {
   const t = useT();
-  const locale = t("fr-FR", "en-US");
+  const locale = useLocale();
   const status = useResource(useCallback(() => Api.status(), []));
   const health = useResource(useCallback(() => Api.health(), []));
   const cfg = useResource(useCallback(() => Api.getConfig(), []));
@@ -624,16 +624,18 @@ export function Status() {
                   ? t("Test en cours…", "Testing…")
                   : t("Tester la connexion", "Test connection")}
               </Button>
-              <p className="mt-1 text-[10.5px] text-muted-foreground">
+              <p className="mt-1 text-caption text-muted-foreground">
                 {t(
                   "appel réel au fournisseur (facturé) — lancé uniquement à la demande",
                   "real call to the provider (billed) — only on demand",
                 )}
               </p>
               {probeError && (
-                <p className="mt-1 text-[11px] text-destructive">
-                  {t("Échec du test :", "Test failed:")} {probeError}
-                </p>
+                <div className="mt-2">
+                  <Banner kind="error" role="alert">
+                    {t("Échec du test :", "Test failed:")} {probeError}
+                  </Banner>
+                </div>
               )}
             </div>
           ) : undefined,
@@ -730,10 +732,10 @@ export function Status() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-[15px] font-semibold tracking-tight">
+          <h2 className="text-title font-semibold tracking-tight">
             {t("Ce que fait l'instance en ce moment", "What this instance is doing right now")}
           </h2>
-          <p className="mt-1 max-w-2xl text-[12.5px] text-muted-foreground">
+          <p className="mt-1 max-w-2xl text-body text-muted-foreground">
             {t(
               "Cette page ne rend compte que de ce qui est MESURÉ : le dernier cycle réellement exécuté et l'état des services dont il dépend. Une case cochée dans la configuration n'y vaut jamais preuve de fonctionnement.",
               "This page reports only what is MEASURED: the last cycle actually run and the state of the services it depends on. A checkbox in the configuration is never taken as proof that something works.",
@@ -744,7 +746,7 @@ export function Status() {
           <Button variant="outline" size="sm" onClick={reloadAll}>
             {t("Tout réactualiser", "Refresh everything")}
           </Button>
-          <p className="mt-1 text-[10.5px] text-muted-foreground">
+          <p className="mt-1 text-caption text-muted-foreground">
             {t(
               "le dernier cycle est actualisé automatiquement chaque minute ; GLPI n'est interrogé qu'à la demande",
               "the last cycle refreshes automatically every minute; GLPI is only queried on demand",
@@ -784,8 +786,8 @@ export function Status() {
       </section>
 
       <Card className="p-4">
-        <h2 className="mb-1 text-[13px] font-medium">{t("Compteurs", "Counters")}</h2>
-        <div className="text-[11px] text-muted-foreground">
+        <h2 className="mb-1 text-ui font-medium">{t("Compteurs", "Counters")}</h2>
+        <div className="text-caption text-muted-foreground">
           {s?.llm_calls_total != null && s.cost_eur_last_24h != null
             ? t(
                 `${s.llm_calls_total.toLocaleString(locale)} appels LLM au total · ${formatEuro(s.cost_eur_last_24h, t, locale)} sur les dernières 24 h`,

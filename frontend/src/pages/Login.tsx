@@ -101,11 +101,11 @@ export function Login() {
       <div className="flex items-center gap-2.5">
         <Logo className="h-7 w-7" />
         <div>
-          <p className="text-[15px] font-semibold leading-tight tracking-tight">ITSM Modern AI</p>
-          <p className="text-[11.5px] leading-tight text-muted-foreground">{tagline}</p>
+          <p className="text-title font-semibold leading-tight tracking-tight">ITSM Modern AI</p>
+          <p className="text-caption leading-tight text-muted-foreground">{tagline}</p>
         </div>
       </div>
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
+      <p className="text-ui leading-relaxed text-muted-foreground">
         {t(
           "Console d'administration du moteur. Le triage continue de tourner que vous soyez connecté ou non.",
           "Administration console for the engine. Triage keeps running whether you are signed in or not.",
@@ -120,10 +120,10 @@ export function Login() {
         <AuthBrandCompact tagline={tagline} />
 
         <div className="flex flex-col gap-1.5">
-          <h1 className="text-[22px] font-semibold leading-tight tracking-tight">
+          <h1 className="text-hero font-semibold leading-tight tracking-tight">
             {t("Connexion", "Sign in")}
           </h1>
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-ui text-muted-foreground">
             {t("Console d'administration", "Admin console")}
           </p>
         </div>
@@ -183,17 +183,17 @@ export function Login() {
             il n'existe plus d'amorçage par variable d'environnement. Replié par défaut —
             c'est une issue de secours, pas une invitation. */}
         <details className="rounded-md border border-border bg-muted/30 px-3 py-2">
-          <summary className="cursor-pointer select-none text-[12px] text-muted-foreground transition-colors hover:text-foreground">
+          <summary className="cursor-pointer select-none text-body text-muted-foreground transition-colors hover:text-foreground">
             {t("Mot de passe oublié ?", "Forgot your password?")}
           </summary>
-          <div className="mt-2.5 flex flex-col gap-2 text-[12px] leading-relaxed text-muted-foreground">
+          <div className="mt-2.5 flex flex-col gap-2 text-body leading-relaxed text-muted-foreground">
             <p>
               {t(
                 "Il n'y a pas de réinitialisation par email : le moteur n'envoie rien vers l'extérieur. Le seul chemin de récupération passe par la machine qui l'héberge :",
                 "There is no reset by email: the engine sends nothing outside. The only recovery path goes through the machine hosting it:",
               )}
             </p>
-            <pre className="overflow-x-auto rounded-md border border-border bg-card px-2.5 py-2 font-mono text-[11.5px] leading-relaxed text-foreground">
+            <pre className="overflow-x-auto rounded-md border border-border bg-card px-2.5 py-2 font-mono text-caption leading-relaxed text-foreground">
               {RESET_CMD}
             </pre>
             <p>

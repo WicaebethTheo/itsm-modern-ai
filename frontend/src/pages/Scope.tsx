@@ -6,21 +6,24 @@ import {
   Loader2,
   Save,
   Search,
+  SearchX,
   Square,
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Banner } from "@/components/Banner";
+import { EmptyState } from "@/components/EmptyState";
 import { dernierScan, SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PanelHead } from "@/components/ui/panel";
+import { Select } from "@/components/ui/select";
 import { Tag, type TagTone } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
 import { Api, type ExecutionMode, type RefItem } from "@/lib/api";
 import { tr, useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn, SELECTED_ROW, SUBSURFACE } from "@/lib/utils";
 
 /** Couleur du badge de mode : neutre → amber → rouge selon l'autonomie accordée. */
 const MODE_TONE: Record<ExecutionMode, TagTone> = {
@@ -55,26 +58,29 @@ function CheckList({
 }) {
   if (error && items.length === 0)
     return (
-      <p className="flex items-start justify-center gap-1.5 px-4 py-8 text-center text-[12.5px] text-destructive">
-        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        <span>
-          {tr(
-            "Impossible de lire les référentiels — vérifiez la connexion GLPI.",
-            "Cannot read referentials — check the GLPI connection.",
-          )}{" "}
-          <span className="opacity-80">{error}</span>
-        </span>
-      </p>
+      <div className="p-5">
+        <Banner kind="error" role="alert">
+          <span className="flex items-start gap-1.5">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              {tr(
+                "Impossible de lire les référentiels — vérifiez la connexion GLPI.",
+                "Cannot read referentials — check the GLPI connection.",
+              )}{" "}
+              {error}
+            </span>
+          </span>
+        </Banner>
+      </div>
     );
   if (loading && items.length === 0)
     return (
-      <p className="flex items-center justify-center gap-2 px-4 py-8 text-center text-[12.5px] text-muted-foreground">
+      <p className="flex items-center justify-center gap-2 px-5 py-8 text-center text-body text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
         {tr("Chargement…", "Loading…")}
       </p>
     );
-  if (items.length === 0)
-    return <p className="px-4 py-8 text-center text-[12.5px] text-muted-foreground">{empty}</p>;
+  if (items.length === 0) return <EmptyState dense icon={SearchX} title={empty} />;
   return (
     <div className="flex max-h-96 flex-col overflow-auto">
       {items.map((it, i) => {
@@ -86,9 +92,9 @@ function CheckList({
               // `flex-wrap` : la ligne d'entité porte jusqu'à trois contrôles `shrink-0`
               // (mode, repli, seuil) ; sous ~900 px le nom se réduisait à néant. Ils
               // retombent désormais sous le nom au lieu de l'écraser.
-              "flex flex-wrap items-center justify-between gap-2.5 px-4 py-2.5 text-[12.5px] transition-colors",
+              "flex flex-wrap items-center justify-between gap-2.5 px-5 py-2.5 text-body transition-colors",
               i < items.length - 1 && "border-b border-border/50",
-              on ? "bg-primary/[0.04]" : "hover:bg-accent/40",
+              on ? SELECTED_ROW : "hover:bg-accent/40",
             )}
           >
             <label className="flex min-w-40 flex-1 cursor-pointer items-center gap-2.5">
@@ -101,7 +107,7 @@ function CheckList({
               <span className={cn("truncate", on ? "font-medium" : "text-muted-foreground")}>
                 {it.name}
               </span>
-              <span className="font-mono text-[11px] text-muted-foreground">#{it.ext_id}</span>
+              <span className="font-mono text-caption text-muted-foreground">#{it.ext_id}</span>
             </label>
             {trailing?.(it)}
           </div>
@@ -338,7 +344,7 @@ export function Scope() {
     label: string,
     placeholder: string,
   ) => (
-    <div className="border-b border-border bg-muted/30 px-4 py-2.5">
+    <div className={cn("border-b border-border px-5 py-2.5", SUBSURFACE)}>
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -358,7 +364,7 @@ export function Scope() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-2xl text-[12px] text-muted-foreground">
+        <p className="max-w-2xl text-body text-muted-foreground">
           {t(
             "Catégories et entités que l'IA a le droit d'utiliser. Hors périmètre → « à trier ».",
             "Categories and entities the AI may use. Out of scope → “to triage”.",
@@ -368,7 +374,7 @@ export function Scope() {
       </div>
 
       {/* Résumé du périmètre courant. */}
-      <Card className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 text-[12px]">
+      <Card className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3 text-body">
         <span className="inline-flex items-center gap-2 text-muted-foreground">
           <Layers className="h-3.5 w-3.5 text-accent-indigo" />
           <span className="font-medium text-foreground">{cats.size}</span>
@@ -493,15 +499,15 @@ export function Scope() {
                       )}
                     />
                   )}
-                  <select
+                  <Select
                     aria-label={t(`Mode pour ${it.name}`, `Mode for ${it.name}`)}
                     className={cn(
-                      "rounded-md border bg-card px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                      "h-8 w-auto px-2",
                       m === "full_auto"
                         ? "border-destructive/40 text-destructive"
                         : m === "semi_auto"
                           ? "border-warning/40 text-warning"
-                          : "border-input text-muted-foreground hover:border-muted-foreground/40",
+                          : "text-muted-foreground",
                     )}
                     value={m}
                     onChange={(e) => setMode(it.ext_id, e.target.value as ExecutionMode | "")}
@@ -511,9 +517,9 @@ export function Scope() {
                         {o.label}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                   {m !== "suggestion" && (
-                    <select
+                    <Select
                       aria-label={t(`Repli pour ${it.name}`, `Fallback for ${it.name}`)}
                       title={t(
                         "Acteur assigné quand le garde-fou refuse une décision — le ticket n'est ni catégorisé ni priorisé, seulement routé. Sans effet en mode suggestion.",
@@ -521,7 +527,7 @@ export function Scope() {
                       )}
                       value={fallbacks.get(it.ext_id) ?? ""}
                       onChange={(e) => setFallback(it.ext_id, e.target.value)}
-                      className="max-w-40 rounded-md border border-input bg-card px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      className="h-8 w-auto max-w-40 px-2 text-muted-foreground"
                     >
                       <option value="">{t("Repli : aucun", "Fallback: none")}</option>
                       {/* Groupes d'abord : un groupe encaisse une absence, pas une personne. */}
@@ -539,7 +545,7 @@ export function Scope() {
                             {x.name}
                           </option>
                         ))}
-                    </select>
+                    </Select>
                   )}
                   {m === "semi_auto" && (
                     <input
@@ -560,7 +566,7 @@ export function Scope() {
                       onChange={(e) =>
                         setThreshold(it.ext_id, e.target.value === "" ? "" : Number(e.target.value))
                       }
-                      className="w-16 rounded-md border border-warning/40 bg-card px-2 py-1 text-[11px] text-warning focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      className="h-8 w-16 rounded-md border border-warning/40 bg-card px-2 text-caption text-warning shadow-sm transition-colors focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     />
                   )}
                 </div>
@@ -571,12 +577,12 @@ export function Scope() {
       </div>
 
       {/* Légende des modes par entité. */}
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
         <span>{t("Modes :", "Modes:")}</span>
         <Tag tone={MODE_TONE.suggestion}>{t("Suggestion", "Suggestion")}</Tag>
         <Tag tone={MODE_TONE.semi_auto}>{t("Semi-auto", "Semi-auto")}</Tag>
         <Tag tone={MODE_TONE.full_auto}>{t("Full-auto", "Full-auto")}</Tag>
-        <span className="text-muted-foreground/70">
+        <span className="text-muted-foreground">
           {t("— autonomie croissante", "— increasing autonomy")}
         </span>
       </div>
@@ -594,7 +600,7 @@ export function Scope() {
             role="status"
             aria-live="polite"
             className={cn(
-              "text-[12px]",
+              "text-body",
               enAttente > 0 ? "font-medium text-warning" : "text-muted-foreground",
             )}
           >

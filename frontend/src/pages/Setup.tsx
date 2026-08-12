@@ -189,11 +189,11 @@ export function Setup() {
       <div className="flex items-center gap-2.5">
         <Logo className="h-7 w-7" />
         <div>
-          <p className="text-[15px] font-semibold leading-tight tracking-tight">ITSM Modern AI</p>
-          <p className="text-[11.5px] leading-tight text-muted-foreground">{tagline}</p>
+          <p className="text-title font-semibold leading-tight tracking-tight">ITSM Modern AI</p>
+          <p className="text-caption leading-tight text-muted-foreground">{tagline}</p>
         </div>
       </div>
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
+      <p className="text-ui leading-relaxed text-muted-foreground">
         {t(
           "Le moteur lit vos tickets GLPI, propose une catégorie, une priorité et un technicien — et n'écrit jamais rien hors des limites que vous fixez.",
           "The engine reads your GLPI tickets and suggests a category, a priority and a technician — and never writes anything outside the limits you set.",
@@ -226,8 +226,8 @@ export function Setup() {
           <li key={item.en} className="flex gap-3">
             <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-accent-indigo" aria-hidden="true" />
             <div className="min-w-0">
-              <p className="text-[12.5px] font-medium leading-snug">{t(item.fr, item.en)}</p>
-              <p className="text-[11.5px] leading-snug text-muted-foreground">
+              <p className="text-body font-medium leading-snug">{t(item.fr, item.en)}</p>
+              <p className="text-caption leading-snug text-muted-foreground">
                 {t(item.hintFr, item.hintEn)}
               </p>
             </div>
@@ -242,7 +242,7 @@ export function Setup() {
       <AuthShell aside={aside} wide>
         <div className="flex h-full min-h-[16rem] flex-col items-center justify-center gap-3 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-          <p aria-live="polite" className="text-[13px]">
+          <p aria-live="polite" className="text-ui">
             {t("Vérification de l'installation…", "Checking the installation…")}
           </p>
         </div>
@@ -255,7 +255,7 @@ export function Setup() {
       <AuthShell aside={aside} wide>
         <div className="flex h-full min-h-[16rem] flex-col justify-center gap-4">
           <AuthBrandCompact tagline={tagline} />
-          <h1 className="text-lg font-semibold tracking-tight">
+          <h1 className="text-metric font-semibold tracking-tight">
             {t("Moteur injoignable", "Engine unreachable")}
           </h1>
           <Banner kind="warning">
@@ -282,13 +282,13 @@ export function Setup() {
         <AuthBrandCompact tagline={tagline} />
 
         <div className="flex flex-col gap-1.5">
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-accent-indigo">
+          <p className="text-caption font-medium uppercase tracking-[0.08em] text-accent-indigo">
             {t("Première installation", "First-time setup")}
           </p>
-          <h1 className="text-[22px] font-semibold leading-tight tracking-tight">
+          <h1 className="text-hero font-semibold leading-tight tracking-tight">
             {t("Bienvenue. Créons votre compte.", "Welcome. Let's create your account.")}
           </h1>
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
+          <p className="text-ui leading-relaxed text-muted-foreground">
             {t(
               "Cette console n'a pas encore d'administrateur. Ce compte sera le seul à pouvoir configurer le moteur — vous pourrez tout régler ensuite depuis l'interface.",
               "This console has no administrator yet. This account will be the only one able to configure the engine — everything else is set up from the interface afterwards.",
@@ -360,7 +360,7 @@ export function Setup() {
               disabled={busy || conflict}
             />
             {fieldErrors.email && (
-              <p id="setup-email-error" className="text-xs leading-snug text-destructive">
+              <p id="setup-email-error" className="text-body leading-snug text-destructive">
                 {fieldErrors.email}
               </p>
             )}
@@ -430,7 +430,7 @@ export function Setup() {
             </div>
             <PasswordStrength password={password} id="setup-password-strength" invalid={tooShort} />
             {fieldErrors.password && (
-              <p id="setup-password-error" className="text-xs leading-snug text-destructive">
+              <p id="setup-password-error" className="text-body leading-snug text-destructive">
                 {fieldErrors.password}
               </p>
             )}
@@ -455,7 +455,7 @@ export function Setup() {
               disabled={busy || conflict}
             />
             {fieldErrors.confirm && (
-              <p id="setup-confirm-error" className="text-xs leading-snug text-destructive">
+              <p id="setup-confirm-error" className="text-body leading-snug text-destructive">
                 {fieldErrors.confirm}
               </p>
             )}
@@ -477,7 +477,7 @@ export function Setup() {
           )}
         </form>
 
-        <p className="text-[11.5px] leading-snug text-muted-foreground">
+        <p className="text-caption leading-snug text-muted-foreground">
           {t(
             "Le mot de passe est haché (Argon2) puis chiffré au repos. Il n'est stocké nulle part ailleurs, et jamais en clair.",
             "The password is hashed (Argon2) then encrypted at rest. It is stored nowhere else, and never in clear text.",

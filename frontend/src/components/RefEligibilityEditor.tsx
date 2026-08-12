@@ -4,6 +4,7 @@ import {
   CheckSquare,
   Loader2,
   Search,
+  SearchX,
   Square,
   Users,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PanelHead } from "@/components/ui/panel";
+import { Select } from "@/components/ui/select";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -23,7 +25,7 @@ import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type EligibilityItem, type RefItem, type RefKind, type SkillDomain } from "@/lib/api";
 import { useLang, useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn, SELECTED_CONTROL, SELECTED_ROW, SUBSURFACE } from "@/lib/utils";
 
 const ALL = "__all__";
 
@@ -251,7 +253,7 @@ export function RefEligibilityEditor({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-2xl text-[12px] text-muted-foreground">{desc}</p>
+        <p className="max-w-2xl text-body text-muted-foreground">{desc}</p>
         <SyncButton onSynced={res.reload} lastSync={dernierScan(items)} />
       </div>
 
@@ -269,7 +271,7 @@ export function RefEligibilityEditor({
                   "Cannot read referentials — check the GLPI connection.",
                 )}
               </strong>{" "}
-              <span className="opacity-80">{res.error}</span>
+              {res.error}
             </span>
           </span>
         </Banner>
@@ -305,7 +307,7 @@ export function RefEligibilityEditor({
 
       {res.loading && items.length === 0 ? (
         <Card>
-          <p className="flex items-center justify-center gap-2 px-4 py-10 text-[12.5px] text-muted-foreground">
+          <p className="flex items-center justify-center gap-2 px-5 py-10 text-body text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             {t("Chargement des référentiels…", "Loading referentials…")}
           </p>
@@ -372,7 +374,12 @@ export function RefEligibilityEditor({
             }
           />
           {/* Barre d'outils */}
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-border bg-muted/30 px-4 py-3">
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-2.5 border-b border-border px-5 py-3",
+              SUBSURFACE,
+            )}
+          >
             <div className="relative min-w-48 flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -388,11 +395,11 @@ export function RefEligibilityEditor({
               />
             </div>
             {profiles.length > 0 && (
-              <select
+              <Select
                 aria-label={t("Filtrer par profil GLPI", "Filter by GLPI profile")}
                 value={profile}
                 onChange={(e) => setProfile(e.target.value)}
-                className="h-9 rounded-md border border-input bg-card px-3 text-[12.5px] transition-colors hover:border-muted-foreground/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                className="w-auto"
               >
                 <option value={ALL}>{t("Tous les profils", "All profiles")}</option>
                 {profiles.map((p) => (
@@ -400,9 +407,9 @@ export function RefEligibilityEditor({
                     {p}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
-            <label className="flex h-9 items-center gap-2 rounded-md border border-input bg-card px-3 text-[12.5px] text-muted-foreground">
+            <label className="flex h-9 items-center gap-2 rounded-md border border-input bg-card px-3 text-ui text-muted-foreground">
               <Toggle checked={eligibleOnly} onChange={setEligibleOnly} />
               {t("Éligibles seulement", "Eligible only")}
             </label>
@@ -419,9 +426,9 @@ export function RefEligibilityEditor({
                 <div
                   key={r.ext_id}
                   className={cn(
-                    "px-4 py-3 transition-colors",
+                    "px-5 py-3 transition-colors",
                     i < filtered.length - 1 && "border-b border-border",
-                    d.eligible ? "bg-primary/[0.04]" : "hover:bg-accent/40",
+                    d.eligible ? SELECTED_ROW : "hover:bg-accent/40",
                   )}
                 >
                   <div className="flex items-center gap-3">
@@ -435,7 +442,7 @@ export function RefEligibilityEditor({
                       <span
                         aria-hidden
                         className={cn(
-                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold transition-colors",
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-caption font-semibold transition-colors",
                           d.eligible
                             ? "bg-primary/15 text-accent-indigo"
                             : "bg-muted text-muted-foreground",
@@ -444,9 +451,9 @@ export function RefEligibilityEditor({
                         {initials(r.name)}
                       </span>
                       <span className="min-w-0">
-                        <span className="block truncate text-[13px] font-medium">
+                        <span className="block truncate text-ui font-medium">
                           {r.name}{" "}
-                          <span className="font-mono text-[11px] text-muted-foreground">
+                          <span className="font-mono text-caption text-muted-foreground">
                             #{r.ext_id}
                           </span>
                         </span>
@@ -463,7 +470,7 @@ export function RefEligibilityEditor({
                   </div>
                   {d.eligible && catalog.length > 0 && (
                     <div className="mt-3 pl-[44px]">
-                      <p className="mb-1.5 text-[11.5px] text-muted-foreground">
+                      <p className="mb-1.5 text-caption text-muted-foreground">
                         {/* Le même éditeur sert les techniciens ET les groupes : la phrase
                             disait « ce technicien » sur /groups. */}
                         {kind === "technician"
@@ -487,9 +494,9 @@ export function RefEligibilityEditor({
                               aria-pressed={coche}
                               onClick={() => toggleTag(r.ext_id, dom.key, !coche)}
                               className={cn(
-                                "rounded-full border px-2.5 py-1 text-[11.5px] transition-colors",
+                                "rounded-full border px-2.5 py-1 text-caption transition-colors",
                                 coche
-                                  ? "border-primary/40 bg-primary/15 text-accent-indigo"
+                                  ? SELECTED_CONTROL
                                   : "border-border text-muted-foreground hover:bg-accent/60",
                               )}
                             >
@@ -519,9 +526,11 @@ export function RefEligibilityEditor({
               );
             })}
             {filtered.length === 0 && (
-              <p className="px-4 py-8 text-center text-[12.5px] text-muted-foreground">
-                {t("Aucun résultat pour ce filtre.", "No result for this filter.")}
-              </p>
+              <EmptyState
+                dense
+                icon={SearchX}
+                title={t("Aucun résultat pour ce filtre.", "No result for this filter.")}
+              />
             )}
           </div>
         </Card>
@@ -542,7 +551,7 @@ export function RefEligibilityEditor({
               role="status"
               aria-live="polite"
               className={cn(
-                "text-[12px]",
+                "text-body",
                 modifies > 0 ? "font-medium text-warning" : "text-muted-foreground",
               )}
             >

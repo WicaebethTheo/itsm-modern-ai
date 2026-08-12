@@ -4,8 +4,8 @@
 
 | Suite | Compte | Commande |
 |---|---:|---|
-| **pytest** (unit + integration via `respx`) | **652** | `make test` |
-| **Vitest + Testing Library** (composants + pages) | **194** (26 fichiers) | `make ui-test` |
+| **pytest** (unit + integration via `respx`) | **668** | `make test` |
+| **Vitest + Testing Library** (composants + pages) | **358** (32 fichiers) | `make ui-test` |
 | **Playwright** (E2E, API mockée) | **7 parcours** (4 fichiers) | `make ui-e2e` |
 | **ruff** (Python) | 0 violation | `make lint` |
 | **Biome + tsc** (TS/JSX) | 0 violation | `make ui-lint` |
@@ -129,10 +129,10 @@ Deux choix de configuration qui font toute la différence :
   pour 0. Écart mesuré : **81,6 % annoncé contre 69,0 % réel**. Un taux qui *monte* quand on
   supprime un test est pire que pas de taux du tout.
 
-`Dashboard.tsx` et `Debug.tsx` restent non testés — assumé : affichage en lecture seule pour
-le premier, outil désactivé par défaut en production (`DEBUG_TOOLS_ENABLED`) pour le second.
-L'effort a été mis sur `Automations.tsx`, seul écran déclenchant une **suppression
-définitive** de données (purge RGPD).
+Chaque page a désormais son fichier de test, `Dashboard.tsx` et `Debug.tsx` compris — c'étaient
+les deux derniers écrans non exercés, et ils pesaient sur le dénominateur sans rien garantir.
+Les seuils ont donc été remontés de 65/56/65 à **85/78/86** : un cliquet laissé vingt points
+sous la mesure autorise à défaire ce qui vient d'être écrit sans qu'aucune porte ne bronche.
 
 **E2E Playwright** : joués **en local** (`make ui-e2e`), pas en CI — ils y étaient déjà
 non bloquants (`allow_failure`). À rebrancher dans `ci.yml` le jour où ils sont stabilisés.

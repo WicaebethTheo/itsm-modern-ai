@@ -98,9 +98,9 @@ function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => v
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-2 rounded-full border border-border py-0.5 pl-0.5 pr-2 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="flex items-center gap-2 rounded-full border border-border py-0.5 pl-0.5 pr-2 text-body text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
-        <Avatar name={name} className="size-6 text-[10px]" />
+        <Avatar name={name} className="size-6 text-caption" />
         <span className="hidden max-w-[9rem] truncate sm:inline">{name}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       </button>
@@ -112,25 +112,25 @@ function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => v
           className="absolute right-0 top-9 z-50 w-64 rounded-lg border border-border bg-card p-1.5 shadow-lg"
         >
           <div className="px-2.5 py-1.5">
-            <p className="truncate text-[12.5px] font-medium text-foreground">{name}</p>
-            {email ? <p className="truncate text-[11.5px] text-muted-foreground">{email}</p> : null}
+            <p className="truncate text-body font-medium text-foreground">{name}</p>
+            {email ? <p className="truncate text-caption text-muted-foreground">{email}</p> : null}
           </div>
           <div className="my-1 h-px bg-border" />
           <NavLink
             to="/account"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-body text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <UserCog className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             {t("Compte & sécurité", "Account & security")}
           </NavLink>
           <div className="my-1 h-px bg-border" />
-          <div className="flex items-center justify-between gap-2 px-2.5 py-1 text-[12.5px] text-muted-foreground">
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1 text-body text-muted-foreground">
             <span>{t("Langue", "Language")}</span>
             <LangToggle />
           </div>
-          <div className="flex items-center justify-between gap-2 px-2.5 py-1 text-[12.5px] text-muted-foreground">
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1 text-body text-muted-foreground">
             <span>{t("Thème", "Theme")}</span>
             <ThemeToggle compact />
           </div>
@@ -139,7 +139,7 @@ function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => v
               <div className="my-1 h-px bg-border" />
               {/* Fait d'installation, pas un signal d'exploitation : il descend ici plutôt
                   que d'occuper deux badges dans la barre. */}
-              <p className="px-2.5 py-1 text-[11px] text-muted-foreground">
+              <p className="px-2.5 py-1 text-caption text-muted-foreground">
                 {`v${v.current} · ${runtimeLabel}`}
               </p>
             </>
@@ -149,7 +149,7 @@ function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => v
             type="button"
             role="menuitem"
             onClick={onLogout}
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] text-destructive transition-colors hover:bg-destructive/10"
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-body text-destructive transition-colors hover:bg-destructive/10"
           >
             <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             {t("Déconnexion", "Sign out")}
@@ -210,7 +210,7 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
       <div className="flex min-w-0 items-baseline gap-3">
         {/* Pas de « · derniers 14 jours » ici : les compteurs du tableau de bord sont des
             CUMULS depuis la mise en service, seule la tendance porte sur 14 jours. */}
-        <h1 className="truncate text-[15px] font-medium tracking-tight">{title}</h1>
+        <h1 className="truncate text-title font-medium tracking-tight">{title}</h1>
       </div>
       <div className="flex shrink-0 items-center gap-2.5">
         {/* UN SEUL chip d'édition, qui mène à la page Supporter. Le bouton violet et le
@@ -234,7 +234,7 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
                   )
             }
             className={cn(
-              "hidden items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors md:flex",
+              "hidden items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-caption font-medium transition-colors md:flex",
               isSupporter
                 ? "border-accent-purple/40 bg-accent-purple/15 text-accent-purple hover:bg-accent-purple/25"
                 : "border-border bg-muted text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -259,7 +259,7 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
               `Mise à jour disponible (v${v.latest}) — ${updateCommand(v.runtime)} — voir la doc →`,
               `Update available (v${v.latest}) — ${updateCommand(v.runtime)} — see docs →`,
             )}
-            className="hidden items-center gap-1 rounded-full border border-accent-indigo/40 bg-accent-indigo/10 px-2 py-0.5 text-[11px] font-medium text-accent-indigo md:flex"
+            className="hidden items-center gap-1 rounded-full border border-accent-indigo/40 bg-accent-indigo/10 px-2 py-0.5 text-caption font-medium text-accent-indigo md:flex"
           >
             ↑ v{v.latest}
           </a>
@@ -268,7 +268,7 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
         <span
           title={glpi.title}
           className={cn(
-            "hidden rounded-full border px-2.5 py-0.5 text-[11.5px] font-medium md:inline",
+            "hidden rounded-full border px-2.5 py-0.5 text-caption font-medium md:inline",
             glpi.cls,
           )}
         >
@@ -315,7 +315,7 @@ export function Layout() {
         <div className="app-shell-glow" aria-hidden="true" />
         <div className="app-shell flex h-full w-full overflow-hidden rounded-xl border border-border bg-background text-foreground">
           {/* Sidebar fixe (224px), bordure droite fine. */}
-          <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar p-3 text-[13px]">
+          <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar p-3 text-ui">
             <div className="mb-2 flex items-center gap-2 px-2 py-2">
               <Logo className="h-5 w-5" />
               <span className="font-semibold tracking-tight">ITSM Modern AI</span>
@@ -323,10 +323,7 @@ export function Layout() {
 
             {NAV.map((section) => (
               <div key={section.en} className="flex flex-col gap-0.5">
-                <p
-                  className="px-2 pt-4 pb-1 text-[10.5px] font-medium uppercase text-muted-foreground/70"
-                  style={{ letterSpacing: "0.12em" }}
-                >
+                <p className="px-2 pt-4 pb-1 text-caption font-medium uppercase tracking-[0.08em] text-muted-foreground">
                   {t(section.fr, section.en)}
                 </p>
                 {section.items.map((it) => (
@@ -350,7 +347,7 @@ export function Layout() {
               </div>
             ))}
 
-            <div className="mt-auto flex flex-col gap-1.5 px-2 pt-3 text-[11px] text-muted-foreground">
+            <div className="mt-auto flex flex-col gap-1.5 px-2 pt-3 text-caption text-muted-foreground">
               {cfg.data ? (
                 <div className="flex items-center gap-2">
                   <span

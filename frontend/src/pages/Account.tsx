@@ -142,23 +142,23 @@ export function Account() {
         <CardContent>
           <dl className="grid gap-3 sm:grid-cols-2">
             <div>
-              <dt className="text-[11.5px] uppercase tracking-wide text-muted-foreground">
+              <dt className="text-caption font-medium uppercase tracking-[0.08em] text-muted-foreground">
                 {t("Adresse email", "Email address")}
               </dt>
-              <dd className="truncate text-[13.5px]">
+              <dd className="truncate text-ui">
                 {me.loading ? "…" : email || t("inconnue", "unknown")}
               </dd>
             </div>
             <div>
-              <dt className="text-[11.5px] uppercase tracking-wide text-muted-foreground">
+              <dt className="text-caption font-medium uppercase tracking-[0.08em] text-muted-foreground">
                 {t("Nom affiché", "Display name")}
               </dt>
-              <dd className="truncate text-[13.5px]">
+              <dd className="truncate text-ui">
                 {me.loading ? "…" : displayName || t("(aucun)", "(none)")}
               </dd>
             </div>
           </dl>
-          <p className="pt-3 text-[11.5px] leading-snug text-muted-foreground">
+          <p className="pt-3 text-caption leading-snug text-muted-foreground">
             {t(
               "L'adresse et le nom se changent depuis le moteur : docker compose exec itsm python -m itsm_modern_ai.admin_setup --email nouvelle@adresse.fr --email-only",
               "The address and name are changed from the engine: docker compose exec itsm python -m itsm_modern_ai.admin_setup --email new@address.com --email-only",
@@ -227,7 +227,7 @@ export function Account() {
                   disabled={busy}
                 />
                 {fieldErrors.current ? (
-                  <p id="account-current-error" className="text-xs leading-snug text-destructive">
+                  <p id="account-current-error" className="text-body leading-snug text-destructive">
                     {fieldErrors.current}
                   </p>
                 ) : null}
@@ -274,7 +274,7 @@ export function Account() {
                 </div>
                 <PasswordStrength password={next} id="account-new-strength" invalid={tooShort} />
                 {fieldErrors.next ? (
-                  <p id="account-new-error" className="text-xs leading-snug text-destructive">
+                  <p id="account-new-error" className="text-body leading-snug text-destructive">
                     {fieldErrors.next}
                   </p>
                 ) : null}
@@ -296,7 +296,7 @@ export function Account() {
                   disabled={busy}
                 />
                 {fieldErrors.confirm ? (
-                  <p id="account-confirm-error" className="text-xs leading-snug text-destructive">
+                  <p id="account-confirm-error" className="text-body leading-snug text-destructive">
                     {fieldErrors.confirm}
                   </p>
                 ) : null}
@@ -304,7 +304,7 @@ export function Account() {
 
               {/* Prévenu AVANT de valider : personne ne doit découvrir après coup qu'il
                   vient de se déconnecter de partout. */}
-              <p className="text-[11.5px] leading-snug text-muted-foreground">
+              <p className="text-caption leading-snug text-muted-foreground">
                 {t(
                   "Après le changement, toutes les sessions ouvertes sont fermées — y compris celle-ci. Vous serez renvoyé vers l'écran de connexion.",
                   "After the change, every open session is closed — including this one. You will be sent back to the sign-in screen.",

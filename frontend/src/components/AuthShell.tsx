@@ -49,7 +49,7 @@ export function AuthShell({
         <div className="app-shell grid max-h-[calc(100vh-1.5rem)] w-full grid-cols-1 overflow-hidden rounded-xl border border-border bg-background text-foreground sm:max-h-[calc(100vh-2.5rem)] lg:grid-cols-[17.5rem_1fr]">
           <aside className="hidden flex-col justify-between border-r border-border bg-sidebar p-7 lg:flex">
             {aside}
-            <p className="pt-8 text-[11px] text-muted-foreground">
+            <p className="pt-8 text-caption text-muted-foreground">
               {t("Version", "Version")} {APP_VERSION} · {t("On-premise", "On-premise")}
             </p>
           </aside>
@@ -78,8 +78,8 @@ export function AuthBrandCompact({ tagline }: { tagline: string }) {
     <div className="flex items-center gap-2.5 pb-1 lg:hidden">
       <Logo className="h-6 w-6" />
       <div className="min-w-0">
-        <p className="text-[13px] font-semibold leading-tight tracking-tight">ITSM Modern AI</p>
-        <p className="truncate text-[11.5px] leading-tight text-muted-foreground">{tagline}</p>
+        <p className="text-ui font-semibold leading-tight tracking-tight">ITSM Modern AI</p>
+        <p className="truncate text-caption leading-tight text-muted-foreground">{tagline}</p>
       </div>
     </div>
   );

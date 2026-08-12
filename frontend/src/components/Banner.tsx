@@ -13,13 +13,20 @@ const bannerStyles = {
 
 export function Banner({
   kind,
+  role,
   children,
 }: {
   kind: "success" | "error" | "warning" | "info";
+  /**
+   * Restitution : `alert` pour une erreur qui doit interrompre un lecteur d'écran,
+   * `status` pour une information qui arrive sans urgence. Absent = purement visuel
+   * (le conteneur `aria-live` de la page s'en charge déjà, le plus souvent).
+   */
+  role?: "alert" | "status";
   children: ReactNode;
 }) {
   return (
-    <div className={cn("rounded-md border px-3 py-2 text-[12.5px]", bannerStyles[kind])}>
+    <div role={role} className={cn("rounded-md border px-3 py-2 text-body", bannerStyles[kind])}>
       {children}
     </div>
   );

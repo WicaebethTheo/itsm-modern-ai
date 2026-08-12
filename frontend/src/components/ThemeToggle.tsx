@@ -1,5 +1,6 @@
 import { Moon, Sun } from "lucide-react";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import { getStoredTheme, setTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -23,15 +24,17 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
 
   if (compact) {
     return (
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="icon-sm"
         onClick={toggle}
         aria-label={label}
         title={label}
-        className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="border-border bg-transparent text-muted-foreground hover:text-foreground"
       >
-        <Icon className="h-4 w-4" />
-      </button>
+        <Icon />
+      </Button>
     );
   }
 
@@ -41,7 +44,7 @@ export function ThemeToggle({ compact = false }: { compact?: boolean }) {
       onClick={toggle}
       aria-label={label}
       className={cn(
-        "flex items-center gap-2 rounded-md px-3 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+        "flex items-center gap-2 rounded-md px-3 py-2 text-ui text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
       )}
     >
       <Icon className="h-4 w-4" />

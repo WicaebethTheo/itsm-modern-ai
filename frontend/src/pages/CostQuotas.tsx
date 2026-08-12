@@ -5,11 +5,12 @@ import { Banner } from "@/components/Banner";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { KpiCard, KpiSkeleton } from "@/components/ui/kpi";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
-import { useLang, useT } from "@/lib/i18n";
+import { localeFor, useLang, useLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 /** Symbole monétaire — EUR → €, fallback : code ISO tel quel. */
@@ -20,54 +21,17 @@ function currencySymbol(currency: string): string {
 /** Formate un montant « 1,83 € » (locale FR/EN selon `lang`, symbole d'après la devise). */
 function formatMoney(amount: number, currency: string, lang: "fr" | "en"): string {
   const sym = currencySymbol(currency);
-  const n = amount.toLocaleString(lang === "fr" ? "fr-FR" : "en-US", {
+  const n = amount.toLocaleString(localeFor(lang), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
   return lang === "fr" ? `${n} ${sym}` : `${sym}${n}`;
 }
 
-/** Carte KPI — label 11.5px + valeur 22px + icône, calquée sur le Dashboard. */
-function KpiCard({
-  icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <Card className="p-3.5">
-      <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground">
-        <span className="[&_svg]:h-3.5 [&_svg]:w-3.5">{icon}</span>
-        {label}
-      </div>
-      <div className="mt-1.5 text-[22px] font-semibold tracking-tight">{value}</div>
-      {hint && <div className="mt-0.5 text-[11px] text-muted-foreground">{hint}</div>}
-    </Card>
-  );
-}
-
-/**
- * Squelette d'une carte KPI. Un « — » pendant le chargement était indiscernable d'une
- * instance qui n'a jamais appelé de LLM : deux situations opposées, un seul écran.
- */
-function KpiSkeleton() {
-  return (
-    <Card className="p-3.5" data-testid="cost-skeleton">
-      <div className="h-3 w-24 animate-pulse rounded bg-muted" />
-      <div className="mt-2 h-6 w-20 animate-pulse rounded bg-muted" />
-      <div className="mt-2 h-2.5 w-28 animate-pulse rounded bg-muted" />
-    </Card>
-  );
-}
-
 export function CostQuotas() {
   const t = useT();
   const { lang } = useLang();
+  const locale = useLocale();
   const navigate = useNavigate();
   const cost = useResource(useCallback(() => Api.cost(), []));
   const c = cost.data;
@@ -100,7 +64,7 @@ export function CostQuotas() {
     <div className="space-y-4">
       {/* En-tête — le <h1> de la route est rendu par le Layout, ne pas le doubler. */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-        <p className="text-[12.5px] text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           {t(
             "Dépense LLM des dernières 24 h et plafond journalier glissant.",
             "LLM spend over the last 24h and the rolling daily cap.",
@@ -108,9 +72,9 @@ export function CostQuotas() {
         </p>
         <div className="flex items-center gap-2">
           {readAt && (
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-caption text-muted-foreground">
               {t("Relevé à", "Read at")}{" "}
-              {readAt.toLocaleTimeString(lang === "fr" ? "fr-FR" : "en-US", {
+              {readAt.toLocaleTimeString(locale, {
                 hour: "2-digit",
                 minute: "2-digit",
               })}
@@ -177,9 +141,9 @@ export function CostQuotas() {
       {/* Chargement : squelette plutôt que « — », qui se confond avec « aucun appel ». */}
       {cost.loading && !c ? (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-          <KpiSkeleton />
-          <KpiSkeleton />
-          <KpiSkeleton />
+          <KpiSkeleton data-testid="cost-skeleton" />
+          <KpiSkeleton data-testid="cost-skeleton" />
+          <KpiSkeleton data-testid="cost-skeleton" />
         </div>
       ) : empty ? (
         <Card>
@@ -227,7 +191,7 @@ export function CostQuotas() {
             <KpiCard
               icon={<TrendingUp />}
               label={t("Appels LLM journalisés", "LLM calls logged")}
-              value={c ? c.llm_calls_total.toLocaleString(lang === "fr" ? "fr-FR" : "en-US") : "—"}
+              value={c ? c.llm_calls_total.toLocaleString(locale) : "—"}
             />
           </div>
 
@@ -253,7 +217,7 @@ export function CostQuotas() {
                   </Tag>
                 }
               />
-              <CardContent className="flex flex-col gap-2 p-5">
+              <CardContent className="flex flex-col gap-2">
                 {/* Jauge accessible : rôle progressbar + valeurs ARIA (la valeur réelle, non bornée,
                     est annoncée via aria-valuetext pour les dépassements > 100 %). */}
                 {/* NB : progressbar est un rôle ARIA NON interactif (WAI-ARIA APG) — il ne doit pas
@@ -274,7 +238,7 @@ export function CostQuotas() {
                     style={{ width: `${pctClamped}%` }}
                   />
                 </div>
-                <div className="flex items-center justify-between text-[12px] text-muted-foreground">
+                <div className="flex items-center justify-between text-body text-muted-foreground">
                   <span>{formatMoney(c.spent_eur_last_24h, c.currency, lang)}</span>
                   <span>{formatMoney(c.cost_cap_eur_per_day, c.currency, lang)}</span>
                 </div>
@@ -294,26 +258,26 @@ export function CostQuotas() {
               "Unit prices used to estimate spend (per million tokens).",
             )}
           />
-          <CardContent className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
-            <div className="rounded-md border border-border bg-muted/20 p-4">
-              <div className="text-[11.5px] text-muted-foreground">{t("Entrée", "Input")}</div>
-              <div className="mt-1 text-[18px] font-semibold tracking-tight">
+          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="rounded-md border border-border bg-muted/30 p-4">
+              <div className="text-caption text-muted-foreground">{t("Entrée", "Input")}</div>
+              <div className="mt-1 text-metric font-semibold tracking-tight">
                 {formatMoney(c.price_input_per_mtok, c.currency, lang)}{" "}
-                <span className="text-[12px] font-normal text-muted-foreground">
+                <span className="text-body font-normal text-muted-foreground">
                   {t("/ Mtok entrée", "/ Mtok input")}
                 </span>
               </div>
             </div>
-            <div className="rounded-md border border-border bg-muted/20 p-4">
-              <div className="text-[11.5px] text-muted-foreground">{t("Sortie", "Output")}</div>
-              <div className="mt-1 text-[18px] font-semibold tracking-tight">
+            <div className="rounded-md border border-border bg-muted/30 p-4">
+              <div className="text-caption text-muted-foreground">{t("Sortie", "Output")}</div>
+              <div className="mt-1 text-metric font-semibold tracking-tight">
                 {formatMoney(c.price_output_per_mtok, c.currency, lang)}{" "}
-                <span className="text-[12px] font-normal text-muted-foreground">
+                <span className="text-body font-normal text-muted-foreground">
                   {t("/ Mtok sortie", "/ Mtok output")}
                 </span>
               </div>
             </div>
-            <p className="text-[11.5px] text-muted-foreground sm:col-span-2">
+            <p className="text-caption text-muted-foreground sm:col-span-2">
               {t(
                 "Ces tarifs sont des estimations indicatives : la facturation réelle dépend du fournisseur LLM.",
                 "These tariffs are indicative estimates: real billing depends on the LLM provider.",
@@ -325,8 +289,8 @@ export function CostQuotas() {
 
       {/* Renvoi vers le Moteur : le plafond s'édite là-bas (cette page est en lecture seule). */}
       <Card>
-        <CardContent className="flex flex-col items-start gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[12.5px] text-muted-foreground">
+        <CardContent className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-body text-muted-foreground">
             {t(
               "Le plafond de coût et les tarifs se règlent dans Moteur. Cette page est en lecture seule.",
               "The cost cap and tariffs are set in Engine. This page is read-only.",

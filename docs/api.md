@@ -30,8 +30,10 @@ Un **seul** compte administrateur, créé **à la première visite** — pas d'a
 | `/api/auth/login` | `POST` | Connexion (`email` + `password` → cookie de session). |
 | `/api/auth/logout` | `POST` | Déconnexion. |
 | `/api/auth/status` | `GET` | État de la session : `authenticated`, `auth_configured`, **`setup_required`** (vrai tant qu'aucun compte n'existe → l'UI envoie sur l'écran de création). |
+| `/api/auth/me` | `GET` | Identité du compte connecté (`email`, `display_name`). **Authentifiée** — route séparée précisément pour que `/api/auth/status`, qui est publique, n'ait jamais à porter l'adresse. |
+| `/api/auth/password` | `POST` | Change le mot de passe (`current_password`, `new_password`). **Authentifiée**, revérifie le mot de passe courant, et compte ses échecs sur le **même limiteur que le login** — sinon la route offrirait un oracle de vérification non compté. Succès = toutes les sessions tombent, y compris l'appelante (la génération de session est incrémentée) : l'UI renvoie sur `/login`. |
 
-⚠️ **L'adresse du compte n'apparaît dans aucune de ces réponses.** `/api/auth/status` est public : diffuser l'identifiant à un anonyme lui offrirait la moitié du couple à deviner. De même, un login raté renvoie le **même** code et le **même** message que l'email soit inconnu ou le mot de passe faux — et le hash est payé dans tous les cas, pour que le chronomètre ne dise pas ce que le message tait.
+⚠️ **L'adresse du compte n'apparaît dans aucune réponse NON authentifiée.** `/api/auth/status` est public : diffuser l'identifiant à un anonyme lui offrirait la moitié du couple à deviner. De même, un login raté renvoie le **même** code et le **même** message que l'email soit inconnu ou le mot de passe faux — et le hash est payé dans tous les cas, pour que le chronomètre ne dise pas ce que le message tait.
 
 Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `X-Forwarded-For` si `TRUST_PROXY_HEADERS=true`. **`/api/auth/setup` est compté par le même limiteur** que le login : sans cela, la création offrirait un point de martèlement non compté, et un moyen de sonder gratuitement si l'instance est encore revendicable.
 
@@ -52,7 +54,7 @@ Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `
 
 | Endpoint | Méthode | Description |
 |---|---|---|
-| `/api/discovery/{kind}` | `GET` | Liste tout le cache pour `kind ∈ {category, entity, technician, group}`. |
+| `/api/discovery/{kind}` | `GET` | Liste tout le cache pour `kind ∈ {category, entity, technician, group}`. Chaque entrée porte `updated_at` : l'horodatage du dernier scan, pour que la console puisse dire la **fraîcheur** du référentiel (un technicien parti il y a trois mois reste sinon dans la liste sans que rien ne le signale). |
 | `/api/scope` | `GET` | Périmètre actuel (catégories autorisées + entités). |
 | `/api/scope` | `PUT` | Met à jour le périmètre. |
 | `/api/modes` | `PUT` | Mode d'exécution par entité (`suggestion`/`semi_auto`/`full_auto`), 2ᵉ seuil semi-auto, et **cible de repli** (`fallback_group_id` / `fallback_technician_id`, groupe prioritaire). Une cible non éligible est refusée (`400 fallback_not_eligible`) plutôt qu'acceptée sans effet. |
@@ -67,8 +69,8 @@ Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `
 
 | Endpoint | Méthode | Description |
 |---|---|---|
-| `/api/sandbox` | `POST` | Test à blanc d'un texte de ticket (aucune écriture GLPI). |
-| `/api/decisions` | `GET` | Journal de décision paginé (`limit`, `offset`). |
+| `/api/sandbox` | `POST` | Test à blanc d'un texte de ticket (`title` + `content`, aucune écriture GLPI). La réponse porte la Décision LLM **même refusée** (avec son motif) ainsi que `model`, `cost_eur`, `prompt_tokens`, `completion_tokens` — l'essai est facturé et décompté du plafond, il doit donc dire ce qu'il a coûté. |
+| `/api/decisions` | `GET` | Journal de décision (`limit`, défaut 500, borné à 10 000 — **pas d'`offset`** : la liste est rendue du plus récent au plus ancien). Chaque entrée porte `fallback_applied`, qui distingue un « à trier » repris par la cible de repli d'un « à trier » resté sans destinataire. |
 | `/api/decisions/{id}/annotation` | `PATCH` | Annotation libre a posteriori. |
 | `/api/export/decisions.csv` | `GET` | Export CSV DPO du Journal. |
 | `/api/export/llm-calls.csv` | `GET` | Export CSV des appels LLM (masqués). |

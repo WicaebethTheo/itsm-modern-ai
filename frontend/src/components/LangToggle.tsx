@@ -15,7 +15,7 @@ export function LangToggle() {
           : t("Passer en français", "Switch to French")
       }
       title={lang === "fr" ? t("Anglais", "English") : t("Français", "French")}
-      className="flex h-7 items-center rounded-md border border-border px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      className="flex h-7 items-center rounded-md border border-border px-2 text-caption font-medium uppercase tracking-[0.08em] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
     >
       {lang}
     </button>

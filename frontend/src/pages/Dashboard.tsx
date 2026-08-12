@@ -7,11 +7,12 @@ import { ProgressBar, Sparkline, StackedBars } from "@/components/Charts";
 import { EmptyState } from "@/components/EmptyState";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag, type TagTone } from "@/components/ui/tag";
 import { useResource } from "@/hooks/useResource";
 import { Api } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/i18n";
 import { reasonLabel, reasonTone } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
@@ -35,51 +36,6 @@ const REASON_BAR: Record<TagTone, string> = {
   muted: "bg-muted-foreground",
 };
 
-/**
- * Carte KPI (label 11.5px + valeur 22px + tag coloré + sparkline) — style maquette.
- * `loading` rend un squelette : un « — » muet est indiscernable d'une valeur nulle
- * réellement mesurée, et c'est la première chose que voit l'exploitant en arrivant.
- */
-function KpiCard({
-  label,
-  value,
-  tag,
-  tagClass = "text-muted-foreground",
-  loading = false,
-  children,
-}: {
-  label: string;
-  value: string;
-  tag?: string;
-  tagClass?: string;
-  loading?: boolean;
-  children?: ReactNode;
-}) {
-  const t = useT();
-  return (
-    <Card className="p-3.5">
-      <div className="text-[11.5px] text-muted-foreground">{label}</div>
-      {loading ? (
-        <>
-          <div className="mt-1.5 flex h-[26px] items-center">
-            <Skeleton className="h-[18px] w-20" />
-            <span className="sr-only">{t("Chargement…", "Loading…")}</span>
-          </div>
-          <Skeleton className="mt-2 h-4 w-full" />
-        </>
-      ) : (
-        <>
-          <div className="mt-1.5 flex items-baseline gap-2">
-            <span className="text-[22px] font-semibold tracking-tight">{value}</span>
-            {tag && <span className={`text-[11px] ${tagClass}`}>{tag}</span>}
-          </div>
-          {children}
-        </>
-      )}
-    </Card>
-  );
-}
-
 export function Dashboard() {
   const t = useT();
   const metrics = useResource(useCallback(() => Api.metrics(), []));
@@ -87,8 +43,8 @@ export function Dashboard() {
   // Aperçu = 8 lignes : inutile de télécharger les 500 dernières décisions pour ça.
   const decisions = useResource(useCallback(() => Api.decisions(PREVIEW_ROWS), []));
 
-  // Locale de formatage des nombres alignée sur la langue de l'UI (comme Journal).
-  const locale = t("fr-FR", "en-US");
+  // Locale de formatage des nombres : source unique (lib/i18n), comme partout ailleurs.
+  const locale = useLocale();
   const m = metrics.data;
   const opView = ops.data ?? null;
   const op = opView?.metrics ?? null;
@@ -135,9 +91,9 @@ export function Dashboard() {
     trend = <Skeleton className="h-[120px] w-full" />;
   } else if (metrics.error) {
     trend = (
-      <p className="py-10 text-center text-[12.5px] text-destructive">
+      <Banner kind="error" role="alert">
         {t("Tendance indisponible :", "Trend unavailable:")} {metrics.error}
-      </p>
+      </Banner>
     );
   } else if (seriesTotal === 0) {
     trend = (
@@ -171,7 +127,7 @@ export function Dashboard() {
       {/* Cadrage + rafraîchissement manuel. La page charge UNE fois : afficher un badge
           « live » au-dessus de compteurs figés était le mensonge le plus visible ici. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-3xl text-[12px] text-muted-foreground">
+        <p className="max-w-3xl text-body text-muted-foreground">
           {t(
             "Compteurs cumulés depuis la mise en service — seule la tendance ci-dessous couvre les 14 derniers jours. Cette page ne se rafraîchit pas toute seule.",
             "Counters are cumulative since first run — only the trend below covers the last 14 days. This page does not refresh on its own.",
@@ -236,12 +192,12 @@ export function Dashboard() {
                     overCap ? "destructive" : capPct != null && capPct >= 80 ? "warning" : "primary"
                   }
                 />
-                <div className="text-[10.5px] text-muted-foreground">
+                <div className="text-caption text-muted-foreground">
                   {t("plafond", "cap")} {money(cap)}/{t("jour", "day")}
                 </div>
               </>
             ) : (
-              <div className="text-[10.5px] text-muted-foreground">
+              <div className="text-caption text-muted-foreground">
                 {t("aucun plafond configuré", "no cap configured")}
               </div>
             )}
@@ -266,7 +222,7 @@ export function Dashboard() {
           title={t("Tendance sur 14 jours", "14-day trend")}
           subtitle={t("Tickets · traités vs à trier", "Tickets · handled vs to triage")}
           right={
-            <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-3 text-caption text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-sm bg-primary" />
                 {t("Traités", "Handled")}
@@ -278,7 +234,7 @@ export function Dashboard() {
             </div>
           }
         />
-        <div className="p-4">{trend}</div>
+        <div className="p-5">{trend}</div>
       </Card>
 
       {/* Pourquoi les tickets partent « à trier » — `by_reason` est la seule donnée
@@ -293,32 +249,32 @@ export function Dashboard() {
           }
         />
         {metricsLoading ? (
-          <div className="space-y-3 p-4">
+          <div className="space-y-3 p-5">
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-full" />
           </div>
         ) : metrics.error ? (
-          <p className="px-4 py-8 text-center text-[12.5px] text-destructive">
-            {t("Motifs indisponibles :", "Reasons unavailable:")} {metrics.error}
-          </p>
-        ) : reasons.length === 0 ? (
-          <div className="px-4 py-8">
-            <EmptyState
-              icon={ListChecks}
-              title={t("Aucun ticket « à trier »", "No ticket left “to triage”")}
-              description={t(
-                "Tous les tickets analysés ont été tranchés par le moteur.",
-                "Every analyzed ticket was decided by the engine.",
-              )}
-            />
+          <div className="p-5">
+            <Banner kind="error" role="alert">
+              {t("Motifs indisponibles :", "Reasons unavailable:")} {metrics.error}
+            </Banner>
           </div>
+        ) : reasons.length === 0 ? (
+          <EmptyState
+            icon={ListChecks}
+            title={t("Aucun ticket « à trier »", "No ticket left “to triage”")}
+            description={t(
+              "Tous les tickets analysés ont été tranchés par le moteur.",
+              "Every analyzed ticket was decided by the engine.",
+            )}
+          />
         ) : (
           <ul className="divide-y divide-border">
             {reasons.map(([reason, n]) => {
               const share = Math.round((n / reasonTotal) * 100);
               return (
-                <li key={reason} className="flex items-center gap-3 px-4 py-2.5 text-[12.5px]">
+                <li key={reason} className="flex items-center gap-3 px-5 py-2.5 text-body">
                   <span className="w-48 shrink-0 truncate" title={reasonLabel(reason, t)}>
                     {reasonLabel(reason, t)}
                   </span>
@@ -328,7 +284,7 @@ export function Dashboard() {
                       style={{ width: `${Math.max(2, share)}%` }}
                     />
                   </span>
-                  <span className="w-28 shrink-0 text-right font-mono text-[12px] text-muted-foreground">
+                  <span className="w-28 shrink-0 text-right font-mono text-body text-muted-foreground">
                     {num(n)} · {share}%
                   </span>
                 </li>
@@ -353,38 +309,38 @@ export function Dashboard() {
             Statut et Confiance sont coupées par l'`overflow-hidden` de la Card sous ~1000px
             de fenêtre — information inaccessible, sans même une barre de défilement. */}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-[12px]">
-            <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+          <table className="w-full min-w-[720px] text-body">
+            <thead className="border-b border-border text-caption font-medium uppercase tracking-[0.08em] text-muted-foreground">
               <tr>
-                <th className="w-[72px] px-4 py-2 text-left font-medium">
+                <th className="w-[72px] px-5 py-2 text-left font-medium">
                   {t("Ticket", "Ticket")}
                 </th>
-                <th className="px-4 py-2 text-left font-medium">{t("Sujet", "Subject")}</th>
-                <th className="w-[150px] px-4 py-2 text-left font-medium">
+                <th className="px-5 py-2 text-left font-medium">{t("Sujet", "Subject")}</th>
+                <th className="w-[150px] px-5 py-2 text-left font-medium">
                   {t("Catégorie", "Category")}
                 </th>
-                <th className="w-[140px] px-4 py-2 text-left font-medium">
+                <th className="w-[140px] px-5 py-2 text-left font-medium">
                   {t("Routage", "Routing")}
                 </th>
-                <th className="w-[56px] px-4 py-2 text-left font-medium">{t("Urg.", "Urg.")}</th>
-                <th className="w-[100px] px-4 py-2 text-left font-medium">
+                <th className="w-[56px] px-5 py-2 text-left font-medium">{t("Urg.", "Urg.")}</th>
+                <th className="w-[100px] px-5 py-2 text-left font-medium">
                   {t("Statut", "Status")}
                 </th>
-                <th className="w-[72px] px-4 py-2 text-left font-medium">{t("Conf.", "Conf.")}</th>
+                <th className="w-[72px] px-5 py-2 text-left font-medium">{t("Conf.", "Conf.")}</th>
               </tr>
             </thead>
             <tbody>
               {decisions.loading && !decisions.data
                 ? [0, 1, 2, 3].map((i) => (
                     <tr key={i} className="border-b border-border last:border-0">
-                      <td className="px-4 py-2.5" colSpan={7}>
+                      <td className="px-5 py-2.5" colSpan={7}>
                         <Skeleton className="h-3 w-full" />
                       </td>
                     </tr>
                   ))
                 : (decisions.data ?? []).slice(0, PREVIEW_ROWS).map((d) => (
                     <tr key={d.id} className="border-b border-border last:border-0">
-                      <td className="px-4 py-2 font-mono">
+                      <td className="px-5 py-2 font-mono">
                         {d.glpi_link ? (
                           <a
                             className="text-primary hover:underline"
@@ -398,7 +354,7 @@ export function Dashboard() {
                           <span className="text-muted-foreground">#{d.ticket_id}</span>
                         )}
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-5 py-2">
                         <div className="max-w-[280px] truncate" title={d.subject}>
                           {d.subject && d.glpi_link ? (
                             <a
@@ -414,12 +370,12 @@ export function Dashboard() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-2 text-muted-foreground">
+                      <td className="px-5 py-2 text-muted-foreground">
                         <div className="truncate" title={d.category_name ?? undefined}>
                           {d.category_name ?? (d.category != null ? `#${d.category}` : "—")}
                         </div>
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-5 py-2">
                         <div className="truncate">
                           {d.technician_id != null ? (
                             <Tag tone="indigo">{d.technician_name ?? `T#${d.technician_id}`}</Tag>
@@ -430,17 +386,17 @@ export function Dashboard() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-2 font-mono text-muted-foreground">
+                      <td className="px-5 py-2 font-mono text-muted-foreground">
                         {d.urgency ?? "—"}
                       </td>
-                      <td className="px-4 py-2">
+                      <td className="px-5 py-2">
                         {d.accepted ? (
                           <Tag tone="green">{t("traité", "handled")}</Tag>
                         ) : (
                           <Tag tone="amber">{t("à trier", "to triage")}</Tag>
                         )}
                       </td>
-                      <td className="px-4 py-2 font-mono">
+                      <td className="px-5 py-2 font-mono">
                         {/* Pourcentage : le Journal affiche « 87% » pour la même grandeur. */}
                         {d.confidence != null ? `${Math.round(d.confidence * 100)}%` : "—"}
                       </td>
@@ -450,16 +406,14 @@ export function Dashboard() {
           </table>
         </div>
         {decisions.data?.length === 0 && (
-          <div className="px-4 py-8">
-            <EmptyState
-              icon={ScrollText}
-              title={t("Aucune décision pour le moment", "No decisions yet")}
-              description={t(
-                "Les tickets traités et les « à trier » s'afficheront ici.",
-                "Handled tickets and “to triage” entries will appear here.",
-              )}
-            />
-          </div>
+          <EmptyState
+            icon={ScrollText}
+            title={t("Aucune décision pour le moment", "No decisions yet")}
+            description={t(
+              "Les tickets traités et les « à trier » s'afficheront ici.",
+              "Handled tickets and “to triage” entries will appear here.",
+            )}
+          />
         )}
       </Card>
 
@@ -474,19 +428,17 @@ export function Dashboard() {
           }
         />
         {opView && !opView.available ? (
-          <div className="px-4 py-8">
-            <EmptyState
-              icon={ListChecks}
-              title={t("Métriques GLPI indisponibles", "GLPI metrics unavailable")}
-              description={
-                opView.detail ||
-                t(
-                  "GLPI est injoignable ou non configuré. Renseigne la connexion dans Configuration.",
-                  "GLPI is unreachable or not configured. Set the connection in Configuration.",
-                )
-              }
-            />
-          </div>
+          <EmptyState
+            icon={ListChecks}
+            title={t("Métriques GLPI indisponibles", "GLPI metrics unavailable")}
+            description={
+              opView.detail ||
+              t(
+                "GLPI est injoignable ou non configuré. Renseigne la connexion dans Configuration.",
+                "GLPI is unreachable or not configured. Set the connection in Configuration.",
+              )
+            }
+          />
         ) : (
           <>
             <div className="grid grid-cols-2 gap-px bg-border md:grid-cols-4">
@@ -533,19 +485,14 @@ export function Dashboard() {
                     : "",
                 },
               ].map((s) => (
-                <div key={s.label} className="bg-card p-4">
-                  <div className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                    {s.label}
-                  </div>
-                  {opLoading ? (
-                    <Skeleton className="mt-1.5 h-[18px] w-16" />
-                  ) : (
-                    <div className="mt-1.5 text-[22px] font-semibold tracking-tight">{s.value}</div>
-                  )}
-                  {s.hint && (
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">{s.hint}</div>
-                  )}
-                </div>
+                <KpiCard
+                  key={s.label}
+                  variant="cell"
+                  label={s.label}
+                  value={s.value}
+                  hint={s.hint || undefined}
+                  loading={opLoading}
+                />
               ))}
             </div>
             {op && op.anomalies.length > 0 && (
@@ -553,7 +500,7 @@ export function Dashboard() {
                 {op.anomalies.slice(0, ANOMALY_LIMIT).map((a) => (
                   <div
                     key={`${a.ticket_id}-${a.kind}`}
-                    className="flex items-center gap-3 border-b border-border/50 px-4 py-2 text-[12.5px] last:border-0"
+                    className="flex items-center gap-3 border-b border-border/50 px-5 py-2 text-body last:border-0"
                   >
                     {a.glpi_link ? (
                       <a
@@ -577,7 +524,7 @@ export function Dashboard() {
                 ))}
                 {/* Borne : 300 SLA dépassés ne déroulent pas 300 lignes sur l'accueil. */}
                 {op.anomalies.length > ANOMALY_LIMIT && (
-                  <div className="border-t border-border px-4 py-2 text-[12px] text-muted-foreground">
+                  <div className="border-t border-border px-5 py-2 text-body text-muted-foreground">
                     + {num(op.anomalies.length - ANOMALY_LIMIT)}{" "}
                     {t("autres anomalies", "other anomalies")}
                   </div>

@@ -46,11 +46,11 @@ export function Toggle({
   return (
     <div className="flex items-center justify-between gap-4">
       <div className="min-w-0">
-        <p id={id} className="text-[13px] font-medium">
+        <p id={id} className="text-ui font-medium">
           {label}
         </p>
         {description && (
-          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{description}</p>
+          <p className="mt-0.5 text-caption leading-snug text-muted-foreground">{description}</p>
         )}
       </div>
       {knob}

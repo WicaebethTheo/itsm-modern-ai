@@ -1,3 +1,63 @@
+## 2026-08-12 — 0.12.0 — L'interface cesse d'affirmer ce qu'elle n'a pas mesuré
+
+Une revue écran par écran de la console. Le fil rouge n'était pas esthétique : à plusieurs
+endroits l'interface affirmait des choses qu'elle n'avait pas mesurées, ou nommait mal ce
+qu'elle montrait. Aucun changement de comportement du moteur.
+
+### Ce qui était faux
+
+- **Un moteur qui n'a jamais bouclé s'affichait en vert.** Le moteur sérialise toujours son
+  bloc de dernier cycle avec `has_run: false` et des compteurs à zéro ; la console testait la
+  présence de valeurs non nulles, et `0` n'est pas `null` — « aucun cycle exécuté » était donc
+  classé « a tourné ». C'était le mauvais diagnostic pour le symptôme n°1 que la page Statut
+  existe pour rendre visible.
+- **Les tuiles de Statut affirmaient « En pause » et « Non configuré » pendant le chargement**,
+  et après une panne d'API. Aucune de ces affirmations n'était mesurée.
+- **L'âge du dernier cycle se figeait à l'ouverture de la page** : « cycle trop ancien » ne
+  pouvait donc jamais se déclencher sur un onglet resté ouvert.
+- **La courbe « Coût LLM » du tableau de bord traçait le volume de tickets**, le badge « live »
+  ne rafraîchissait rien, et l'en-tête annonçait « 14 jours » sur des compteurs cumulés depuis
+  la mise en service.
+- **La carte de rétention affichait des durées sans dire si la purge était activée** : purge
+  coupée, on lisait « 30 j » et on en concluait que les données étaient purgées.
+- **Un module Supporter « à venir » s'affichait « Débloqué »** dès qu'une licence l'autorisait,
+  et une licence ne couvrant pas un module affichait quand même « Activez votre licence ».
+- **Le motif de refus s'affichait en anglais brut** (`technician_not_in_whitelist`), et la
+  Sandbox le rangeait sous « Validation liste blanche » y compris pour un refus de seuil.
+
+### Ce qui pouvait vous coûter quelque chose
+
+- **« Scanner GLPI » effaçait la saisie en cours** sur Périmètre, Techniciens et Groupes : le
+  rechargement des référentiels réinitialisait le brouillon, sans un mot.
+- **Une absence du jour masquait toutes les absences à venir**, sur la seule vue de planification.
+- **Les navigateurs proposaient d'enregistrer le jeton GLPI et la clé LLM** dans leur
+  gestionnaire de mots de passe synchronisé — un secret qui sortait du coffre Fernet par une
+  porte non prévue.
+- **Les messages anti-SSRF se perdaient en « API 422 »** : les 422 de FastAPI portent leur
+  détail dans un tableau, que le client n'ouvrait pas.
+- **Le mode semi-auto n'avertissait pas qu'il écrit dans GLPI**, alors que la page Périmètre le
+  faisait pour le même réglage.
+
+### Compte administrateur
+
+L'entête passe de neuf objets à quatre, et affiche enfin **quel compte est connecté**
+(`GET /api/auth/me`, authentifiée — `/api/auth/status` reste publique et sans adresse, un test
+le verrouille). Nouvelle page **Compte & sécurité** : changer son mot de passe ne demande plus
+de passer par `docker compose exec`. La route partage le compteur anti-brute-force de la
+connexion, et toutes les sessions tombent au changement.
+
+### Aussi
+
+Recherche et filtre sur le Journal, qui dit désormais que sa liste est plafonnée. Tableaux qui
+défilent au lieu d'être coupés sans barre de défilement. `by_reason` affiché sur le tableau de
+bord — la seule donnée qui dise **quoi régler**. La Sandbox transmet enfin le titre du ticket,
+affiche le seuil requis, le coût de l'essai et le texte réellement envoyé au LLM. Treize
+tailles de texte ramenées à six rôles, une seule primitive de liste déroulante, libellés de
+formulaire enfin associés à leur champ, contraste du jaune corrigé en thème clair.
+
+Couverture front : cliquets remontés de 65/56/65 à **85/78/86**. **668 tests pytest**
+(652 avant), **358 Vitest** (194 avant), 7 Playwright.
+
 ## 2026-08-11 — 0.11.0 — Le compte administrateur se crée à la première visite
 
 > ⚠️ **Version de rupture.** `ITSM_ADMIN_PASSWORD` et `ADMIN_PASSWORD` **ne sont plus lus**.

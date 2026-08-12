@@ -163,7 +163,11 @@ describe("Journal des décisions", () => {
     expect(screen.getByText("1/2 affichée(s) · 1 à trier")).toBeInTheDocument();
   });
 
-  it("annonce le plafond et recharge avec une limite plus large", async () => {
+  // Délai explicite : la mention de plafond ne s'affiche QUE lorsque le lot rendu atteint
+  // la limite, donc ce cas doit vraiment peindre 500 lignes. C'est tenable en `vitest run`
+  // mais dépasse les 5 s par défaut sous l'instrumentation de couverture — préférer un
+  // délai franc plutôt qu'un test affaibli qui n'exercerait plus la borne.
+  it("annonce le plafond et recharge avec une limite plus large", { timeout: 30_000 }, async () => {
     const page = Array.from({ length: 500 }, (_, i) =>
       decision({ id: i + 1, ticket_id: 1000 + i }),
     );

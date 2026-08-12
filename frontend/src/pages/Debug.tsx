@@ -35,12 +35,12 @@ type T = (fr: string, en: string) => string;
 function J({ data, label }: { data: unknown; label: string }) {
   return (
     <>
-      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">
+      <p className="text-caption font-medium uppercase tracking-[0.08em] text-muted-foreground">
         {label}
       </p>
       {/* Hauteur bornée : un résultat de purge peut faire des centaines de lignes et
           repousser tout le reste de la page hors de l'écran. */}
-      <pre className="mt-2 max-h-72 overflow-auto rounded-md bg-muted/50 p-3 text-xs">
+      <pre className="mt-2 max-h-72 overflow-auto rounded-md bg-muted/50 p-3 text-body">
         {JSON.stringify(data, null, 2)}
       </pre>
     </>
@@ -51,8 +51,8 @@ function SectionTitle({ children, warn = false }: { children: ReactNode; warn?: 
   return (
     <h2
       className={cn(
-        "mt-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em]",
-        warn ? "text-warning" : "text-muted-foreground/70",
+        "mt-2 flex items-center gap-1.5 text-caption font-medium uppercase tracking-[0.08em]",
+        warn ? "text-warning" : "text-muted-foreground",
       )}
     >
       {warn && <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -149,8 +149,8 @@ function StateRow({ name, view }: { name: string; view: StateView }) {
   return (
     <div className="flex items-start justify-between gap-3 border-b border-border/50 py-2.5 first:pt-0 last:border-0 last:pb-0">
       <div className="min-w-0">
-        <p className="text-[12.5px] font-medium leading-tight">{name}</p>
-        <p className="mt-0.5 text-[11.5px] leading-snug text-muted-foreground">{view.detail}</p>
+        <p className="text-body font-medium leading-tight">{name}</p>
+        <p className="mt-0.5 text-caption leading-snug text-muted-foreground">{view.detail}</p>
       </div>
       <Tag tone={view.tone}>{view.state}</Tag>
     </div>
@@ -274,7 +274,7 @@ export function Debug() {
             </Button>
           }
         />
-        <CardContent className="p-5">
+        <CardContent>
           {health.error && (
             <div className="mb-3">
               <Banner kind="error">
@@ -300,7 +300,7 @@ export function Debug() {
               }}
             />
           </div>
-          <p className="mt-4 text-[11.5px] leading-snug text-muted-foreground">
+          <p className="mt-4 text-caption leading-snug text-muted-foreground">
             {t(
               "Ce rapport ne contient aucun jeton ni clé d'API : le moteur les masque avant de les journaliser. Il peut en revanche contenir vos adresses internes (IP, noms d'hôtes) — relisez-le avant de le publier ailleurs qu'en support privé.",
               "This report contains no token and no API key: the engine masks them before logging. It can however contain your internal addresses (IPs, host names) — read it through before posting it anywhere other than private support.",
@@ -360,19 +360,19 @@ export function Debug() {
             title={t("Informations", "Information")}
             right={<Tag tone="muted">v{info.data.version}</Tag>}
           />
-          <CardContent className="p-5">
-            <p className="text-[12.5px] text-muted-foreground">{info.data.title}</p>
+          <CardContent>
+            <p className="text-body text-muted-foreground">{info.data.title}</p>
             {/* Repliée : ~60 lignes en haut de page pour une information consultée une
                 fois par an, ce n'est pas ce qu'on vient chercher ici. */}
             <details className="mt-3 rounded-md border border-border">
-              <summary className="cursor-pointer select-none px-3 py-2 text-[12px] text-muted-foreground hover:text-foreground">
+              <summary className="cursor-pointer select-none px-3 py-2 text-body text-muted-foreground hover:text-foreground">
                 {t("Routes exposées", "Exposed routes")} ({info.data.endpoints.length})
               </summary>
               <div className="max-h-72 overflow-auto border-t border-border font-mono">
                 {info.data.endpoints.map((e) => (
                   <div
                     key={e.path}
-                    className="flex items-center gap-3 border-b border-border/50 px-3 py-1.5 text-xs last:border-0"
+                    className="flex items-center gap-3 border-b border-border/50 px-3 py-1.5 text-body last:border-0"
                   >
                     <span className="flex shrink-0 gap-1">
                       {e.methods.map((m) => (
@@ -391,7 +391,7 @@ export function Debug() {
       )}
 
       <SectionTitle warn>{t("Écrit dans votre GLPI", "Writes to your GLPI")}</SectionTitle>
-      <p className="-mt-2 text-[11.5px] leading-snug text-muted-foreground">
+      <p className="-mt-2 text-caption leading-snug text-muted-foreground">
         {t(
           "Les deux outils ci-dessous modifient le GLPI branché sur ce moteur — celui de production si c'est celui que vous avez configuré. À réserver à une instance de laboratoire.",
           "The two tools below modify the GLPI wired to this engine — the production one if that is what you configured. Reserve them for a lab instance.",
@@ -411,7 +411,7 @@ export function Debug() {
             "Creates REAL technician accounts and groups in your GLPI",
           )}
         />
-        <CardContent className="flex flex-col gap-4 p-5">
+        <CardContent className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4">
             <Field label={t("Techniciens", "Technicians")} htmlFor="debug-techs">
               <Input
@@ -464,7 +464,7 @@ export function Debug() {
             </span>
           }
         />
-        <CardContent className="flex flex-col gap-4 p-5">
+        <CardContent className="flex flex-col gap-4">
           <Banner kind="error">
             {t(
               "Supprime (corbeille GLPI, récupérable) tous les utilisateurs sauf les comptes protégés (système, glpi, et l'utilisateur du token API). À n'utiliser qu'en labo. Tapez SUPPRIMER pour confirmer.",

@@ -98,7 +98,7 @@ function SectionTitle({ icon, children }: { icon: ReactNode; children: ReactNode
   return (
     <div className="flex items-center gap-2 px-1 pt-2 text-muted-foreground">
       <span className="[&_svg]:h-3.5 [&_svg]:w-3.5">{icon}</span>
-      <h2 className="text-[11px] font-semibold uppercase tracking-wider">{children}</h2>
+      <h2 className="text-caption font-medium uppercase tracking-[0.08em]">{children}</h2>
     </div>
   );
 }
@@ -245,7 +245,7 @@ export function EngineSettings() {
                 "Safety bounds applied to every run",
               )}
             />
-            <CardContent className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-3">
+            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Field
                 htmlFor="cfg-confidence"
                 label={t("Seuil de confiance (0 – 1)", "Confidence threshold (0 – 1)")}
@@ -325,7 +325,7 @@ export function EngineSettings() {
               )}
               right={<Tag tone={MODE_TONE[draft.mode]}>{modeLabel(draft.mode)}</Tag>}
             />
-            <CardContent className="flex flex-col gap-4 p-5">
+            <CardContent className="flex flex-col gap-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field
                   htmlFor="cfg-mode-default"
@@ -339,7 +339,7 @@ export function EngineSettings() {
                     id="cfg-mode-default"
                     value={draft.mode}
                     onChange={(e) => patch({ mode: e.target.value as ExecutionMode })}
-                    className="h-9 rounded-md border border-input bg-card px-3 text-sm shadow-sm transition-colors hover:border-muted-foreground/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                    className="h-9 rounded-md border border-input bg-card px-3 text-ui shadow-sm transition-colors hover:border-muted-foreground/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   >
                     <option value="suggestion">{t("Suggestion (sûr)", "Suggestion (safe)")}</option>
                     <option value="semi_auto">
@@ -406,7 +406,7 @@ export function EngineSettings() {
                 </Tag>
               }
             />
-            <CardContent className="flex flex-col gap-4 p-5">
+            <CardContent className="flex flex-col gap-4">
               <Toggle
                 checked={draft.pollingOn}
                 onChange={(v) => patch({ pollingOn: v })}
@@ -456,7 +456,7 @@ export function EngineSettings() {
                 "Affects the proposed draft reply (suggestion mode)",
               )}
             />
-            <CardContent className="flex flex-col gap-4 p-5">
+            <CardContent className="flex flex-col gap-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field htmlFor="cfg-tone" label={t("Ton de la réponse", "Reply tone")}>
                   <Input
@@ -522,7 +522,7 @@ export function EngineSettings() {
                 </Tag>
               }
             />
-            <CardContent className="flex flex-col gap-4 p-5">
+            <CardContent className="flex flex-col gap-4">
               {piiAdvanced ? (
                 <Banner kind="error">
                   {t(
@@ -557,7 +557,7 @@ export function EngineSettings() {
                   />
                 ) : (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[13px] text-muted-foreground">
+                    <span className="text-ui text-muted-foreground">
                       {t("Masquer les IBAN", "Mask IBANs")}
                     </span>
                     <LockedBadge />
@@ -571,7 +571,7 @@ export function EngineSettings() {
                   />
                 ) : (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[13px] text-muted-foreground">
+                    <span className="text-ui text-muted-foreground">
                       {t("Masquer mots de passe / tokens", "Mask passwords / tokens")}
                     </span>
                     <LockedBadge />
@@ -599,7 +599,7 @@ export function EngineSettings() {
                 "Analysis window and anomaly detection",
               )}
             />
-            <CardContent className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
+            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field
                 htmlFor="cfg-window-days"
                 label={t("Fenêtre (jours)", "Window (days)")}
@@ -660,8 +660,8 @@ export function EngineSettings() {
                 "Overrides the LLM instructions",
               )}
             />
-            <CardContent className="flex flex-col gap-3 p-5">
-              <p className="text-[12.5px] text-muted-foreground">
+            <CardContent className="flex flex-col gap-3">
+              <p className="text-body text-muted-foreground">
                 {t(
                   "Surcharge les instructions données au LLM. Vide = prompt par défaut. Le code valide toujours la Décision (whitelist, seuil) — modifier le prompt n'enlève aucun garde-fou.",
                   "Overrides the LLM instructions. Empty = built-in default. The code always validates the Decision (whitelist, threshold) — editing the prompt removes no guardrail.",
@@ -670,13 +670,13 @@ export function EngineSettings() {
               <Textarea
                 id="cfg-system-prompt"
                 aria-label={t("Prompt système", "System prompt")}
-                className="min-h-48 font-mono text-xs"
+                className="min-h-48 font-mono text-body"
                 value={draft.sysPrompt}
                 maxLength={SYS_MAX}
                 placeholder={c?.system_prompt_default ?? t("Prompt par défaut…", "Default prompt…")}
                 onChange={(e) => patch({ sysPrompt: e.target.value })}
               />
-              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <div className="flex items-center justify-between text-caption text-muted-foreground">
                 <span>
                   {draft.sysPrompt.length} / {SYS_MAX} {t("caractères", "characters")}
                   {draft.sysPrompt.trim() === ""
@@ -708,7 +708,7 @@ export function EngineSettings() {
         <div className="flex items-center justify-between gap-4 px-5 py-3 sm:px-6">
           <p
             className={cn(
-              "truncate text-[12px]",
+              "truncate text-body",
               armsWrites
                 ? "font-medium text-destructive"
                 : dirty

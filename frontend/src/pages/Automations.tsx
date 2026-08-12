@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
+import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dot } from "@/components/ui/dot";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field } from "@/components/ui/label";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type RetentionView } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/i18n";
 
 // Automatisations PRÉVUES — seule la purge est active aujourd'hui.
 const PLANNED: { fr: string; en: string; descFr: string; descEn: string }[] = [
@@ -37,7 +38,7 @@ const PLANNED: { fr: string; en: string; descFr: string; descEn: string }[] = [
 /** Squelette aux dimensions de la carte finale : évite le saut de mise en page au chargement. */
 function PurgeSkeleton() {
   return (
-    <div className="flex flex-col gap-4 px-4 py-4">
+    <div className="flex flex-col gap-4 px-5 py-4">
       <div className="flex items-center gap-3">
         <span className="h-5 w-9 shrink-0 animate-pulse rounded-full bg-muted" />
         <div className="flex flex-col gap-1.5">
@@ -63,6 +64,7 @@ function PurgeSkeleton() {
 
 function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }) {
   const t = useT();
+  const locale = useLocale();
   const toast = useToast();
   const [draft, setDraft] = useState<RetentionView>(data);
   const [saving, setSaving] = useState(false);
@@ -121,14 +123,14 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
   }
 
   const last = data.last_run_at
-    ? new Date(data.last_run_at).toLocaleString(t("fr-FR", "en-US"), {
+    ? new Date(data.last_run_at).toLocaleString(locale, {
         dateStyle: "short",
         timeStyle: "short",
       })
     : t("jamais", "never");
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-4">
+    <div className="flex flex-col gap-4 px-5 py-4">
       <Toggle
         checked={draft.enabled}
         onChange={(v) => setDraft({ ...draft, enabled: v })}
@@ -139,10 +141,10 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
         )}
       />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div>
-          <Label htmlFor="dec-days">
-            {t("Rétention Journal (jours)", "Journal retention (days)")}
-          </Label>
+        <Field
+          label={t("Rétention Journal (jours)", "Journal retention (days)")}
+          hint={t("0 = ne pas purger.", "0 = do not purge.")}
+        >
           <Input
             id="dec-days"
             type="number"
@@ -152,14 +154,11 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
             onChange={(e) => setDraft({ ...draft, decisions_days: Number(e.target.value) || 0 })}
             className="h-8"
           />
-          <p className="mt-1 text-[10.5px] text-muted-foreground">
-            {t("0 = ne pas purger.", "0 = do not purge.")}
-          </p>
-        </div>
-        <div>
-          <Label htmlFor="llm-days">
-            {t("Rétention appels LLM (jours)", "LLM calls retention (days)")}
-          </Label>
+        </Field>
+        <Field
+          label={t("Rétention appels LLM (jours)", "LLM calls retention (days)")}
+          hint={t("0 = ne pas purger.", "0 = do not purge.")}
+        >
           <Input
             id="llm-days"
             type="number"
@@ -169,12 +168,8 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
             onChange={(e) => setDraft({ ...draft, llm_calls_days: Number(e.target.value) || 0 })}
             className="h-8"
           />
-          <p className="mt-1 text-[10.5px] text-muted-foreground">
-            {t("0 = ne pas purger.", "0 = do not purge.")}
-          </p>
-        </div>
-        <div>
-          <Label htmlFor="hour">{t("Heure d'exécution (UTC)", "Run hour (UTC)")}</Label>
+        </Field>
+        <Field label={t("Heure d'exécution (UTC)", "Run hour (UTC)")}>
           <Input
             id="hour"
             type="number"
@@ -184,10 +179,10 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
             onChange={(e) => setDraft({ ...draft, hour_utc: Number(e.target.value) || 0 })}
             className="h-8"
           />
-        </div>
+        </Field>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-        <div className="text-[11px] text-muted-foreground">
+        <div className="text-caption text-muted-foreground">
           {t("Dernière exécution :", "Last run:")} {last}
           {data.last_decisions_deleted !== null && (
             <>
@@ -241,10 +236,10 @@ export function Automations() {
         />
         {retention.loading && <PurgeSkeleton />}
         {retention.error && (
-          <div className="flex flex-wrap items-center gap-3 px-4 py-4">
-            <p role="alert" className="text-[12.5px] text-destructive">
+          <div className="flex flex-wrap items-center gap-3 px-5 py-4">
+            <Banner kind="error" role="alert">
               {retention.error}
-            </p>
+            </Banner>
             {/* `useResource` sait recharger : sans ce bouton, la seule issue était F5. */}
             <Button size="sm" variant="outline" onClick={retention.reload}>
               {t("Réessayer", "Retry")}
@@ -270,15 +265,15 @@ export function Automations() {
           {PLANNED.map((a, i, arr) => (
             <div
               key={a.en}
-              className={`flex items-center gap-3 px-4 py-3 ${i < arr.length - 1 ? "border-b border-border" : ""}`}
+              className={`flex items-center gap-3 px-5 py-3 ${i < arr.length - 1 ? "border-b border-border" : ""}`}
             >
               <Dot tone="muted" />
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium">{t(a.fr, a.en)}</div>
+                <div className="text-ui font-medium">{t(a.fr, a.en)}</div>
                 {/* « Dernière exécution : — » pour un job qui n'existe pas se lit comme un
                     job cassé. La description dit ce que l'automatisation FERA. Toujours
                     visible : masquée sous 640 px, la liste se réduisait à trois titres. */}
-                <div className="text-[11px] text-muted-foreground">{t(a.descFr, a.descEn)}</div>
+                <div className="text-caption text-muted-foreground">{t(a.descFr, a.descEn)}</div>
               </div>
               <Tag tone="muted">{t("Bientôt", "Soon")}</Tag>
             </div>

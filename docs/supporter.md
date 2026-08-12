@@ -28,6 +28,15 @@ Pourquoi c'est sans risque :
 3. La clé est **vérifiée hors-ligne** (signature Ed25519). Si elle est valide, les features
    passent immédiatement de *verrouillé* à *actif* — **en place**, sans redémarrage manuel.
 
+> **Ce qu'une licence valide déverrouille RÉELLEMENT aujourd'hui.** Sur les trois modules du
+> catalogue, seul `pii_advanced` a une surface d'usage : `multi_entity` et
+> `scheduled_exports` sont annoncés sur la feuille de route et la page Supporter les affiche
+> désormais **« Prévu »**, jamais « Débloqué », même quand une licence les autorise. Peindre
+> une promesse en réussite parce que le porteur a payé est précisément ce qu'on refuse de
+> faire. Le triplet exposé par `GET /api/license` reste `installed` (le code est présent —
+> toujours vrai, l'édition est unique) ∧ `entitled` (la licence l'autorise) = `active`, avec
+> `coming_soon` en quatrième champ pour distinguer « autorisé » de « utilisable ».
+
 C'est la seule méthode requise : tout se fait depuis la page Supporter de l'application.
 
 > **Pré-amorçage optionnel (déploiements automatisés)** : pour livrer une instance déjà

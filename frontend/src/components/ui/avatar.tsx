@@ -32,7 +32,7 @@ export function Avatar({ name, src, alt, className }: AvatarProps) {
     <span
       className={cn(
         "inline-flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full",
-        "bg-gradient-to-br from-primary/25 to-primary/10 text-[13px] font-semibold text-primary",
+        "bg-gradient-to-br from-primary/25 to-primary/10 text-ui font-semibold text-primary",
         "ring-1 ring-border",
         className,
       )}

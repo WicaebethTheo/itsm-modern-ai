@@ -31,6 +31,22 @@ export function useLang() {
   return { lang, setLang };
 }
 
+/**
+ * Locale de formatage (dates, nombres, montants) dérivée de la langue de l'interface.
+ *
+ * SOURCE UNIQUE, et ce n'était pas cosmétique : trois dérivations coexistaient, dont une qui
+ * produisait `en-GB` — les dates d'absence et de dernier scan s'affichaient donc au format
+ * britannique (« 22 Aug ») dans une interface par ailleurs américaine (« Aug 22 »).
+ */
+export function localeFor(lang: Lang): string {
+  return lang === "fr" ? "fr-FR" : "en-US";
+}
+
+/** Hook : la locale de formatage de la langue courante. */
+export function useLocale(): string {
+  return localeFor(useLang().lang);
+}
+
 /** Hook : t(fr, en) renvoie la chaîne pour la langue courante. */
 export function useT() {
   const { lang } = useLang();

@@ -156,7 +156,7 @@ export function Store() {
             )
           }
         />
-        <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 p-5 text-[12.5px]">
+        <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 text-body">
           {/* « Qu'est-ce qui est actif chez moi ? » — répondu ici, en une ligne, sans
               faire descendre l'exploitant de deux cartes. */}
           {anyActive ? (
@@ -206,14 +206,14 @@ export function Store() {
             )}
             right={<Tag tone="indigo">↑ v{ver.latest}</Tag>}
           />
-          <CardContent className="flex flex-col gap-3 p-5">
+          <CardContent className="flex flex-col gap-3">
             {ver.latest_notes ? (
-              <div className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/20 p-3 text-[12px] leading-relaxed text-muted-foreground">
+              <div className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 text-body leading-relaxed text-muted-foreground">
                 {ver.latest_notes}
               </div>
             ) : null}
             <div className="flex items-center gap-2">
-              <pre className="flex-1 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-[12px]">
+              <pre className="flex-1 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 font-mono text-body">
                 {updateCmd}
               </pre>
               <Button variant="outline" onClick={copyUpdateCmd}>
@@ -224,7 +224,7 @@ export function Store() {
               href="https://docs.itsm-modern-ai.com/update/"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[12px] text-accent-indigo hover:underline"
+              className="text-body text-accent-indigo hover:underline"
             >
               {t("Voir toutes les notes de version", "View all release notes")}
             </a>
@@ -252,7 +252,7 @@ export function Store() {
               </Tag>
             }
           />
-          <CardContent className="flex flex-col gap-3 p-5 text-[12.5px]">
+          <CardContent className="flex flex-col gap-3 text-body">
             <div className="flex flex-wrap gap-x-6 gap-y-1">
               {lic?.customer ? (
                 <span>
@@ -284,14 +284,14 @@ export function Store() {
             ) : null}
             {showRenew ? (
               <>
-                <label htmlFor={keyFieldId} className="text-[12px] font-medium">
+                <label htmlFor={keyFieldId} className="text-body font-medium">
                   {t("Nouvelle clé de licence", "New license key")}
                 </label>
                 <Textarea
                   id={keyFieldId}
                   value={key}
                   placeholder={t("Coller la nouvelle clé…", "Paste the new key…")}
-                  className="min-h-24 font-mono text-[12px]"
+                  className="min-h-24 font-mono text-body"
                   onChange={(e) => setKey(e.target.value)}
                 />
                 <div className="flex flex-wrap items-center gap-2">
@@ -333,21 +333,21 @@ export function Store() {
               "Paste the token provided with your license (or a renewed key if the previous one expired).",
             )}
           />
-          <CardContent className="flex flex-col gap-3 p-5">
+          <CardContent className="flex flex-col gap-3">
             {errorText ? (
               <Banner kind="error">
                 {t("Licence invalide", "Invalid license")} : {errorText}
                 {mappedError?.expiry && lic?.expires_at ? ` (${lic.expires_at})` : ""}
               </Banner>
             ) : null}
-            <label htmlFor={keyFieldId} className="text-[12px] font-medium">
+            <label htmlFor={keyFieldId} className="text-body font-medium">
               {t("Clé de licence", "License key")}
             </label>
             <Textarea
               id={keyFieldId}
               value={key}
               placeholder={t("Coller le jeton de licence…", "Paste the license token…")}
-              className="min-h-24 font-mono text-[12px]"
+              className="min-h-24 font-mono text-body"
               onChange={(e) => setKey(e.target.value)}
             />
             <div className="flex flex-wrap items-center gap-2">
@@ -363,7 +363,7 @@ export function Store() {
               </Button>
             </div>
             {/* Argument de souveraineté : il vivait dans une branche morte, donc invisible. */}
-            <p className="text-[11.5px] text-muted-foreground/80">
+            <p className="text-caption text-muted-foreground">
               {t(
                 "La licence est vérifiée hors-ligne (Ed25519, aucun appel sortant).",
                 "The license is verified offline (Ed25519, no outbound call).",
@@ -382,14 +382,14 @@ export function Store() {
             "The code of these modules is ALREADY installed in this image: the key authorises them, it downloads nothing.",
           )}
         />
-        <CardContent className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {features.map((f) => (
             <div
               key={f.key}
-              className="flex flex-col rounded-md border border-border bg-muted/20 p-4"
+              className="flex flex-col rounded-md border border-border bg-muted/30 p-4"
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[13px] font-medium">{t(f.label_fr, f.label_en)}</span>
+                <span className="text-ui font-medium">{t(f.label_fr, f.label_en)}</span>
                 <span className="flex items-center gap-1">
                   {/* « Débloqué » sur un module sans surface d'usage peindrait une promesse
                       en réussite : un module annoncé reste « Prévu », licence ou pas. */}
@@ -406,18 +406,18 @@ export function Store() {
                   )}
                 </span>
               </div>
-              <p className="mt-1 flex-1 text-[12px] leading-relaxed text-muted-foreground">
+              <p className="mt-1 flex-1 text-body leading-relaxed text-muted-foreground">
                 {t(f.description_fr, f.description_en)}
               </p>
               {f.coming_soon ? (
-                <p className="mt-2 text-[11px] text-muted-foreground/80">
+                <p className="mt-2 text-caption text-muted-foreground">
                   {t(
                     "Pas encore de surface d'usage : une licence ne le rend pas utilisable pour autant.",
                     "No usable surface yet: a license does not make it usable either.",
                   )}
                 </p>
               ) : !f.active ? (
-                <p className="mt-2 text-[11px] text-muted-foreground/80">
+                <p className="mt-2 text-caption text-muted-foreground">
                   {!f.installed
                     ? t("Code absent de cette image.", "Code missing from this image.")
                     : licensed

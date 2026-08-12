@@ -40,7 +40,7 @@ export function FloatingActions() {
           href={BUYMEACOFFEE_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-full bg-[#FFDD00] px-4 py-2 text-[12px] font-semibold text-black shadow-lg transition hover:brightness-95"
+          className="flex items-center gap-2 rounded-full bg-[#FFDD00] px-4 py-2 text-body font-semibold text-black shadow-lg transition hover:brightness-95"
         >
           <Coffee className="h-4 w-4" />
           {t(`Offrir un café à ${AUTHOR_NAME}`, `Buy ${AUTHOR_NAME} a coffee`)}

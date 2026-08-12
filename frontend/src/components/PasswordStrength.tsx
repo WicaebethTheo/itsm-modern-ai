@@ -90,7 +90,7 @@ export function PasswordStrength({
         id={id}
         aria-live="polite"
         className={cn(
-          "text-xs leading-snug",
+          "text-body leading-snug",
           invalid ? "text-destructive" : "text-muted-foreground",
         )}
       >
