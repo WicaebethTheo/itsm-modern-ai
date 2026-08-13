@@ -88,7 +88,19 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql-client-17
+          # PGDG installe ses binaires dans /usr/lib/postgresql/17/bin ; `/usr/bin/pg_dump`
+          # reste celui de la 16 PREINSTALLEE sur le runner. Sans cette ligne, l'etape
+          # « reussissait » en laissant un client 16 : mesure faite sur la PR #9, les huit
+          # tests de sauvegarde tombaient en erreur APRES 100 s de suite, sur une cause que
+          # cette etape etait censee ecarter.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          export PATH="/usr/lib/postgresql/17/bin:$PATH"
           pg_dump --version
+          # ON VERIFIE. Installer n'est pas aligner : sans ce controle, l'etape affirme un
+          # alignement qu'elle n'a jamais constate, et delegue la decouverte de l'echec a la
+          # suite de tests — deux minutes plus tard, avec un message qui accuse le code.
+          majeure="$(pg_dump --version | grep -oE '[0-9]+' | head -1)"
+          test "$majeure" = "17" || { echo "pg_dump $majeure au lieu de 17 — client desaligne"; exit 1; }
       # setup-uv plutôt que `pip install uv` : version gérée par l'action + cache uv
       # automatique (clé sur uv.lock). Cohérent avec docker-publish.yml.
       # Épinglage sur la version EXACTE (`@v9.0.0`, pas `@v9`) : depuis sa v8 cette

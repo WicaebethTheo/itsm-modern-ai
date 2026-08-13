@@ -212,6 +212,50 @@ def test_la_majeure_postgres_de_la_ci_suit_celle_du_produit():
     assert verifies, "aucun fichier de CI vérifié — le verrou ne protégerait plus rien"
 
 
+def test_l_etape_client_postgres_met_le_bon_binaire_sur_le_chemin_et_le_verifie():
+    """Installer un client n'est pas l'aligner : encore faut-il que ce soit LUI qui réponde.
+
+    Le test ci-dessus vérifie que la CI *installe* `postgresql-client-<majeure du produit>`.
+    Il a été vert pendant que la CI tournait avec un client 16 : PGDG dépose ses binaires
+    dans `/usr/lib/postgresql/<majeure>/bin`, mais `/usr/bin/pg_dump` reste celui de la 16
+    PRÉINSTALLÉE sur le runner `ubuntu-24.04`. L'étape s'achevait donc en vert sur un
+    `pg_dump --version` affichant `16.14`, sans que rien ne s'en émeuve — et les huit tests
+    de sauvegarde tombaient en erreur cent secondes plus tard, avec un message qui accusait
+    le code de la PR.
+
+    Deux conditions, donc, et ce sont deux conditions distinctes :
+      1. le répertoire de la bonne majeure est ajouté au `PATH` du job (`$GITHUB_PATH`) ;
+      2. l'étape VÉRIFIE la majeure obtenue et échoue elle-même sinon.
+
+    Sans (2), une étape peut de nouveau affirmer un alignement qu'elle n'a pas constaté —
+    c'est précisément ce qui s'est produit, et c'est la raison d'être de ce verrou.
+    """
+    client = _majeure_du_client()
+    verifies = 0
+    for fichier in FICHIERS_CI:
+        chemin = ROOT / fichier
+        if not chemin.is_file():
+            continue
+        texte = chemin.read_text(encoding="utf-8")
+        if "postgresql-client-" not in texte:
+            # Ce workflow n'installe pas de client : rien à aligner ici.
+            continue
+        verifies += 1
+        assert f'echo "/usr/lib/postgresql/{client}/bin" >> "$GITHUB_PATH"' in texte, (
+            f"{fichier} : le client {client} est installé mais son répertoire n'est pas mis "
+            "sur le PATH du job — c'est le pg_dump préinstallé du runner qui répondra"
+        )
+        # La vérification doit être BLOQUANTE et porter sur la majeure attendue.
+        assert re.search(r"majeure=.*pg_dump --version", texte), (
+            f"{fichier} : l'étape n'inspecte pas la majeure réellement obtenue"
+        )
+        assert re.search(rf'test "\$majeure" = "{client}"', texte), (
+            f"{fichier} : l'étape ne vérifie pas que pg_dump est bien en {client} — elle "
+            "peut donc réussir en laissant un client désaligné, comme elle l'a déjà fait"
+        )
+    assert verifies, "aucune étape d'installation de client PostgreSQL trouvée dans la CI"
+
+
 def test_le_pgdata_ne_partage_pas_le_volume_applicatif():
     """Deux cycles de vie distincts, et surtout : l'entrypoint du moteur fait un `chown` du
     volume applicatif. PostgreSQL REFUSE de démarrer si son PGDATA ne lui appartient pas —
