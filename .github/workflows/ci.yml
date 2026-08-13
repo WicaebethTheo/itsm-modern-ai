@@ -64,6 +64,11 @@ jobs:
       # Lu par `tests/conftest.py`. Le défaut local vise le port 55432 (serveur de dev
       # décalé) ; ici le service publie sur le 5432 standard du runner.
       TEST_DATABASE_URL: postgresql+psycopg://itsm:itsm@localhost:5432/itsm
+      # Pose EXPLICITEMENT, meme si le defaut du code vise deja localhost:5432 : ce
+      # workflow passait parce que le service publie sur le meme port que ce defaut, pas
+      # parce qu'on le lui avait dit. `docker-publish.yml`, cable sur 55432, echouait donc
+      # sur la MEME suite — et bloquait la publication de l'image.
+      DATABASE_URL: postgresql+psycopg://itsm:itsm@localhost:5432/itsm
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

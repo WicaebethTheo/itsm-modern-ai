@@ -63,12 +63,23 @@ jobs:
           POSTGRES_USER: itsm
           POSTGRES_PASSWORD: itsm
           POSTGRES_DB: itsm
-        ports: ["55432:5432"]
+        # Port 5432 STANDARD, comme ci.yml — et surtout pas 55432.
+        #
+        # Une poignee de modules construisent l'application (donc `Settings`) a l'IMPORT :
+        # ils ne voient pas `TEST_DATABASE_URL` et retombent sur le defaut du code,
+        # `localhost:5432`. Publier le service sur 55432 rendait donc ce defaut mort, et
+        # vingt collectes echouaient sur « BASE INJOIGNABLE ». `ci.yml` publiait deja sur
+        # 5432 et passait — par COINCIDENCE, pas par conception : les deux workflows
+        # lancent la meme suite et n'etaient pas cables pareil.
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U itsm -d itsm"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      TEST_DATABASE_URL: postgresql+psycopg://itsm:itsm@localhost:55432/itsm
+      TEST_DATABASE_URL: postgresql+psycopg://itsm:itsm@localhost:5432/itsm
+      # Pose EXPLICITEMENT, pour que plus rien ne repose sur le defaut du code : c'est ce
+      # defaut, atteint par un chemin detourne, qui a fait echouer la publication de 0.9.80.
+      DATABASE_URL: postgresql+psycopg://itsm:itsm@localhost:5432/itsm
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
