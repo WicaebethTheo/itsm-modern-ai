@@ -270,6 +270,44 @@ def test_le_pgdata_ne_partage_pas_le_volume_applicatif():
     assert set(portainer["volumes"]) == {"itsm_data", "itsm_pgdata"}
 
 
+def test_le_chown_de_l_entrypoint_epargne_REELLEMENT_le_pgdata(tmp_path):
+    """On EXÉCUTE la barrière, on ne la cherche pas au grep.
+
+    Le test ci-dessus se contentait de `"! -name postgres" in _texte(...)`. Or cette chaîne
+    figure aussi dans un COMMENTAIRE de l'entrypoint, à dix lignes de là. Mesuré : retirer
+    l'exclusion du `find` — donc rendre le `chown -R` récursif sur le PGDATA — laissait les
+    54 tests de ce module au vert. C'est pourtant la barrière dont le test voisin dit qu'un
+    « chown de trop » fait partir « la base entière en crash-loop » : PostgreSQL refuse de
+    démarrer si son PGDATA ne lui appartient pas.
+
+    On extrait donc la commande RÉELLE et on la rejoue sur un faux `/app/data`. Le mot dans
+    le commentaire ne peut plus tenir lieu de garde-fou.
+    """
+    trouve = re.search(
+        r"^\s*(find /app/data\b.*?)\s*\|\s*while", _texte("docker/entrypoint.sh"), re.M
+    )
+    assert trouve, "docker/entrypoint.sh : le `find` du chown est introuvable"
+
+    faux = tmp_path / "data"
+    (faux / "postgres").mkdir(parents=True)  # le PGDATA, propriété de l'utilisateur postgres
+    (faux / "logs").mkdir()
+    (faux / "master.key").write_text("x", encoding="utf-8")
+
+    sortie = subprocess.run(
+        ["sh", "-c", trouve.group(1).replace("/app/data", str(faux))],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    listes = {Path(ligne).name for ligne in sortie.split("\n") if ligne.strip()}
+
+    # Le garde-fou lui-même…
+    assert "postgres" not in listes, (
+        "le chown de l'entrypoint engloberait le PGDATA — PostgreSQL refuserait de démarrer"
+    )
+    # …et le garde-fou du garde-fou : si la commande extraite ne listait plus rien, la
+    # ligne ci-dessus passerait pour de mauvaises raisons.
+    assert {"logs", "master.key"} <= listes, "la commande extraite ne liste plus rien"
+
+
 def test_l_entrypoint_attend_la_base_avant_de_migrer():
     """Sans attente, `alembic upgrade head` échoue à la première seconde du premier
     `up -d` (le cluster n'accepte pas encore les connexions), `set -e` tue le conteneur et

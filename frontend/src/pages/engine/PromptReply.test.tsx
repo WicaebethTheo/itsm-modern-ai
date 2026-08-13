@@ -69,4 +69,16 @@ describe("Prompt & réponse", () => {
     await screen.findByDisplayValue("cordial");
     expect(screen.getByLabelText("Prompt système")).toBeInTheDocument();
   });
+  it("une lecture en échec n'enregistre RIEN, même formulaire modifié", async () => {
+    // Le formulaire n'est jamais vide : il porte ses propres défauts. Enregistrer par-dessus
+    // une lecture ratée écraserait la configuration réelle par eux. On SALIT le formulaire,
+    // sinon le bouton est déjà inerte faute de modification et le garde-fou n'est pas exercé.
+    vi.mocked(Api.getConfig).mockRejectedValue(new Error("502 Bad Gateway"));
+    renderWithToast(<PromptReply />);
+    expect(await screen.findByText(/Impossible de charger la configuration/)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Ton de la réponse"), "sec");
+    expect(screen.getByRole("button", { name: "Enregistrer" })).toBeDisabled();
+    expect(Api.updateConfig).not.toHaveBeenCalled();
+  });
 });

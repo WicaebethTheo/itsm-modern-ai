@@ -170,4 +170,16 @@ describe("Modes d'exécution — le réglage qui ÉCRIT dans GLPI", () => {
     await attendreChargement();
     expect(screen.getByLabelText("Mode par défaut").tagName).toBe("SELECT");
   });
+  it("une lecture en échec n'enregistre RIEN, même formulaire modifié", async () => {
+    // Le formulaire n'est jamais vide : il porte ses propres défauts. Enregistrer par-dessus
+    // une lecture ratée écraserait la configuration réelle par eux. On SALIT le formulaire,
+    // sinon le bouton est déjà inerte faute de modification et le garde-fou n'est pas exercé.
+    vi.mocked(Api.getConfig).mockRejectedValue(new Error("502 Bad Gateway"));
+    renderPage();
+    expect(await screen.findByText(/Impossible de charger la configuration/)).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("Mode par défaut"), "full_auto");
+    expect(screen.getByRole("button", { name: "Enregistrer" })).toBeDisabled();
+    expect(Api.updateConfig).not.toHaveBeenCalled();
+  });
 });

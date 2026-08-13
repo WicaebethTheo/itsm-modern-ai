@@ -105,7 +105,13 @@ describe("Garde-fous", () => {
     vi.mocked(Api.getConfig).mockRejectedValue(new Error("502 Bad Gateway"));
     renderPage();
     expect(await screen.findByText(/Impossible de charger la configuration/)).toBeInTheDocument();
+
+    // ON SALIT LE FORMULAIRE. Sans ça, le bouton est déjà désactivé parce que rien n'a
+    // changé : la mutation `peutEnregistrer={true}` survivait, et la moitié « n'enregistre
+    // pas » du nom de ce test n'était jamais exercée.
+    await userEvent.type(screen.getByLabelText(/Tentatives LLM/), "3");
     expect(screen.getByRole("button", { name: "Enregistrer" })).toBeDisabled();
+    expect(Api.updateConfig).not.toHaveBeenCalled();
   });
 
   it("chaque champ a un nom accessible", async () => {

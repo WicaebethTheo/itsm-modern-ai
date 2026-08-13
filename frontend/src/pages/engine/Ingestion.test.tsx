@@ -61,4 +61,16 @@ describe("Ingestion", () => {
     await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
     expect(await screen.findByText(/appliqué immédiatement/)).toBeInTheDocument();
   });
+  it("une lecture en échec n'enregistre RIEN, même formulaire modifié", async () => {
+    // Le formulaire n'est jamais vide : il porte ses propres défauts. Enregistrer par-dessus
+    // une lecture ratée écraserait la configuration réelle par eux. On SALIT le formulaire,
+    // sinon le bouton est déjà inerte faute de modification et le garde-fou n'est pas exercé.
+    vi.mocked(Api.getConfig).mockRejectedValue(new Error("502 Bad Gateway"));
+    renderWithToast(<Ingestion />);
+    expect(await screen.findByText(/Impossible de charger la configuration/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("switch", { name: "Polling activé" }));
+    expect(screen.getByRole("button", { name: "Enregistrer" })).toBeDisabled();
+    expect(Api.updateConfig).not.toHaveBeenCalled();
+  });
 });
