@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ToastProvider } from "@/components/ui/toast";
 import { DEMO } from "@/lib/api";
@@ -8,7 +8,10 @@ import { Automations } from "@/pages/Automations";
 import { CostQuotas } from "@/pages/CostQuotas";
 import { Dashboard } from "@/pages/Dashboard";
 import { Debug } from "@/pages/Debug";
-import { EngineSettings } from "@/pages/EngineSettings";
+import { Guardrails } from "@/pages/engine/Guardrails";
+import { Ingestion } from "@/pages/engine/Ingestion";
+import { Modes } from "@/pages/engine/Modes";
+import { PromptReply } from "@/pages/engine/PromptReply";
 import { GlpiConnection } from "@/pages/GlpiConnection";
 import { Groups } from "@/pages/Groups";
 import { Journal } from "@/pages/Journal";
@@ -43,7 +46,14 @@ export default function App() {
             <Route path="journal" element={<Journal />} />
             <Route path="glpi" element={<GlpiConnection />} />
             <Route path="ai-provider" element={<AiProvider />} />
-            <Route path="engine" element={<EngineSettings />} />
+            {/* Le moteur : quatre écrans, plus une page de dix-sept réglages. `/engine`
+                survit en REDIRECTION — la doc publique, les signets et le bouton « Régler
+                le plafond dans Moteur » de Coûts & quotas le citent tous. */}
+            <Route path="engine" element={<Navigate to="/engine/guardrails" replace />} />
+            <Route path="engine/guardrails" element={<Guardrails />} />
+            <Route path="engine/modes" element={<Modes />} />
+            <Route path="engine/ingestion" element={<Ingestion />} />
+            <Route path="engine/prompt" element={<PromptReply />} />
             <Route path="privacy" element={<Privacy />} />
             <Route path="cost" element={<CostQuotas />} />
             <Route path="scope" element={<Scope />} />

@@ -277,7 +277,7 @@ connexion habituel (email + mot de passe). Toute la configuration se fait ensuit
 
 - **Connexion GLPI** : base URL `apirest.php`, **user token** (et app token si requis).
 - **Fournisseur IA** : choisissez parmi **Mistral EU** (souverain, défaut), **OpenAI** (hors UE — à valider DPO), **Ollama** (modèle **local**, **pas de clé**) ou **Anthropic / Claude** (hors UE — à valider DPO) ; saisir la **clé API** (sauf Ollama).
-- **Moteur** : seuil de confiance et cost cap.
+- **Moteur › Garde-fous** : seuil de confiance et cost cap. Le menu **Moteur** regroupe quatre écrans — *Garde-fous*, *Modes d'exécution*, *Ingestion*, *Prompt & réponse*. (L'ancienne URL `/engine` redirige vers *Garde-fous*.)
 - **Périmètre (scan GLPI puis sélection)** : lancez le **scan GLPI** (`POST /api/glpi/sync`) pour mettre en cache catégories, entités, techniciens et groupes, puis **sélectionnez** ce que l'IA a le droit d'utiliser — **catégories autorisées + entités** du périmètre, **techniciens/groupes éligibles** et leur **fiche en prose** (routage). Le moteur n'agit que dans ce périmètre effectif. **Plus de fichier YAML** : les fiches sont éditées dans l'UI et stockées en base.
 
 Les **secrets** (clé LLM, tokens GLPI ; pas de clé pour Ollama) sont stockés **chiffrés au repos** (Fernet, FR-25) et ne sont **jamais** réaffichés ni mis dans `.env`.

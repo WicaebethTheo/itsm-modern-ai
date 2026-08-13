@@ -1,4 +1,4 @@
-import { ListChecks, RefreshCw, ScrollText } from "lucide-react";
+import { ListChecks, RefreshCw, ScrollText, SlidersHorizontal } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback } from "react";
 import { Link } from "react-router-dom";
@@ -6,13 +6,16 @@ import { Banner } from "@/components/Banner";
 import { ProgressBar, Sparkline, StackedBars } from "@/components/Charts";
 import { EmptyState } from "@/components/EmptyState";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { KpiCard } from "@/components/ui/kpi";
+import { Field } from "@/components/ui/label";
 import { PanelHead } from "@/components/ui/panel";
 import { Tag, type TagTone } from "@/components/ui/tag";
+import { useConfigDraft } from "@/hooks/useConfigDraft";
 import { useResource } from "@/hooks/useResource";
-import { Api } from "@/lib/api";
-import { useLocale, useT } from "@/lib/i18n";
+import { Api, type ConfigUpdate, type ConfigView } from "@/lib/api";
+import { tr, useLocale, useT } from "@/lib/i18n";
 import { reasonLabel, reasonTone } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +38,124 @@ const REASON_BAR: Record<TagTone, string> = {
   purple: "bg-primary",
   muted: "bg-muted-foreground",
 };
+
+interface VueDraft {
+  fenetre: string;
+  anomalie: string;
+}
+
+function toVueDraft(c: ConfigView | null): VueDraft {
+  return {
+    fenetre: c?.dashboard_window_days ?? "",
+    anomalie: c?.anomaly_new_age_hours ?? "",
+  };
+}
+
+function toVuePayload(d: VueDraft): ConfigUpdate {
+  const p: ConfigUpdate = {};
+  if (d.fenetre !== "") p.dashboard_window_days = Number(d.fenetre);
+  if (d.anomalie !== "") p.anomaly_new_age_hours = Number(d.anomalie);
+  return p;
+}
+
+/**
+ * Les deux réglages qui ne concernent QUE cette page.
+ *
+ * Ils vivaient sous « Moteur », rangés dans une section « Observabilité » — alors que leur
+ * propre libellé disait déjà « sans effet sur le triage ». On allait donc régler la
+ * profondeur d'un graphique dans l'écran des bornes de sécurité du moteur.
+ *
+ * Un écran de lecture qui règle SON PROPRE affichage ne devient pas pour autant un écran de
+ * configuration : rien ici ne touche au comportement du moteur, et c'est précisément ce qui
+ * justifie que ça n'ait plus rien à faire ailleurs.
+ */
+function ReglagesDeLaVue({ onSaved }: { onSaved: () => void }) {
+  const t = useT();
+  const cfg = useConfigDraft(
+    toVueDraft,
+    toVuePayload,
+    tr(
+      "Réglages d'affichage enregistrés. Cette page les applique dès la relecture.",
+      "Display settings saved. This page applies them on reload.",
+    ),
+  );
+  const { draft, patch } = cfg;
+
+  async function enregistrer() {
+    await cfg.save();
+    onSaved();
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <PanelHead
+        title={
+          <span className="flex items-center gap-2">
+            <SlidersHorizontal className="h-4 w-4 shrink-0 text-muted-foreground" />
+            {t("Réglages de cette page", "Settings for this page")}
+          </span>
+        }
+        subtitle={t(
+          "Profondeur d'analyse et seuil d'anomalie — sans effet sur le triage.",
+          "Analysis depth and anomaly threshold — no effect on triage.",
+        )}
+      />
+      <CardContent className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field
+            htmlFor="cfg-window-days"
+            label={t("Fenêtre (jours)", "Window (days)")}
+            hint={t(
+              "Profondeur d'historique analysée par les métriques ci-dessus.",
+              "History depth analysed by the metrics above.",
+            )}
+          >
+            <Input
+              id="cfg-window-days"
+              type="number"
+              min="1"
+              max="365"
+              value={draft.fenetre}
+              placeholder="7"
+              onChange={(e) => patch({ fenetre: e.target.value })}
+            />
+          </Field>
+          <Field
+            htmlFor="cfg-anomaly-hours"
+            label={t(
+              "Anomalie : âge max d'un ticket « New » (h)",
+              "Anomaly: max age of a “New” ticket (h)",
+            )}
+            hint={t(
+              "Au-delà de cette ancienneté, un ticket resté « New » est signalé comme anomalie. Signalement seul : aucune action sur le ticket.",
+              "Beyond this age, a ticket still “New” is flagged as an anomaly. Flagging only: no action on the ticket.",
+            )}
+          >
+            <Input
+              id="cfg-anomaly-hours"
+              type="number"
+              min="1"
+              max="720"
+              value={draft.anomalie}
+              placeholder="24"
+              onChange={(e) => patch({ anomalie: e.target.value })}
+            />
+          </Field>
+        </div>
+        <div className="flex items-center justify-end gap-3">
+          <p className="text-body text-muted-foreground">
+            {cfg.dirty
+              ? t("Modifications non enregistrées.", "Unsaved changes.")
+              : t("Tout est enregistré.", "Everything is saved.")}
+          </p>
+          <Button onClick={enregistrer} disabled={!cfg.config || cfg.saving || !cfg.dirty}>
+            {cfg.saving ? t("Enregistrement…", "Saving…") : t("Enregistrer", "Save")}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export function Dashboard() {
   const t = useT();
@@ -568,6 +689,17 @@ export function Dashboard() {
           </>
         )}
       </Card>
+
+      {/* En dernier, sous la carte qu'ils règlent : la fenêtre d'analyse et le seuil
+          d'anomalie pilotent « Opérationnel (GLPI) » juste au-dessus. */}
+      <ReglagesDeLaVue
+        onSaved={() => {
+          // Les métriques sont calculées SERVEUR avec ces bornes : sans relecture, la page
+          // afficherait encore la fenêtre précédente en annonçant la nouvelle.
+          metrics.reload();
+          ops.reload();
+        }}
+      />
     </div>
   );
 }

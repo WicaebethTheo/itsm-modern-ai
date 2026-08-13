@@ -200,7 +200,7 @@ flowchart LR
     N --> G["1️⃣ Page GLPI<br/>URL + App/User-Token<br/>(ou OAuth2 V2)"]
     L --> G
     G --> P["2️⃣ Page Fournisseur<br/>Mistral / OpenAI / Anthropic / Ollama"]
-    P --> E["3️⃣ Page Moteur<br/>liste blanche · seuil · plafond coût · masquage"]
+    P --> E["3️⃣ Moteur › Garde-fous<br/>seuil de confiance · plafond de coût"]
     E --> M["4️⃣ Mode = suggestion<br/>(défaut sûr)"]
     M --> R["▶️ 1er cycle :<br/>lire le Journal des décisions"]
 

@@ -64,6 +64,39 @@ toutes les semaines. Deux entrées changent donc de section :
 Dans « Configuration », l'ordre suit le pipeline de triage : d'où viennent les tickets, qui
 les lit, sous quelles limites, sur quel périmètre, vers qui, avec quel masquage.
 
+### Le Moteur devient une section, et chaque écran règle ce qu'il montre
+
+La page **Moteur** portait dix-sept contrôles, en sept cartes et quatre thèmes sans rapport :
+les bornes de sécurité du triage y voisinaient avec la fenêtre d'analyse d'un graphique et le
+ton d'une réponse. Le tout derrière un **unique « Enregistrer » qui réécrivait les dix-sept
+réglages d'un coup** — deux onglets ouverts se défaisaient donc l'un l'autre en silence.
+
+Elle devient une **section du menu**, avec quatre écrans qui suivent l'ordre du pipeline :
+
+| Écran | Ce qu'il règle |
+|---|---|
+| **Garde-fous** | seuil de confiance · plafond de coût €/jour · tentatives LLM |
+| **Modes d'exécution** | mode par défaut · seuil du mode semi-auto |
+| **Ingestion** | polling activé · intervalle |
+| **Prompt & réponse** | prompt système · ton · signature · consignes de routage |
+
+Chaque écran n'envoie plus que **ses propres clés** (`ConfigUpdate` est un patch côté
+serveur) : un écran ne peut plus écraser les réglages d'un autre. L'écran qui peut **armer une
+écriture GLPI** est enfin seul sur le sien, avec sa confirmation et son avertissement.
+
+Deux cartes ont quitté le moteur pour la page qui possède leur sujet :
+
+- **Les quatre bascules de masquage rejoignent Confidentialité (DPO).** Cette page expliquait
+  à la DPO ce qui sort en clair sans pouvoir y changer quoi que ce soit, tandis que le seul
+  écran capable d'éteindre un motif s'appelait « Moteur ». Le tableau dit ce qui sort, la
+  carte juste en dessous en décide — et le tableau est relu après l'enregistrement, sinon il
+  démentait ce qu'on venait de faire.
+- **La fenêtre d'analyse et le seuil d'anomalie rejoignent le Tableau de bord**, dont le
+  libellé disait déjà « sans effet sur le triage ». Les métriques sont recalculées côté
+  serveur : la page les relit, au lieu d'annoncer une fenêtre qu'elle n'affiche pas encore.
+
+⚠️ **`/engine` redirige** vers *Garde-fous* : aucun signet ni lien de doc ne casse.
+
 ### Typographie — la police du produit n'avait jamais été chargée
 
 `--font-sans` déclarait `"Geist Variable"` depuis la première version, avec ce commentaire :

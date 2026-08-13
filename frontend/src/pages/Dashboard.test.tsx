@@ -1,10 +1,11 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type Anomaly, Api, type DayPoint, type Metrics, type OperationalView } from "@/lib/api";
 import { demo } from "@/lib/demo";
+import { renderWithToast } from "@/test-utils";
 import { Dashboard } from "./Dashboard";
 
 vi.mock("@/lib/api", async (orig) => {
@@ -16,13 +17,18 @@ vi.mock("@/lib/api", async (orig) => {
       metrics: vi.fn(),
       operationalMetrics: vi.fn(),
       decisions: vi.fn(),
+      // La carte « Réglages de cette page » ÉCRIT la configuration : sans ces mocks elle
+      // partirait en erreur de lecture et le bouton resterait inerte.
+      getConfig: vi.fn(),
+      updateConfig: vi.fn(),
     },
   };
 });
 
 /** La page contient des <Link> (Statut / Journal) : routeur mémoire obligatoire. */
 function renderPage(ui: ReactElement = <Dashboard />) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>);
+  // `renderWithToast` : l'enregistrement des réglages d'affichage annonce son résultat.
+  return renderWithToast(<MemoryRouter>{ui}</MemoryRouter>);
 }
 
 /** Série 14 jours entièrement à zéro — ce que renvoie RÉELLEMENT un moteur sans données. */
@@ -54,6 +60,8 @@ describe("Dashboard", () => {
     vi.mocked(Api.metrics).mockResolvedValue(demo.metrics);
     vi.mocked(Api.operationalMetrics).mockResolvedValue(demo.operational);
     vi.mocked(Api.decisions).mockResolvedValue(demo.decisions);
+    vi.mocked(Api.getConfig).mockResolvedValue(demo.config);
+    vi.mocked(Api.updateConfig).mockResolvedValue(demo.config);
   });
 
   it("affiche les KPI et cadre les compteurs comme des cumuls", async () => {
@@ -318,5 +326,59 @@ describe("Dashboard", () => {
       ).length;
       expect(within(journal).getAllByText(name)).toHaveLength(rows);
     }
+  });
+});
+
+/**
+ * Ces deux réglages vivaient sous « Moteur », dans une section « Observabilité » — alors que
+ * leur propre libellé disait « sans effet sur le triage ». On réglait donc la profondeur d'un
+ * graphique depuis l'écran des bornes de sécurité du moteur.
+ */
+describe("Dashboard — réglages de la vue", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(Api.metrics).mockResolvedValue(demo.metrics);
+    vi.mocked(Api.operationalMetrics).mockResolvedValue(demo.operational);
+    vi.mocked(Api.decisions).mockResolvedValue(demo.decisions);
+    vi.mocked(Api.getConfig).mockResolvedValue(demo.config);
+    vi.mocked(Api.updateConfig).mockResolvedValue(demo.config);
+  });
+
+  it("porte les valeurs enregistrées et dit qu'elles n'affectent pas le triage", async () => {
+    renderPage();
+    // On attend la VALEUR, pas le champ : le formulaire est rendu dès le premier passage
+    // avec ses défauts locaux, et une assertion posée là passerait avant la réponse serveur.
+    await screen.findByDisplayValue("14");
+    expect(screen.getByLabelText(/Fenêtre \(jours\)/)).toHaveValue(14);
+    expect(screen.getByText(/sans effet sur le triage/)).toBeInTheDocument();
+  });
+
+  it("n'enregistre QUE ses deux clés d'affichage", async () => {
+    renderPage();
+    const fenetre = await screen.findByLabelText(/Fenêtre \(jours\)/);
+    await userEvent.clear(fenetre);
+    await userEvent.type(fenetre, "30");
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() => expect(Api.updateConfig).toHaveBeenCalledTimes(1));
+    expect(Object.keys(vi.mocked(Api.updateConfig).mock.calls[0][0]).sort()).toEqual([
+      "anomaly_new_age_hours",
+      "dashboard_window_days",
+    ]);
+  });
+
+  it("relit les métriques après enregistrement — elles sont calculées SERVEUR", async () => {
+    // Sans relecture, la page afficherait encore la fenêtre précédente tout en annonçant
+    // la nouvelle : exactement le genre d'affirmation non mesurée qu'on traque partout.
+    renderPage();
+    const fenetre = await screen.findByLabelText(/Fenêtre \(jours\)/);
+    expect(Api.metrics).toHaveBeenCalledTimes(1);
+
+    await userEvent.clear(fenetre);
+    await userEvent.type(fenetre, "30");
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() => expect(Api.metrics).toHaveBeenCalledTimes(2));
+    expect(Api.operationalMetrics).toHaveBeenCalledTimes(2);
   });
 });

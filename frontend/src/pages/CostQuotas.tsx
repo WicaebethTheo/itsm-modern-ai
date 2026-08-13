@@ -54,7 +54,7 @@ export function CostQuotas() {
   const barColor = c?.over_cap ? "bg-destructive" : pct >= 70 ? "bg-warning" : "bg-success";
 
   const capButton = (
-    <Button variant="outline" size="sm" onClick={() => navigate("/engine")}>
+    <Button variant="outline" size="sm" onClick={() => navigate("/engine/guardrails")}>
       <Settings />
       {t("Relever le plafond", "Raise the cap")}
     </Button>
@@ -130,7 +130,7 @@ export function CostQuotas() {
                 "⚠ No cost cap: LLM spend is bounded by nothing. A ticket surge or an expensive model bills on without the engine ever stopping.",
               )}
             </span>
-            <Button variant="outline" size="sm" onClick={() => navigate("/engine")}>
+            <Button variant="outline" size="sm" onClick={() => navigate("/engine/guardrails")}>
               <Settings />
               {t("Définir un plafond", "Set a cap")}
             </Button>
@@ -155,9 +155,9 @@ export function CostQuotas() {
               "The engine has not billed a single call yet: polling stopped, no ticket entered the scope, or the journal was purged. Spend will show up here on the first call.",
             )}
             action={
-              <Button variant="outline" size="sm" onClick={() => navigate("/engine")}>
+              <Button variant="outline" size="sm" onClick={() => navigate("/engine/ingestion")}>
                 <Settings />
-                {t("Vérifier le moteur", "Check the engine")}
+                {t("Vérifier l'ingestion", "Check ingestion")}
               </Button>
             }
           />
@@ -287,18 +287,19 @@ export function CostQuotas() {
         </Card>
       ) : null}
 
-      {/* Renvoi vers le Moteur : le plafond s'édite là-bas (cette page est en lecture seule). */}
+      {/* Renvoi vers l'écran qui PORTE le plafond — « Moteur » désignait une page de dix-sept
+          réglages où il fallait encore le chercher. Cette page-ci reste en lecture seule. */}
       <Card>
         <CardContent className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-body text-muted-foreground">
             {t(
-              "Le plafond de coût et les tarifs se règlent dans Moteur. Cette page est en lecture seule.",
-              "The cost cap and tariffs are set in Engine. This page is read-only.",
+              "Le plafond de coût et les tarifs se règlent dans Moteur › Garde-fous. Cette page est en lecture seule.",
+              "The cost cap and tariffs are set in Engine › Guardrails. This page is read-only.",
             )}
           </p>
-          <Button variant="outline" onClick={() => navigate("/engine")}>
+          <Button variant="outline" onClick={() => navigate("/engine/guardrails")}>
             <Settings />
-            {t("Régler le plafond dans Moteur", "Set the cap in Engine")}
+            {t("Régler le plafond", "Set the cap")}
           </Button>
         </CardContent>
       </Card>

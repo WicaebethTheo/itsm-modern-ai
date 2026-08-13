@@ -42,7 +42,16 @@ describe("navByPath", () => {
 
   it("résout un chemin simple", () => {
     expect(navByPath("/scope")?.en).toBe("Business rules");
-    expect(navByPath("/engine")?.fr).toBe("Moteur");
+    expect(navByPath("/privacy")?.fr).toBe("Confidentialité (DPO)");
+  });
+
+  it("les sous-écrans du moteur gagnent contre leur préfixe", () => {
+    // Le tri par préfixe le plus long est ce qui empêche `/engine/...` de retomber sur une
+    // entrée plus courte : quatre écrans partagent désormais la même racine.
+    expect(navByPath("/engine/guardrails")?.fr).toBe("Garde-fous");
+    expect(navByPath("/engine/modes")?.fr).toBe("Modes d'exécution");
+    expect(navByPath("/engine/ingestion")?.fr).toBe("Ingestion");
+    expect(navByPath("/engine/prompt")?.en).toBe("Prompt & reply");
   });
 
   it("matche par préfixe (sous-route) sans laisser « / » tout capturer", () => {

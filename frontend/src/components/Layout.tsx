@@ -343,7 +343,11 @@ export function Layout() {
                             Les SVG dessinés à la main qui précédaient appliquaient déjà ce
                             calcul (1,7 sur 14 px = 0,99 px) ; on ne le perd pas en passant
                             à une bibliothèque. */}
-                        <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                            <Icon
+                              className="h-4 w-4 shrink-0"
+                              strokeWidth={1.5}
+                              aria-hidden="true"
+                            />
                             <span className="truncate">{t(it.fr, it.en)}</span>
                           </NavLink>
                         </li>

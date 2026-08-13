@@ -8,12 +8,13 @@
 // trois n'est plus importante que les autres. Icônes de `lucide-react`, déjà embarquées
 // (aucun appel sortant, aucune fonte d'icônes distante) et déjà utilisées par `Setup.tsx`.
 //
-// L'ORDRE des sections répond à trois questions distinctes, et c'est tout le classement :
+// L'ORDRE des sections répond à quatre questions distinctes, et c'est tout le classement :
 //   Opération     — qu'est-ce que le moteur A FAIT ? (écrans de lecture, aucun réglage)
-//   Configuration — qu'a-t-il LE DROIT de faire ? (les garde-fous, dans l'ordre du pipeline)
+//   Moteur        — COMMENT se comporte-t-il ? (les garde-fous, dans l'ordre du pipeline)
+//   Configuration — à QUOI a-t-il accès ? (raccordements, référentiels, conformité)
 //   Avancé        — outils qu'on n'ouvre pas toutes les semaines
 //
-// Deux entrées ont donc changé de section :
+// Deux entrées ont changé de section :
 //   · « Connexion GLPI » quittait mal « Opération » : on y saisit une URL, un jeton et on
 //     teste — c'est un écran de RÉGLAGE. L'état de la connexion, lui, est déjà porté par le
 //     chip de la topbar et par la page Statut, qui sont, eux, des écrans de lecture.
@@ -21,23 +22,32 @@
 //     « le plafond et les tarifs se règlent dans Moteur, cette page est en lecture seule ».
 //     Elle observe une dépense ; elle ne configure rien.
 //
-// Dans « Configuration », l'ordre suit le pipeline de triage : d'où viennent les tickets
-// (GLPI), qui les lit (Fournisseur IA), sous quelles limites (Moteur), sur quel périmètre
-// (Règles métier), vers qui (Techniciens, Groupes), avec quel masquage (Confidentialité),
-// et ce qui se déclenche seul (Automations). C'est l'ordre du docstring de `triage.py`.
+// POURQUOI « Moteur » est une SECTION et non plus une entrée : c'était une page de dix-sept
+// contrôles répartis en sept cartes et quatre thèmes sans rapport — les bornes de sécurité du
+// triage y voisinaient avec la fenêtre d'analyse d'un graphique — le tout derrière un unique
+// « Enregistrer » qui réécrivait les dix-sept réglages d'un coup, donc écrasait ce qu'un
+// second onglet venait de changer. Découpée, chaque page n'enregistre plus que ses propres
+// clés (`ConfigUpdate` est un patch côté serveur), et l'écran qui peut ARMER une écriture
+// GLPI est enfin seul sur le sien.
+//
+// Les entrées suivent l'ordre du pipeline de `triage.py` : ce qui filtre (Garde-fous), ce qui
+// autorise à écrire (Modes), ce qui alimente (Ingestion), ce qu'on dit au modèle (Prompt).
 
 import {
   Activity,
+  EyeOff,
   FlaskConical,
   Heart,
   LayoutDashboard,
   type LucideIcon,
+  MessageSquareText,
   Plug,
   ScrollText,
   ShieldCheck,
-  SlidersHorizontal,
+  ShieldHalf,
   Sparkles,
   Terminal,
+  Timer,
   UserCog,
   UserRound,
   Users,
@@ -72,16 +82,32 @@ export const NAV: NavSection[] = [
     ],
   },
   {
+    fr: "Moteur",
+    en: "Engine",
+    items: [
+      { to: "/engine/guardrails", fr: "Garde-fous", en: "Guardrails", icon: ShieldCheck },
+      { to: "/engine/modes", fr: "Modes d'exécution", en: "Execution modes", icon: ShieldHalf },
+      { to: "/engine/ingestion", fr: "Ingestion", en: "Ingestion", icon: Timer },
+      {
+        to: "/engine/prompt",
+        fr: "Prompt & réponse",
+        en: "Prompt & reply",
+        icon: MessageSquareText,
+      },
+    ],
+  },
+  {
     fr: "Configuration",
     en: "Configuration",
     items: [
       { to: "/glpi", fr: "Connexion GLPI", en: "GLPI connection", icon: Plug },
       { to: "/ai-provider", fr: "Fournisseur IA", en: "AI provider", icon: Sparkles },
-      { to: "/engine", fr: "Moteur", en: "Engine", icon: SlidersHorizontal },
       { to: "/scope", fr: "Règles métier", en: "Business rules", icon: Workflow },
       { to: "/technicians", fr: "Techniciens", en: "Technicians", icon: UserRound },
       { to: "/groups", fr: "Groupes", en: "Groups", icon: Users },
-      { to: "/privacy", fr: "Confidentialité (DPO)", en: "Privacy (DPO)", icon: ShieldCheck },
+      // `EyeOff` et non un bouclier de plus : depuis que cette page PORTE les bascules de
+      // masquage, son geste propre est de cacher une donnée avant qu'elle ne sorte.
+      { to: "/privacy", fr: "Confidentialité (DPO)", en: "Privacy (DPO)", icon: EyeOff },
       { to: "/automations", fr: "Automations", en: "Automations", icon: Zap },
     ],
   },

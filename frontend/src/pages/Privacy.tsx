@@ -9,9 +9,14 @@ import { PanelHead } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { Toggle } from "@/components/ui/toggle";
+import { useConfigDraft } from "@/hooks/useConfigDraft";
 import { useResource } from "@/hooks/useResource";
 import {
   Api,
+  asBool,
+  type ConfigUpdate,
+  type ConfigView,
   DEMO,
   DPO_REPORT_URL,
   type MaskTestOut,
@@ -53,6 +58,144 @@ function HeadTitle({ icon, children }: { icon: ReactNode; children: ReactNode })
       <span className="text-muted-foreground [&_svg]:h-4 [&_svg]:w-4">{icon}</span>
       {children}
     </span>
+  );
+}
+
+interface MaskDraft {
+  email: boolean;
+  phone: boolean;
+  iban: boolean;
+  secret: boolean;
+}
+
+/** Défauts SÛRS tant que la config n'est pas lue : on ne pré-affiche jamais « non masqué ». */
+function toMaskDraft(c: ConfigView | null): MaskDraft {
+  return {
+    email: c ? asBool(c.mask_email) : true,
+    phone: c ? asBool(c.mask_phone) : true,
+    iban: c ? asBool(c.mask_iban) : true,
+    secret: c ? asBool(c.mask_secret) : true,
+  };
+}
+
+function toMaskPayload(d: MaskDraft): ConfigUpdate {
+  return { mask_email: d.email, mask_phone: d.phone, mask_iban: d.iban, mask_secret: d.secret };
+}
+
+/**
+ * Les bascules de masquage — le seul endroit du produit qui décide de ce qui SORT en clair.
+ *
+ * Elles vivaient sur la page « Moteur », au milieu de seize autres réglages : la page qui
+ * explique le masquage à la DPO ne pouvait pas le changer, et celle qui le changeait portait
+ * le nom le moins susceptible d'attirer une DPO. Le tableau juste au-dessus dit ce qui sort ;
+ * cette carte en décide, et ne fait rien d'autre.
+ */
+function ReglageMasquage({ supporter, onSaved }: { supporter: boolean; onSaved: () => void }) {
+  const t = useT();
+  const cfg = useConfigDraft(
+    toMaskDraft,
+    toMaskPayload,
+    tr(
+      "Masquage enregistré. Il s'applique dès le prochain appel au modèle.",
+      "Masking saved. It applies from the next model call.",
+    ),
+  );
+  const { draft, patch } = cfg;
+
+  // IBAN et secrets ne comptent comme masqués que si la licence Supporter les autorise :
+  // cocher la case sans la licence ne masque rien, et le compteur ne doit pas le prétendre.
+  const masques = [
+    draft.email,
+    draft.phone,
+    supporter && draft.iban,
+    supporter && draft.secret,
+  ].filter(Boolean).length;
+
+  async function enregistrer() {
+    await cfg.save();
+    onSaved();
+  }
+
+  return (
+    <Card>
+      <PanelHead
+        title={
+          <HeadTitle icon={<ShieldCheck />}>
+            {t("Réglage du masquage", "Masking settings")}
+          </HeadTitle>
+        }
+        subtitle={t(
+          "Remplace les données sensibles par [EMAIL]/[IBAN]… AVANT l'envoi au LLM",
+          "Replaces sensitive data with [EMAIL]/[IBAN]… BEFORE sending to the LLM",
+        )}
+        right={
+          <Tag tone={masques === 4 ? "green" : masques === 0 ? "red" : "amber"}>{masques}/4</Tag>
+        }
+      />
+      <CardContent className="flex flex-col gap-4">
+        <Banner kind="error">
+          {supporter
+            ? t(
+                "⚠ Désactiver un motif envoie cette donnée EN CLAIR au LLM — d'autant plus sensible si le fournisseur est hors UE (OpenAI, Anthropic). À valider avec la DPO.",
+                "⚠ Disabling a pattern sends that data IN CLEAR to the LLM — especially sensitive with a non-EU provider (OpenAI, Anthropic). Validate with the DPO.",
+              )
+            : t(
+                "⚠ Édition Community : les IBAN et les secrets (mots de passe, tokens, clés API) ne sont PAS masqués et sont envoyés EN CLAIR au LLM. Activez votre licence Supporter pour les masquer.",
+                "⚠ Community edition: IBANs and secrets (passwords, tokens, API keys) are NOT masked and are sent IN CLEAR to the LLM. Activate your Supporter license to mask them.",
+              )}
+        </Banner>
+        <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+          <Toggle
+            checked={draft.email}
+            onChange={(v) => patch({ email: v })}
+            label={t("Masquer les e-mails", "Mask emails")}
+          />
+          <Toggle
+            checked={draft.phone}
+            onChange={(v) => patch({ phone: v })}
+            label={t("Masquer les téléphones", "Mask phone numbers")}
+          />
+          {supporter ? (
+            <Toggle
+              checked={draft.iban}
+              onChange={(v) => patch({ iban: v })}
+              label={t("Masquer les IBAN", "Mask IBANs")}
+            />
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-ui text-muted-foreground">
+                {t("Masquer les IBAN", "Mask IBANs")}
+              </span>
+              <LockedBadge />
+            </div>
+          )}
+          {supporter ? (
+            <Toggle
+              checked={draft.secret}
+              onChange={(v) => patch({ secret: v })}
+              label={t("Masquer mots de passe / tokens", "Mask passwords / tokens")}
+            />
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-ui text-muted-foreground">
+                {t("Masquer mots de passe / tokens", "Mask passwords / tokens")}
+              </span>
+              <LockedBadge />
+            </div>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-3">
+          <p className="text-body text-muted-foreground">
+            {cfg.dirty
+              ? t("Modifications non enregistrées.", "Unsaved changes.")
+              : t("Tout est enregistré.", "Everything is saved.")}
+          </p>
+          <Button onClick={enregistrer} disabled={!cfg.config || cfg.saving || !cfg.dirty}>
+            {cfg.saving ? t("Enregistrement…", "Saving…") : t("Enregistrer", "Save")}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -236,6 +379,20 @@ export function Privacy() {
               </div>
             </CardContent>
           </Card>
+
+          {/* ── Réglage du masquage ────────────────────────────────────── */}
+          {/* Ces quatre bascules vivaient sur la page « Moteur ». Cette page-ci EXPLIQUAIT
+              donc un masquage qu'elle ne pouvait pas régler, et le seul écran capable de
+              l'éteindre s'appelait « Moteur » — le dernier endroit où une DPO irait
+              chercher. Le tableau ci-dessus dit ce qui sort ; la carte ci-dessous en décide. */}
+          <ReglageMasquage
+            supporter={view.edition_advanced}
+            onSaved={() => {
+              // Le tableau ci-dessus vient d'être démenti par l'enregistrement : le relire
+              // est le minimum, sinon il affirme « Masqué » sur un motif qu'on vient de couper.
+              privacy.reload();
+            }}
+          />
 
           {/* ── Outil de test de masquage ──────────────────────────────── */}
           <Card>

@@ -1,8 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Api, type PrivacyView, type RetentionView } from "@/lib/api";
+import { demo } from "@/lib/demo";
+import { renderWithToast } from "@/test-utils";
 import { Privacy } from "./Privacy";
 
 // On mocke le module Api : on garde les exports réels (types, DEMO, URLs…) et on
@@ -13,7 +15,17 @@ vi.mock("@/lib/api", async (orig) => {
     ...actual,
     // `retention` DOIT figurer ici : la carte Rétention lit l'état réel de la purge,
     // sans ce mock la page part en erreur au chargement.
-    Api: { ...actual.Api, privacy: vi.fn(), testMask: vi.fn(), retention: vi.fn() },
+    // `getConfig` / `updateConfig` : depuis que la carte « Réglage du masquage » vit ici,
+    // la page ÉCRIT la configuration. Sans ces mocks elle part en erreur de lecture et le
+    // bouton reste inerte — les tests passeraient en n'exerçant rien.
+    Api: {
+      ...actual.Api,
+      privacy: vi.fn(),
+      testMask: vi.fn(),
+      retention: vi.fn(),
+      getConfig: vi.fn(),
+      updateConfig: vi.fn(),
+    },
   };
 });
 
@@ -97,7 +109,9 @@ const RETENTION_ON: RetentionView = {
 };
 
 function renderPrivacy() {
-  return render(
+  // `renderWithToast` : l'enregistrement du masquage annonce son résultat par un toast,
+  // et un test qui ne monte pas le fournisseur ne verrait jamais la confirmation.
+  return renderWithToast(
     <MemoryRouter>
       <Privacy />
     </MemoryRouter>,
@@ -110,6 +124,14 @@ describe("Privacy", () => {
     vi.mocked(Api.privacy).mockResolvedValue(COMMUNITY);
     vi.mocked(Api.retention).mockResolvedValue(RETENTION_ON);
     vi.mocked(Api.testMask).mockResolvedValue({ masked: "[EMAIL]", counts: { email: 1 } });
+    vi.mocked(Api.getConfig).mockResolvedValue({
+      ...demo.config,
+      mask_email: "true",
+      mask_phone: "true",
+      mask_iban: "true",
+      mask_secret: "true",
+    });
+    vi.mocked(Api.updateConfig).mockResolvedValue(demo.config);
   });
 
   it("affiche les libellés des catégories", async () => {
@@ -222,5 +244,77 @@ describe("Privacy", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("boom");
     await userEvent.click(screen.getByRole("button", { name: "Réessayer" }));
     expect(Api.privacy).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * Le masquage se réglait sur la page « Moteur ».
+ *
+ * Cette page-ci EXPLIQUAIT donc à la DPO ce qui sort en clair sans pouvoir y changer quoi
+ * que ce soit, et le seul écran capable d'éteindre un motif s'appelait « Moteur » — le
+ * dernier endroit où une DPO irait chercher.
+ */
+describe("Privacy — réglage du masquage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(Api.privacy).mockResolvedValue(COMMUNITY);
+    vi.mocked(Api.retention).mockResolvedValue(RETENTION_ON);
+    vi.mocked(Api.testMask).mockResolvedValue({ masked: "[EMAIL]", counts: { email: 1 } });
+    vi.mocked(Api.getConfig).mockResolvedValue({
+      ...demo.config,
+      mask_email: "true",
+      mask_phone: "true",
+      mask_iban: "true",
+      mask_secret: "true",
+    });
+    vi.mocked(Api.updateConfig).mockResolvedValue(demo.config);
+  });
+
+  it("reflète l'état enregistré des masques", async () => {
+    renderPrivacy();
+    expect(await screen.findByRole("switch", { name: "Masquer les e-mails" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Masquer les téléphones" })).toBeChecked();
+  });
+
+  it("n'enregistre QUE les quatre clés de masquage", async () => {
+    renderPrivacy();
+    const email = await screen.findByRole("switch", { name: "Masquer les e-mails" });
+    await userEvent.click(email);
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() => expect(Api.updateConfig).toHaveBeenCalledTimes(1));
+    expect(Object.keys(vi.mocked(Api.updateConfig).mock.calls[0][0]).sort()).toEqual([
+      "mask_email",
+      "mask_iban",
+      "mask_phone",
+      "mask_secret",
+    ]);
+    expect(vi.mocked(Api.updateConfig).mock.calls[0][0]).toMatchObject({ mask_email: false });
+  });
+
+  it("relit le tableau après enregistrement — sinon il dément ce qu'on vient de faire", async () => {
+    // Le tableau au-dessus annonce « Masqué » d'après `/api/privacy`. Couper un motif sans
+    // le relire laisserait la page affirmer l'inverse de ce qu'elle vient d'enregistrer.
+    renderPrivacy();
+    await screen.findByRole("switch", { name: "Masquer les e-mails" });
+    expect(Api.privacy).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole("switch", { name: "Masquer les e-mails" }));
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(Api.privacy).toHaveBeenCalledTimes(2));
+  });
+
+  it("en Community, IBAN et secrets ne sont PAS cochables et ne comptent pas comme masqués", async () => {
+    // Cocher la case sans la licence ne masque rien : le compteur ne doit pas le prétendre.
+    renderPrivacy();
+    await screen.findByRole("switch", { name: "Masquer les e-mails" });
+    expect(screen.queryByRole("switch", { name: "Masquer les IBAN" })).not.toBeInTheDocument();
+    expect(screen.getByText("2/4")).toBeInTheDocument();
+  });
+
+  it("avertit que couper un motif l'envoie EN CLAIR au modèle", async () => {
+    renderPrivacy();
+    await screen.findByRole("switch", { name: "Masquer les e-mails" });
+    expect(screen.getAllByText(/EN CLAIR/).length).toBeGreaterThan(0);
   });
 });
