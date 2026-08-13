@@ -1,3 +1,86 @@
+## 2026-08-13 — 0.9.83 — SQLite disparait de la doc, la prose s'allege
+
+Rien ici ne change le comportement du moteur. C'est une passe editoriale sur les
+trois surfaces (produit, site, documentation publique).
+
+### SQLite n'est plus mentionne
+
+Le moteur tourne exclusivement sur PostgreSQL. Les mentions residuelles, et avec
+elles les paragraphes de migration et les avertissements de rupture, sont
+retires : 14 occurrences dans la doc du depot, 21 dans la doc publique FR,
+autant en EN, 4 sur le site.
+
+`docs/postgresql.md` survit : une seule de ses neuf sections traitait de la
+bascule. Le reste est un document d'exploitation PostgreSQL autonome. Les
+sections sont renumerotees et les quatre liens entrants recales.
+
+SQLite reste en revanche dans le code, les tests et les migrations, ou il porte
+du sens : `tests/unit/test_backup.py` s'en sert comme URL non-PostgreSQL a
+rejeter, les migrations documentent la compatibilite `batch_alter_table`, et le
+CHANGELOG est un journal date qu'on ne reecrit pas.
+
+### La prose cesse de sonner « generee »
+
+Mesure avant : un marqueur gras tous les 24 mots dans la doc du depot. Apres :
+un tous les 103, soit 1041 -> 238 marqueurs pour 24 500 mots. Sont partis le
+gras d'emphase, les antitheses « ce n'est pas X, c'est Y » sans information, les
+incises en cascade et la redite emphatique.
+
+Le corpus perd 0,9 % de son volume : c'est de l'emphase qui tombe, pas de
+l'information.
+
+Les aveux sont intacts au verbe et a la portee pres — fenetre de revendication
+du compte admin, masquage PII incomplet faute de NER, `audit_log` ecrite mais
+lue par aucune route, expiration de licence qui rouvre le flux en clair,
+rate-limit mono-process, 2FA non implementee. C'est la valeur de ce corpus ;
+seul le gras autour a disparu.
+
+### Deux artefacts corriges
+
+`docs/install.md` se terminait par un fragment `</content></invoke>` — un
+residu d'outillage, publie depuis plusieurs versions. Et `security-limits.md`
+(doc publique) portait un gras imbrique invalide dans la puce `/metrics`, qui ne
+rendait pas.
+
+## 2026-08-13 — 0.9.83 — la doc arrete d'insister
+
+Passe de style sur la documentation. Aucun changement de comportement : l'image
+publiee est identique, seule la prose bouge.
+
+### SQLite disparait de la documentation
+
+Le produit tourne sur PostgreSQL et rien d'autre. Les 14 mentions restantes
+decrivaient une migration qui n'interesse plus personne, avec les avertissements
+de rupture et les comparaisons qui allaient avec. La section 2 de
+`docs/postgresql.md` etait la seule entierement consacree a la bascule : elle
+part, les huit autres restent (elles traitent d'exploitation), et les liens
+entrants ont ete recales sur les ancres renumerotees.
+
+SQLite subsiste dans le code, les tests et les migrations, ou il porte du sens :
+`tests/unit/test_backup.py` s'en sert comme URL non-PostgreSQL a rejeter, les
+migrations documentent la compatibilite `batch_alter_table`. Le CHANGELOG n'est
+pas touche non plus : c'est un journal date.
+
+### La prose cesse d'insister
+
+La documentation comptait un marqueur gras tous les 24 mots. Il en reste un tous
+les 103. Le gras signale desormais un terme qu'on cherche du regard — un nom de
+champ, une variable, un ecran — au lieu d'appuyer une opinion. Sont partis avec
+lui les incises en cascade, les antitheses « ce n'est pas X, c'est Y » sans
+information, les triades rhetoriques et la redite emphatique.
+
+Le corpus perd 0,9 % de son volume : c'est de l'emphase, pas de l'information.
+Aucun fait, chiffre, variable, commande ni avertissement n'a ete retire, et
+aucun aveu n'a ete adouci — fenetre de revendication du compte admin, masquage
+PII incomplet, `audit_log` illisible, expiration de licence qui rouvre le flux
+en clair : tous intacts au mot pres, seul le gras est tombe.
+
+### Deux residus livres
+
+`docs/install.md` se terminait par un fragment de balisage parasite,
+`</content></invoke>`, publie depuis plusieurs versions. Et la puce `/metrics` de
+la page Securite portait un gras imbrique invalide qui ne rendait pas.
+
 ## 2026-08-13 — 0.9.82 — la doc citait des libelles que la console n'a plus
 
 Suite de la revue croisee, sur le lot que la 0.9.81 avait laisse : les libelles
