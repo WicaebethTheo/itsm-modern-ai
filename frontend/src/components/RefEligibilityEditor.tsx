@@ -257,13 +257,6 @@ export function RefEligibilityEditor({
     setDraft((d) => ({ ...d, [id]: { ...d[id], ...p } }));
   }
 
-  // Le compteur promet « N modifications non enregistrées » : un rechargement les emportait
-  // sans un mot. Seul le RECHARGEMENT est gardé — le blocage de navigation interne
-  // (`useBlocker`) exige un data router, et `App.tsx` monte un `<BrowserRouter>` déclaratif.
-  useEffect(() => {
-    return;
-  }, [modifies]);
-
   // Annoncer « N modification(s) non enregistrée(s) » puis laisser un F5 les emporter sans
   // un mot était une demi-promesse. Seul le RECHARGEMENT est gardé : bloquer la navigation
   // interne exige un data router, et l'application monte un `<BrowserRouter>` déclaratif.

@@ -174,6 +174,16 @@ export function Scope() {
   const modifEntsSel = useRef<Set<number>>(new Set());
   const modifEntsCfg = useRef<Set<number>>(new Set());
 
+  // La version du serveur DONT L'ECRAN EST ISSU. Le compteur ci-dessous est une difference
+  // entre l'ecran et le serveur : il doit comparer les deux versants d'une meme lecture.
+  // Compare a `categories.data`/`entities.data` des leur arrivee, il existait un rendu — le
+  // temps que l'effet d'initialisation s'execute — ou le serveur annoncait N lignes cochees
+  // et ou l'ecran n'en portait aucune : « N modification(s) non enregistree(s) » s'affichait
+  // et « Enregistrer » s'armait sur une page que personne n'avait touchee. Meme transitoire
+  // apres chaque « Scanner GLPI » et apres chaque enregistrement, qui rechargent.
+  const [catsRef, setCatsRef] = useState<RefItem[]>([]);
+  const [entsRef, setEntsRef] = useState<RefItem[]>([]);
+
   useEffect(() => {
     const items = categories.data;
     if (!items) return;
@@ -184,6 +194,7 @@ export function Scope() {
       }
       return next;
     });
+    setCatsRef(items);
   }, [categories.data]);
 
   useEffect(() => {
@@ -227,6 +238,7 @@ export function Scope() {
           ]),
         ),
     );
+    setEntsRef(items);
   }, [entities.data]);
 
   function toggle(
@@ -282,13 +294,13 @@ export function Scope() {
   // distinguait « je viens de tout régler » de « la page est telle que je l'ai trouvée ».
   const enAttente = useMemo(() => {
     let n = 0;
-    for (const c of categories.data ?? []) if (cats.has(c.ext_id) !== c.selected) n++;
-    for (const e of entities.data ?? []) {
+    for (const c of catsRef) if (cats.has(c.ext_id) !== c.selected) n++;
+    for (const e of entsRef) {
       if (ents.has(e.ext_id) !== e.selected) n++;
       if (reglagesLocaux(e.ext_id) !== reglagesServeur(e)) n++;
     }
     return n;
-  }, [categories.data, entities.data, cats, ents, reglagesLocaux]);
+  }, [catsRef, entsRef, cats, ents, reglagesLocaux]);
 
   // Garde de sortie : annoncer « N modifications non enregistrées » puis laisser un F5 les
   // emporter sans un mot était une demi-promesse. Seul le RECHARGEMENT est gardé : le

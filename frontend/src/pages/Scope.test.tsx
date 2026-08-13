@@ -241,6 +241,46 @@ describe("Scope — barre d'enregistrement, confirmation et garde de sortie", ()
     expect(screen.getByText("1 modification(s) non enregistrée(s)")).toBeInTheDocument();
   });
 
+  it("une liste qui arrive en retard n'arme jamais « Enregistrer » toute seule", async () => {
+    // Le compteur est une DIFFÉRENCE entre l'écran et le serveur. Comparé à `categories.data`
+    // dès son arrivée, il existait un rendu — celui d'avant l'effet d'initialisation — où le
+    // serveur annonçait une catégorie cochée et où l'écran n'en portait aucune : la barre
+    // disait « 1 modification(s) non enregistrée(s) » et « Enregistrer » s'armait sur une page
+    // que personne n'avait touchée. Une frappe de trop et le clic partait.
+    let livreCats!: (v: RefItem[]) => void;
+    vi.mocked(Api.discovery).mockImplementation((kind) =>
+      kind === "category"
+        ? new Promise<RefItem[]>((r) => {
+            livreCats = r;
+          })
+        : Promise.resolve(ENTITIES),
+    );
+    renderWithToast(<Scope />);
+    const bouton = await screen.findByRole("button", { name: ENREGISTRER });
+    expect(bouton).toBeDisabled();
+
+    // Les callbacks d'un MutationObserver sont des microtâches : elles s'exécutent APRÈS le
+    // commit du rendu et AVANT les effets passifs de React. C'est exactement la fenêtre où le
+    // bouton s'armait, et le seul moyen de la constater depuis un test.
+    const arme: boolean[] = [];
+    const observateur = new MutationObserver(() =>
+      arme.push(!(bouton as HTMLButtonElement).disabled),
+    );
+    observateur.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    await act(async () => livreCats(CATEGORIES));
+    observateur.disconnect();
+
+    expect(await screen.findByRole("checkbox", { name: /Compte/ })).toBeChecked();
+    expect(arme).not.toContain(true);
+    expect(bouton).toBeDisabled();
+    expect(screen.getByText("Aucune modification en attente")).toBeInTheDocument();
+  });
+
   it("ANNULER la confirmation n'arme aucune écriture GLPI", async () => {
     // Le garde-fou d'EngineSettings se contournait en changeant d'écran : ici, un `<select>`
     // puis « Enregistrer » armait la même écriture sans un mot.

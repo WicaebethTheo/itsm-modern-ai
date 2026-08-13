@@ -171,9 +171,9 @@ describe("Journal des décisions", () => {
   // l'override reste pour DIRE que ce test-ci est lent par nature. Un seul cas peint
   // 500 lignes : tout ce qui dépend de la troncature est vérifié ici, et l'ordre des
   // étapes évite de repeindre le lot (on ne vide pas la recherche avant de charger plus).
-  it("tronqué : le dit, le rappelle au filtre, et ne vide pas la vue pour en charger plus", {
-    timeout: 10_000,
-  }, async () => {
+  // 500 lignes instrumentees par la couverture : chaque frappe repeint le tableau entier,
+  // d'ou le delai global de 20 s (`vitest.config.ts`) plutot qu'un plafond propre a 10 s.
+  it("tronqué : le dit, le rappelle au filtre, et ne vide pas la vue pour en charger plus", async () => {
     const page = Array.from({ length: 500 }, (_, i) =>
       decision({ id: i + 1, ticket_id: 1000 + i }),
     );
@@ -190,7 +190,8 @@ describe("Journal des décisions", () => {
     // Le filtre est LOCAL : « aucun résultat » ne prouve rien au-delà de la fenêtre, et
     // la seule mention de troncature vivait après 500 lignes, là où personne ne la lit.
     const search = screen.getByLabelText("Rechercher dans le journal");
-    await userEvent.type(search, "zzz");
+    // Une seule frappe suffit a ne rien matcher : trois repeignaient 500 lignes pour rien.
+    await userEvent.type(search, "z");
     expect(screen.getByText("Aucun résultat pour ce filtre.")).toBeInTheDocument();
     expect(screen.getByText(/n'a porté que sur les 500 décisions chargées/)).toBeInTheDocument();
 

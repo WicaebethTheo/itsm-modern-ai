@@ -124,6 +124,7 @@ function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => v
       </button>
 
       {open ? (
+        // biome-ignore lint/a11y/useSemanticElements: un <fieldset> annoncerait un groupe de champs de formulaire ; ce panneau contient un lien, deux bascules et une deconnexion.
         <div
           id={ACCOUNT_POPOVER_ID}
           role="group"

@@ -37,6 +37,12 @@ qu'elle montrait. Aucun changement de comportement du moteur.
   détail dans un tableau, que le client n'ouvrait pas.
 - **Le mode semi-auto n'avertissait pas qu'il écrit dans GLPI**, alors que la page Périmètre le
   faisait pour le même réglage.
+- **Périmètre armait « Enregistrer » sur une page que personne n'avait touchée.** Le compteur
+  de modifications compare l'écran au serveur ; il comparait à la réponse dès son arrivée,
+  soit un rendu avant que l'écran en soit issu. Le temps d'un rafraîchissement, N lignes
+  cochées côté serveur face à un écran encore vide se lisaient « N modification(s) non
+  enregistrée(s) », et le bouton d'écriture devenait cliquable. Il compare désormais à la
+  version du serveur dont l'écran est effectivement issu.
 
 ### Compte administrateur
 
