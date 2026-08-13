@@ -1,3 +1,23 @@
+## 2026-08-13 — 0.9.84 — « À trier » dit desormais pourquoi
+
+Le KPI « À trier » du tableau de bord annonçait un nombre sans indiquer quoi en
+faire. Or ce nombre a quatre causes, et l'action n'a rien a voir selon laquelle
+domine : hors perimetre appelle a elargir la selection, confiance sous le seuil a
+le baisser ou a enrichir les fiches techniciens, plafond atteint a payer plus ou a
+reduire le volume, erreur du fournisseur a regarder ailleurs.
+
+La ventilation complete existait deja — carte « Pourquoi ces tickets sont a
+trier », avec barres et parts — mais elle vit apres la tendance sur 14 jours, donc
+hors du champ de lecture de qui decouvre le nombre. La carte KPI porte maintenant
+le motif majoritaire et sa part, avec un saut vers cette ventilation.
+
+Aucun calcul nouveau : `by_reason` etait deja servi par `/api/metrics` et deja
+trie par volume decroissant, avec un ordre stable garanti cote base.
+
+À noter, parce que le libelle preterait a confusion : « À trier » ne compte pas
+les tickets entrants. C'est `total - accepted` ou `total` est le nombre de tickets
+que le moteur a ANALYSES. Un ticket jamais examine n'y figure pas.
+
 ## 2026-08-13 — 0.9.83 — SQLite disparait de la doc, la prose s'allege
 
 Rien ici ne change le comportement du moteur. C'est une passe editoriale sur les

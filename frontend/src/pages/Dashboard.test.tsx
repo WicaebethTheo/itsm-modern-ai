@@ -188,6 +188,36 @@ describe("Dashboard", () => {
       expect(screen.queryByText("Traitée")).not.toBeInTheDocument();
     });
 
+    it("annonce le motif DOMINANT sur la carte KPI, pas seulement dans le panneau du bas", async () => {
+      // « À trier : 300 » nu n'indique aucune action. Le panneau qui l'explique vit après la
+      // tendance : hors du champ de lecture de qui découvre le nombre. La carte porte donc
+      // desormais le motif majoritaire et sa part, avec un saut vers la ventilation.
+      vi.mocked(Api.metrics).mockResolvedValue(
+        metricsWith({
+          a_trier: 300,
+          by_reason: { accepted: 700, low_confidence: 200, llm_error: 100 },
+        }),
+      );
+      renderPage();
+      const raccourci = await screen.findByRole("link", {
+        name: /surtout confiance sous le seuil/i,
+      });
+      expect(raccourci).toHaveTextContent("67%");
+      // Le lien doit MENER quelque part : sans l'ancre, le raccourci ne raccourcit rien.
+      expect(raccourci).toHaveAttribute("href", "#motifs-a-trier");
+      expect(document.querySelector("#motifs-a-trier")).not.toBeNull();
+    });
+
+    it("n'annonce aucun motif dominant quand rien n'est « à trier »", async () => {
+      // Sans ce garde-fou, `reasons[0]` sur un tableau vide rendait « surtout undefined ».
+      vi.mocked(Api.metrics).mockResolvedValue(
+        metricsWith({ a_trier: 0, by_reason: { accepted: 10 } }),
+      );
+      renderPage();
+      await screen.findByText(/Couverture utile/);
+      expect(screen.queryByRole("link", { name: /surtout/i })).not.toBeInTheDocument();
+    });
+
     it("affiche la couverture utile, servie par l'API et jusqu'ici ignorée", async () => {
       vi.mocked(Api.metrics).mockResolvedValue(metricsWith({ useful_coverage: 0.66 }));
       renderPage();
