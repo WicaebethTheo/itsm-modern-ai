@@ -11,10 +11,10 @@ from itsm_modern_ai.config.settings import Settings
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(db_url):
     settings = Settings(
         _env_file=None,  # isole du .env ambiant
-        database_url=f"sqlite:///{tmp_path / 'api.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=True,  # admin sans mot de passe (test) — fail-closed désactivé
@@ -140,7 +140,7 @@ def test_negative_price_rejected(client):
 
 
 # ── Journal d'audit des actions d'administration (durcissement audit 2026-08) ──
-def test_config_write_is_audited_with_client_ip(tmp_path):
+def test_config_write_is_audited_with_client_ip(db_url, tmp_path):
     """Toute écriture passant par l'API doit être imputable à une adresse (RSSI)."""
     from cryptography.fernet import Fernet
     from fastapi.testclient import TestClient
@@ -153,7 +153,7 @@ def test_config_write_is_audited_with_client_ip(tmp_path):
 
     settings = Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'audit-api.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=True,
@@ -171,3 +171,50 @@ def test_config_write_is_audited_with_client_ip(tmp_path):
     ]
     # L'acteur est l'IP vue par le serveur (TestClient s'annonce « testclient »).
     assert all(r.actor == "testclient" for r in rows)
+
+
+def test_un_secret_vide_ne_DETRUIT_pas_le_secret_enregistre(client):
+    """Vider un champ de secret puis enregistrer ne doit pas effacer ce qui est en base.
+
+    Chaîne du défaut, mesurée de bout en bout : la console écrit inconditionnellement dans
+    son brouillon, y compris une chaîne VIDE ; `save()` envoie tout ; `exclude_none=True`
+    n'exclut pas `""` ; et `set_secret` traduit `""` en `_upsert(key, "")`, ce que
+    `is_secret_set` relit comme « aucun secret ».
+
+    Conséquence pour un exploitant : il tape trois caractères dans « User token », se ravise,
+    efface, clique Enregistrer — le jeton GLPI disparaît de la base. Le placeholder continue
+    d'afficher « (inchangé) », et le polling tombe. Rien ne le lui dit.
+
+    La console PROMET d'ailleurs l'inverse : un champ vide y signifie « inchangé ». C'est
+    donc un désaccord de contrat entre les deux moitiés, pas une préférence d'interface —
+    et il faut le régler côté serveur, parce que `POST /api/config` est documenté comme une
+    API (le README en donne l'équivalent `curl`). Un script qui repousse une configuration
+    partielle effacerait les secrets qu'il ne mentionne pas explicitement.
+    """
+    assert client.post("/api/config", json={"glpi_user_token": "jeton-reel"}).status_code == 200
+    assert client.get("/api/config").json()["glpi_user_token_set"] is True
+
+    # Le geste fautif : le champ est vidé, le reste du formulaire part quand même.
+    r = client.post("/api/config", json={"glpi_user_token": "", "response_tone": "cordial"})
+    assert r.status_code == 200
+    assert client.get("/api/config").json()["glpi_user_token_set"] is True, (
+        "le jeton GLPI a été effacé par un champ laissé vide"
+    )
+    # …et le reste de la requête a bien été appliqué : on ignore le secret vide, pas la requête.
+    assert client.get("/api/config").json()["response_tone"] == "cordial"
+
+
+def test_un_secret_s_efface_par_une_demande_EXPLICITE(client):
+    """Ignorer le vide ne doit pas rendre l'effacement impossible — sinon on troque une
+    perte silencieuse contre un secret qu'on ne peut plus retirer (changer d'OpenAI pour
+    Ollama, par exemple, qui n'a pas de clé). Le dépôt a déjà sa sentinelle : `license_key`
+    l'utilise depuis toujours pour distinguer « licence retirée » de « aucune licence ».
+    """
+    from itsm_modern_ai.services.runtime_config import CLEARED_SENTINEL
+
+    assert client.post("/api/config", json={"glpi_user_token": "jeton-reel"}).status_code == 200
+    assert client.get("/api/config").json()["glpi_user_token_set"] is True
+
+    r = client.post("/api/config", json={"glpi_user_token": CLEARED_SENTINEL})
+    assert r.status_code == 200
+    assert client.get("/api/config").json()["glpi_user_token_set"] is False

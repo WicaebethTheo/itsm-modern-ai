@@ -28,10 +28,10 @@ def _use_test_publisher_key(monkeypatch):
     monkeypatch.setattr(licensing, "PUBLISHER_PUBLIC_KEY_HEX", TEST_PUBLIC_KEY_HEX)
 
 
-def _settings(tmp_path) -> Settings:
+def _settings(db_url, tmp_path) -> Settings:
     return Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'fg.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=True,  # /api/license accessible sans mot de passe (test)
@@ -43,8 +43,8 @@ def _settings(tmp_path) -> Settings:
 
 
 @pytest.fixture
-def client(tmp_path):
-    app = create_app(_settings(tmp_path))
+def client(db_url, tmp_path):
+    app = create_app(_settings(db_url, tmp_path))
 
     # Mini-route de test gardée par la feature : le garde est générique, on le couvre
     # sans dépendre d'une route Supporter réelle.

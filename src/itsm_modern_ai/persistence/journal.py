@@ -246,8 +246,12 @@ _DECISIONS_CSV_HEADER = [
     # même de l'art. 22 RGPD, donc la première chose qu'une DPO doit pouvoir isoler dans un
     # export « pour l'audit ». Ajoutés EN FIN de ligne : les colonnes existantes gardent
     # leur position, un tableur/script d'audit déjà en place ne casse pas.
+    # `fallback_applied` pour la MÊME raison : un « à trier » repris par le repli (un acteur
+    # a bien été assigné, sur une Décision pourtant refusée) et un « à trier » resté
+    # orphelin sont autrement indiscernables dans le CSV — la console les distingue, pas
+    # l'artefact d'audit, ce qui est exactement l'inverse du besoin.
     # `subject` reste volontairement HORS export (décision assumée : titre de ticket = PII).
-    "mode", "applied",
+    "mode", "applied", "fallback_applied",
 ]
 
 _LLM_CALLS_CSV_HEADER = [
@@ -259,11 +263,11 @@ _LLM_CALLS_CSV_HEADER = [
 def _pages_antechronologiques(session: Session, modele) -> Iterator:
     """Parcourt une table de journal (ts décroissant) PAR PAGES, sans jamais tout charger.
 
-    Pagination par CURSEUR (keyset) sur `(ts, id)` plutôt que `yield_per` : sur SQLite —
-    la base du pilote — le driver n'a pas de curseur serveur, donc `yield_per` retombe sur
-    un fetch intégral et NE borne rien (vérifié à la mesure : 10 Mo de pic pour 8 Mo de
-    données, soit exactement le comportement qu'on veut supprimer). Un `LIMIT` explicite,
-    lui, borne la mémoire sur tous les moteurs. `id` départage les `ts` égaux : sans ce
+    Pagination par CURSEUR (keyset) sur `(ts, id)` plutôt que `yield_per` : ce dernier ne
+    borne la mémoire que si le driver ouvre un curseur serveur, ce qui dépend de la
+    configuration du connecteur (psycopg ne le fait pas par défaut) — une borne qui tient
+    par accident n'est pas une borne. Un `LIMIT` explicite, lui, borne la mémoire
+    inconditionnellement. `id` départage les `ts` égaux : sans ce
     second critère, deux lignes à la même microseconde feraient boucler la pagination (ou
     en sauteraient). `expunge_all()` vide l'identity map entre deux pages : sinon la
     session garderait une référence par ligne déjà lue et la borne serait fictive.
@@ -293,7 +297,7 @@ def decisions_csv_stream(session: Session) -> Iterator[str]:
     rows = (
         (d.id, d.ticket_id, d.ts.isoformat(), d.accepted, d.reason, d.category,
          d.priority, d.technician_id, d.group_id, d.confidence, d.glpi_link, d.annotation,
-         d.mode, d.applied)
+         d.mode, d.applied, d.fallback_applied)
         for d in _pages_antechronologiques(session, DecisionLog)
     )
     return _csv_stream(_DECISIONS_CSV_HEADER, rows)

@@ -1,16 +1,29 @@
-import { AlertTriangle, CheckSquare, FolderTree, Layers, Save, Square } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import {
+  AlertTriangle,
+  CheckSquare,
+  FolderTree,
+  Layers,
+  Loader2,
+  Save,
+  Search,
+  SearchX,
+  Square,
+} from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Banner } from "@/components/Banner";
-import { SyncButton } from "@/components/SyncButton";
+import { EmptyState } from "@/components/EmptyState";
+import { dernierScan, SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { PanelHead } from "@/components/ui/panel";
+import { Select } from "@/components/ui/select";
 import { Tag, type TagTone } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 import { useResource } from "@/hooks/useResource";
 import { Api, type ExecutionMode, type RefItem } from "@/lib/api";
-import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { tr, useT } from "@/lib/i18n";
+import { cn, SELECTED_ROW, SUBSURFACE } from "@/lib/utils";
 
 /** Couleur du badge de mode : neutre → amber → rouge selon l'autonomie accordée. */
 const MODE_TONE: Record<ExecutionMode, TagTone> = {
@@ -19,21 +32,55 @@ const MODE_TONE: Record<ExecutionMode, TagTone> = {
   full_auto: "red",
 };
 
+/**
+ * Liste cochable — avec trois états DISTINCTS : chargement, erreur, vide.
+ *
+ * Ils étaient confondus : une lecture de `/api/discovery/*` en 500 affichait « Scannez GLPI
+ * pour lister les catégories », exactement comme une instance jamais scannée. L'admin
+ * cliquait « Scanner GLPI », ça échouait encore, et rien ne lui disait pourquoi.
+ */
 function CheckList({
   items,
   selected,
   onToggle,
   empty,
+  loading,
+  error,
   trailing,
 }: {
   items: RefItem[];
   selected: Set<number>;
   onToggle: (id: number, on: boolean) => void;
   empty: string;
+  loading?: boolean;
+  error?: string | null;
   trailing?: (it: RefItem) => ReactNode;
 }) {
-  if (items.length === 0)
-    return <p className="px-4 py-8 text-center text-[12.5px] text-muted-foreground">{empty}</p>;
+  if (error && items.length === 0)
+    return (
+      <div className="p-5">
+        <Banner kind="error" role="alert">
+          <span className="flex items-start gap-1.5">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              {tr(
+                "Impossible de lire les référentiels — vérifiez la connexion GLPI.",
+                "Cannot read referentials — check the GLPI connection.",
+              )}{" "}
+              {error}
+            </span>
+          </span>
+        </Banner>
+      </div>
+    );
+  if (loading && items.length === 0)
+    return (
+      <p className="flex items-center justify-center gap-2 px-5 py-8 text-center text-body text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {tr("Chargement…", "Loading…")}
+      </p>
+    );
+  if (items.length === 0) return <EmptyState dense icon={SearchX} title={empty} />;
   return (
     <div className="flex max-h-96 flex-col overflow-auto">
       {items.map((it, i) => {
@@ -42,12 +89,15 @@ function CheckList({
           <div
             key={it.ext_id}
             className={cn(
-              "flex items-center justify-between gap-2.5 px-4 py-2.5 text-[12.5px] transition-colors",
+              // `flex-wrap` : la ligne d'entité porte jusqu'à trois contrôles `shrink-0`
+              // (mode, repli, seuil) ; sous ~900 px le nom se réduisait à néant. Ils
+              // retombent désormais sous le nom au lieu de l'écraser.
+              "flex flex-wrap items-center justify-between gap-2.5 px-5 py-2.5 text-body transition-colors",
               i < items.length - 1 && "border-b border-border/50",
-              on ? "bg-primary/[0.04]" : "hover:bg-accent/40",
+              on ? SELECTED_ROW : "hover:bg-accent/40",
             )}
           >
-            <label className="flex flex-1 cursor-pointer items-center gap-2.5">
+            <label className="flex min-w-40 flex-1 cursor-pointer items-center gap-2.5">
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-primary"
@@ -57,7 +107,7 @@ function CheckList({
               <span className={cn("truncate", on ? "font-medium" : "text-muted-foreground")}>
                 {it.name}
               </span>
-              <span className="font-mono text-[11px] text-muted-foreground">#{it.ext_id}</span>
+              <span className="font-mono text-caption text-muted-foreground">#{it.ext_id}</span>
             </label>
             {trailing?.(it)}
           </div>
@@ -65,6 +115,22 @@ function CheckList({
       })}
     </div>
   );
+}
+
+/** Cible de repli du SERVEUR, encodée comme le contrôle de la ligne (`g:<id>` / `t:<id>`). */
+function repliServeur(e: RefItem): string {
+  return e.fallback_group_id != null
+    ? `g:${e.fallback_group_id}`
+    : e.fallback_technician_id != null
+      ? `t:${e.fallback_technician_id}`
+      : "";
+}
+
+/** Réglages d'une entité tels que le SERVEUR les a enregistrés (comparés au brouillon). */
+function reglagesServeur(e: RefItem): string {
+  const mode = e.mode ?? "";
+  const conf = mode === "semi_auto" && e.auto_min_confidence != null ? e.auto_min_confidence : null;
+  return `${mode}|${conf}|${repliServeur(e)}`;
 }
 
 export function Scope() {
@@ -85,32 +151,104 @@ export function Scope() {
   const groups = useResource(useCallback(() => Api.discovery("group"), []));
   const technicians = useResource(useCallback(() => Api.discovery("technician"), []));
   const [saving, setSaving] = useState(false);
+  // Recherche par panneau : 200 catégories dans une lucarne `max-h-96` sans filtre, on ne
+  // trouve rien. Un état par liste — filtrer les catégories ne doit pas masquer des entités.
+  const [catQuery, setCatQuery] = useState("");
+  const [entQuery, setEntQuery] = useState("");
+
+  // Ce que l'admin a RÉELLEMENT modifié, ligne par ligne.
+  //
+  // C'était un unique drapeau `touched` GLOBAL à la page, alors que les deux effets
+  // d'initialisation sont PAR RESSOURCE : `categories` et `entities` sont deux `useResource`
+  // indépendants. Cocher une catégorie pendant que le panneau des entités chargeait encore
+  // levait le drapeau AVANT l'arrivée d'`entities.data` — l'effet des entités était alors
+  // définitivement sauté, `ents`/`modes`/`thresholds`/`fallbacks` restaient vides, l'écran
+  // annonçait « 0 / N sélectionnée(s) » et « Défaut global » partout, et « Enregistrer »
+  // envoyait `entity_ids: []` à `set_scope`, qui REMPLACE : tout le périmètre entités
+  // effacé, sans que rien ne l'ait demandé.
+  //
+  // On ne protège donc plus la page entière mais les seuls identifiants touchés ; tout le
+  // reste se refusionne depuis le serveur à chaque arrivée de données (« Scanner GLPI »
+  // compris). Vidés après un enregistrement réussi : le serveur redevient la référence.
+  const modifCats = useRef<Set<number>>(new Set());
+  const modifEntsSel = useRef<Set<number>>(new Set());
+  const modifEntsCfg = useRef<Set<number>>(new Set());
+
+  // La version du serveur DONT L'ECRAN EST ISSU. Le compteur ci-dessous est une difference
+  // entre l'ecran et le serveur : il doit comparer les deux versants d'une meme lecture.
+  // Compare a `categories.data`/`entities.data` des leur arrivee, il existait un rendu — le
+  // temps que l'effet d'initialisation s'execute — ou le serveur annoncait N lignes cochees
+  // et ou l'ecran n'en portait aucune : « N modification(s) non enregistree(s) » s'affichait
+  // et « Enregistrer » s'armait sur une page que personne n'avait touchee. Meme transitoire
+  // apres chaque « Scanner GLPI » et apres chaque enregistrement, qui rechargent.
+  const [catsRef, setCatsRef] = useState<RefItem[]>([]);
+  const [entsRef, setEntsRef] = useState<RefItem[]>([]);
 
   useEffect(() => {
-    if (categories.data)
-      setCats(new Set(categories.data.filter((c) => c.selected).map((c) => c.ext_id)));
+    const items = categories.data;
+    if (!items) return;
+    setCats((prev) => {
+      const next = new Set<number>();
+      for (const c of items) {
+        if (modifCats.current.has(c.ext_id) ? prev.has(c.ext_id) : c.selected) next.add(c.ext_id);
+      }
+      return next;
+    });
+    setCatsRef(items);
   }, [categories.data]);
+
   useEffect(() => {
-    if (entities.data) {
-      setEnts(new Set(entities.data.filter((e) => e.selected).map((e) => e.ext_id)));
-      setModes(new Map(entities.data.map((e) => [e.ext_id, e.mode ?? ""])));
-      setThresholds(new Map(entities.data.map((e) => [e.ext_id, e.auto_min_confidence ?? ""])));
-      setFallbacks(
+    const items = entities.data;
+    if (!items) return;
+    setEnts((prev) => {
+      const next = new Set<number>();
+      for (const e of items) {
+        if (modifEntsSel.current.has(e.ext_id) ? prev.has(e.ext_id) : e.selected)
+          next.add(e.ext_id);
+      }
+      return next;
+    });
+    // Mode, seuil et repli forment un seul réglage aux yeux de l'admin : ils sont protégés
+    // ensemble, par entité. Une entité jamais touchée reprend intégralement le serveur.
+    const garde = (id: number) => modifEntsCfg.current.has(id);
+    setModes(
+      (prev) =>
         new Map(
-          entities.data.map((e) => [
+          items.map((e) => [
             e.ext_id,
-            e.fallback_group_id != null
-              ? `g:${e.fallback_group_id}`
-              : e.fallback_technician_id != null
-                ? `t:${e.fallback_technician_id}`
-                : "",
+            garde(e.ext_id) ? (prev.get(e.ext_id) ?? "") : (e.mode ?? ""),
           ]),
         ),
-      );
-    }
+    );
+    setThresholds(
+      (prev) =>
+        new Map(
+          items.map((e) => [
+            e.ext_id,
+            garde(e.ext_id) ? (prev.get(e.ext_id) ?? "") : (e.auto_min_confidence ?? ""),
+          ]),
+        ),
+    );
+    setFallbacks(
+      (prev) =>
+        new Map(
+          items.map((e) => [
+            e.ext_id,
+            garde(e.ext_id) ? (prev.get(e.ext_id) ?? "") : repliServeur(e),
+          ]),
+        ),
+    );
+    setEntsRef(items);
   }, [entities.data]);
 
-  function toggle(set: Set<number>, setter: (s: Set<number>) => void, id: number, on: boolean) {
+  function toggle(
+    marque: Set<number>,
+    set: Set<number>,
+    setter: (s: Set<number>) => void,
+    id: number,
+    on: boolean,
+  ) {
+    marque.add(id);
     const next = new Set(set);
     if (on) next.add(id);
     else next.delete(id);
@@ -118,18 +256,21 @@ export function Scope() {
   }
 
   function setMode(id: number, mode: ExecutionMode | "") {
+    modifEntsCfg.current.add(id);
     const next = new Map(modes);
     next.set(id, mode);
     setModes(next);
   }
 
   function setFallback(id: number, value: string) {
+    modifEntsCfg.current.add(id);
     const next = new Map(fallbacks);
     next.set(id, value);
     setFallbacks(next);
   }
 
   function setThreshold(id: number, value: number | "") {
+    modifEntsCfg.current.add(id);
     const next = new Map(thresholds);
     next.set(id, value);
     setThresholds(next);
@@ -137,7 +278,72 @@ export function Scope() {
 
   const hasAuto = [...modes.values()].some((m) => m === "semi_auto" || m === "full_auto");
 
+  /** Réglages d'une entité tels qu'ils PARTIRONT au serveur (même normalisation que `save`). */
+  const reglagesLocaux = useCallback(
+    (id: number) => {
+      const mode = modes.get(id) ?? "";
+      const thr = thresholds.get(id);
+      const repli = fallbacks.get(id) ?? "";
+      const conf = mode === "semi_auto" && thr !== "" && thr != null ? Number(thr) : null;
+      return `${mode}|${conf}|${repli}`;
+    },
+    [modes, thresholds, fallbacks],
+  );
+
+  // Ce qui est modifié à l'écran et pas encore parti au serveur. Sans ce compteur, rien ne
+  // distinguait « je viens de tout régler » de « la page est telle que je l'ai trouvée ».
+  const enAttente = useMemo(() => {
+    let n = 0;
+    for (const c of catsRef) if (cats.has(c.ext_id) !== c.selected) n++;
+    for (const e of entsRef) {
+      if (ents.has(e.ext_id) !== e.selected) n++;
+      if (reglagesLocaux(e.ext_id) !== reglagesServeur(e)) n++;
+    }
+    return n;
+  }, [catsRef, entsRef, cats, ents, reglagesLocaux]);
+
+  // Garde de sortie : annoncer « N modifications non enregistrées » puis laisser un F5 les
+  // emporter sans un mot était une demi-promesse. Seul le RECHARGEMENT est gardé : le
+  // blocage de navigation interne (`useBlocker`) exige un data router, et `App.tsx` monte
+  // un `<BrowserRouter>` déclaratif — l'appeler ici ferait planter la page entière.
+  useEffect(() => {
+    if (enAttente === 0) return;
+    const retenir = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", retenir);
+    return () => window.removeEventListener("beforeunload", retenir);
+  }, [enAttente]);
+
+  /**
+   * Entités dont le brouillon ARME une écriture GLPI : enregistrées en « suggestion » ou en
+   * « défaut global », passées à semi/full-auto. `EngineSettings` demande déjà cette
+   * confirmation pour le mode par défaut ; sans elle ici, le garde-fou se contournait en
+   * changeant d'écran — un `<select>` sur /scope arme exactement la même écriture.
+   */
+  const entitesArmees = useMemo(
+    () =>
+      (entities.data ?? []).filter((e) => {
+        const local = modes.get(e.ext_id) ?? "";
+        const serveur = e.mode ?? "";
+        return (
+          (local === "semi_auto" || local === "full_auto") &&
+          serveur !== "semi_auto" &&
+          serveur !== "full_auto"
+        );
+      }),
+    [entities.data, modes],
+  );
+
   async function save() {
+    if (entitesArmees.length > 0) {
+      const noms = entitesArmees.map((e) => e.name).join(", ");
+      const ok = window.confirm(
+        t(
+          `Autoriser l'IA à écrire dans GLPI pour : ${noms} ?\n\nPour ces entités, elle modifiera catégorie, priorité, assignation et répondra au demandeur — après le garde-fou.`,
+          `Allow the AI to write to GLPI for: ${noms}?\n\nFor these entities it will modify category, priority, assignment and reply to the requester — after the guardrail.`,
+        ),
+      );
+      if (!ok) return;
+    }
     setSaving(true);
     try {
       await Api.setScope({ category_ids: [...cats], entity_ids: [...ents] });
@@ -156,6 +362,13 @@ export function Scope() {
           };
         }),
       );
+      // Le serveur redevient la référence : un scan ultérieur peut rafraîchir sans risque,
+      // et la relecture remet le compteur de modifications en attente à zéro sur ce que le
+      // serveur a RÉELLEMENT accepté — pas sur ce qu'on croit lui avoir envoyé.
+      modifCats.current.clear();
+      modifEntsSel.current.clear();
+      modifEntsCfg.current.clear();
+      reload();
       toast.success(t("Périmètre et modes enregistrés.", "Scope and modes saved."));
     } catch (e: unknown) {
       toast.error((e as Error).message);
@@ -164,10 +377,27 @@ export function Scope() {
     }
   }
 
-  /** Bascule tout sélectionné / tout désélectionné selon l'état courant. */
-  function toggleAll(ids: number[], current: Set<number>, setter: (s: Set<number>) => void) {
+  /**
+   * Bascule les identifiants AFFICHÉS (donc filtrés), jamais toute la liste.
+   *
+   * Le piège à ne pas ouvrir : chercher « imprimante », cliquer « Tout sélectionner » et
+   * mettre les 200 catégories de l'instance dans le périmètre. Les lignes masquées par la
+   * recherche gardent leur état — d'où l'union/soustraction plutôt qu'un remplacement.
+   */
+  function toggleAll(
+    marque: Set<number>,
+    ids: number[],
+    current: Set<number>,
+    setter: (s: Set<number>) => void,
+  ) {
+    for (const id of ids) marque.add(id);
     const allOn = ids.length > 0 && ids.every((id) => current.has(id));
-    setter(allOn ? new Set() : new Set(ids));
+    const next = new Set(current);
+    for (const id of ids) {
+      if (allOn) next.delete(id);
+      else next.add(id);
+    }
+    setter(next);
   }
 
   const reload = () => {
@@ -187,20 +417,76 @@ export function Scope() {
     ([id, m]) => ents.has(id) && (m === "semi_auto" || m === "full_auto"),
   ).length;
 
+  const filtre = (items: RefItem[], q: string) => {
+    const s = q.trim().toLowerCase();
+    if (!s) return items;
+    return items.filter((it) => `${it.name} #${it.ext_id}`.toLowerCase().includes(s));
+  };
+  const catsFiltrees = filtre(categories.data ?? [], catQuery);
+  const entsFiltrees = filtre(entities.data ?? [], entQuery);
+
+  /** Bouton de cochage en masse — porte le nombre d'AFFICHÉS, pour ne rien promettre d'autre. */
+  const boutonMasse = (
+    marque: Set<number>,
+    affiches: RefItem[],
+    current: Set<number>,
+    setter: (s: Set<number>) => void,
+    filtreActif: boolean,
+  ) => {
+    if (affiches.length === 0) return undefined;
+    const ids = affiches.map((it) => it.ext_id);
+    const tous = ids.every((id) => current.has(id));
+    return (
+      <Button variant="ghost" size="sm" onClick={() => toggleAll(marque, ids, current, setter)}>
+        {tous ? <Square className="h-3.5 w-3.5" /> : <CheckSquare className="h-3.5 w-3.5" />}
+        {filtreActif
+          ? tous
+            ? t(`Décocher les ${ids.length} affichés`, `Untick the ${ids.length} shown`)
+            : t(`Cocher les ${ids.length} affichés`, `Tick the ${ids.length} shown`)
+          : tous
+            ? t("Tout désélectionner", "Deselect all")
+            : t("Tout sélectionner", "Select all")}
+      </Button>
+    );
+  };
+
+  const barreRecherche = (
+    value: string,
+    onChange: (v: string) => void,
+    label: string,
+    placeholder: string,
+  ) => (
+    <div className={cn("border-b border-border px-5 py-2.5", SUBSURFACE)}>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={value}
+          aria-label={label}
+          placeholder={placeholder}
+          className="pl-9"
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </div>
+    </div>
+  );
+
+  // Fraîcheur du cache : le plus récent des deux scans affichés sur cette page.
+  const lastSync = dernierScan([...(categories.data ?? []), ...(entities.data ?? [])]);
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="max-w-2xl text-[12px] text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-body text-muted-foreground">
           {t(
             "Catégories et entités que l'IA a le droit d'utiliser. Hors périmètre → « à trier ».",
             "Categories and entities the AI may use. Out of scope → “to triage”.",
           )}
         </p>
-        <SyncButton onSynced={reload} />
+        <SyncButton onSynced={reload} lastSync={lastSync} />
       </div>
 
       {/* Résumé du périmètre courant. */}
-      <Card className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 text-[12px]">
+      <Card className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3 text-body">
         <span className="inline-flex items-center gap-2 text-muted-foreground">
           <Layers className="h-3.5 w-3.5 text-accent-indigo" />
           <span className="font-medium text-foreground">{cats.size}</span>
@@ -219,6 +505,25 @@ export function Scope() {
         )}
       </Card>
 
+      {/* PÉRIMÈTRE INOPÉRANT. `domain/whitelist.check()` rejette TOUTE décision dont la
+          catégorie n'est pas autorisée : zéro catégorie cochée = 100 % des tickets « à
+          trier », moteur allumé pour rien. C'est l'état le plus grave de cette page, il
+          doit être le plus visible. */}
+      {(categories.data?.length ?? 0) > 0 && cats.size === 0 && (
+        <Banner kind="error">
+          <span className="flex items-start gap-1.5">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              <strong>{t("Aucune catégorie autorisée", "No allowed category")}</strong>{" "}
+              {t(
+                "— le garde-fou rejettera toutes les décisions : 100 % des tickets partiront « à trier ». Cochez au moins une catégorie.",
+                "— the guardrail will reject every decision: 100% of tickets will end up “to sort”. Tick at least one category.",
+              )}
+            </span>
+          </span>
+        </Banner>
+      )}
+
       {hasAuto && (
         <Banner kind="error">
           {t(
@@ -232,77 +537,79 @@ export function Scope() {
         <Card className="overflow-hidden">
           <PanelHead
             title={t("Catégories autorisées", "Allowed categories")}
-            subtitle={`${cats.size} / ${categories.data?.length ?? 0} ${t("sélectionnée(s)", "selected")}`}
-            right={
-              (categories.data?.length ?? 0) > 0 ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    toggleAll(
-                      (categories.data ?? []).map((c) => c.ext_id),
-                      cats,
-                      setCats,
-                    )
-                  }
-                >
-                  {cats.size === (categories.data?.length ?? 0) ? (
-                    <Square className="h-3.5 w-3.5" />
-                  ) : (
-                    <CheckSquare className="h-3.5 w-3.5" />
-                  )}
-                  {cats.size === (categories.data?.length ?? 0)
-                    ? t("Tout désélectionner", "Deselect all")
-                    : t("Tout sélectionner", "Select all")}
-                </Button>
-              ) : undefined
+            subtitle={
+              <span role="status" aria-live="polite">
+                {`${cats.size} / ${categories.data?.length ?? 0} ${t("sélectionnée(s)", "selected")}`}
+                {catQuery.trim() !== "" && ` · ${catsFiltrees.length} ${t("affichée(s)", "shown")}`}
+              </span>
             }
+            right={boutonMasse(
+              modifCats.current,
+              catsFiltrees,
+              cats,
+              setCats,
+              catQuery.trim() !== "",
+            )}
           />
+          {(categories.data?.length ?? 0) > 0 &&
+            barreRecherche(
+              catQuery,
+              setCatQuery,
+              t("Rechercher une catégorie", "Search a category"),
+              t("Rechercher par nom ou ID…", "Search by name or ID…"),
+            )}
           <CheckList
-            items={categories.data ?? []}
+            items={catsFiltrees}
             selected={cats}
-            onToggle={(id, on) => toggle(cats, setCats, id, on)}
-            empty={t("Scannez GLPI pour lister les catégories.", "Scan GLPI to list categories.")}
+            onToggle={(id, on) => toggle(modifCats.current, cats, setCats, id, on)}
+            loading={categories.loading}
+            error={categories.error}
+            empty={
+              catQuery.trim() !== ""
+                ? t("Aucun résultat pour cette recherche.", "No result for this search.")
+                : t("Scannez GLPI pour lister les catégories.", "Scan GLPI to list categories.")
+            }
           />
         </Card>
         <Card className="overflow-hidden">
           <PanelHead
             title={t("Entités du périmètre", "Scope entities")}
-            subtitle={`${ents.size} / ${entities.data?.length ?? 0} ${t("sélectionnée(s)", "selected")} · ${t("mode par entité", "mode per entity")}`}
-            right={
-              (entities.data?.length ?? 0) > 0 ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    toggleAll(
-                      (entities.data ?? []).map((e) => e.ext_id),
-                      ents,
-                      setEnts,
-                    )
-                  }
-                >
-                  {ents.size === (entities.data?.length ?? 0) ? (
-                    <Square className="h-3.5 w-3.5" />
-                  ) : (
-                    <CheckSquare className="h-3.5 w-3.5" />
-                  )}
-                  {ents.size === (entities.data?.length ?? 0)
-                    ? t("Tout désélectionner", "Deselect all")
-                    : t("Tout sélectionner", "Select all")}
-                </Button>
-              ) : undefined
+            subtitle={
+              <span role="status" aria-live="polite">
+                {`${ents.size} / ${entities.data?.length ?? 0} ${t("sélectionnée(s)", "selected")} · ${t("mode par entité", "mode per entity")}`}
+                {entQuery.trim() !== "" && ` · ${entsFiltrees.length} ${t("affichée(s)", "shown")}`}
+              </span>
             }
+            right={boutonMasse(
+              modifEntsSel.current,
+              entsFiltrees,
+              ents,
+              setEnts,
+              entQuery.trim() !== "",
+            )}
           />
+          {(entities.data?.length ?? 0) > 0 &&
+            barreRecherche(
+              entQuery,
+              setEntQuery,
+              t("Rechercher une entité", "Search an entity"),
+              t("Rechercher par nom ou ID…", "Search by name or ID…"),
+            )}
           <CheckList
-            items={entities.data ?? []}
+            items={entsFiltrees}
             selected={ents}
-            onToggle={(id, on) => toggle(ents, setEnts, id, on)}
-            empty={t("Scannez GLPI pour lister les entités.", "Scan GLPI to list entities.")}
+            onToggle={(id, on) => toggle(modifEntsSel.current, ents, setEnts, id, on)}
+            loading={entities.loading}
+            error={entities.error}
+            empty={
+              entQuery.trim() !== ""
+                ? t("Aucun résultat pour cette recherche.", "No result for this search.")
+                : t("Scannez GLPI pour lister les entités.", "Scan GLPI to list entities.")
+            }
             trailing={(it) => {
               const m = modes.get(it.ext_id) ?? "";
               return (
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   {m && (
                     <span
                       aria-hidden
@@ -316,15 +623,15 @@ export function Scope() {
                       )}
                     />
                   )}
-                  <select
+                  <Select
                     aria-label={t(`Mode pour ${it.name}`, `Mode for ${it.name}`)}
                     className={cn(
-                      "rounded-md border bg-card px-2 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                      "h-8 w-auto px-2",
                       m === "full_auto"
                         ? "border-destructive/40 text-destructive"
                         : m === "semi_auto"
                           ? "border-warning/40 text-warning"
-                          : "border-input text-muted-foreground hover:border-muted-foreground/40",
+                          : "text-muted-foreground",
                     )}
                     value={m}
                     onChange={(e) => setMode(it.ext_id, e.target.value as ExecutionMode | "")}
@@ -334,9 +641,9 @@ export function Scope() {
                         {o.label}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                   {m !== "suggestion" && (
-                    <select
+                    <Select
                       aria-label={t(`Repli pour ${it.name}`, `Fallback for ${it.name}`)}
                       title={t(
                         "Acteur assigné quand le garde-fou refuse une décision — le ticket n'est ni catégorisé ni priorisé, seulement routé. Sans effet en mode suggestion.",
@@ -344,7 +651,7 @@ export function Scope() {
                       )}
                       value={fallbacks.get(it.ext_id) ?? ""}
                       onChange={(e) => setFallback(it.ext_id, e.target.value)}
-                      className="max-w-40 rounded-md border border-input bg-card px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      className="h-8 w-auto max-w-40 px-2 text-muted-foreground"
                     >
                       <option value="">{t("Repli : aucun", "Fallback: none")}</option>
                       {/* Groupes d'abord : un groupe encaisse une absence, pas une personne. */}
@@ -362,7 +669,7 @@ export function Scope() {
                             {x.name}
                           </option>
                         ))}
-                    </select>
+                    </Select>
                   )}
                   {m === "semi_auto" && (
                     <input
@@ -383,7 +690,7 @@ export function Scope() {
                       onChange={(e) =>
                         setThreshold(it.ext_id, e.target.value === "" ? "" : Number(e.target.value))
                       }
-                      className="w-16 rounded-md border border-warning/40 bg-card px-2 py-1 text-[11px] text-warning focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      className="h-8 w-16 rounded-md border border-warning/40 bg-card px-2 text-caption text-warning shadow-sm transition-colors focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     />
                   )}
                 </div>
@@ -394,22 +701,48 @@ export function Scope() {
       </div>
 
       {/* Légende des modes par entité. */}
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
         <span>{t("Modes :", "Modes:")}</span>
         <Tag tone={MODE_TONE.suggestion}>{t("Suggestion", "Suggestion")}</Tag>
         <Tag tone={MODE_TONE.semi_auto}>{t("Semi-auto", "Semi-auto")}</Tag>
         <Tag tone={MODE_TONE.full_auto}>{t("Full-auto", "Full-auto")}</Tag>
-        <span className="text-muted-foreground/70">
+        <span className="text-muted-foreground">
           {t("— autonomie croissante", "— increasing autonomy")}
         </span>
       </div>
 
-      <Button onClick={save} disabled={saving}>
-        <Save className="h-4 w-4" />
-        {saving
-          ? t("Enregistrement…", "Saving…")
-          : t("Enregistrer le périmètre et les modes", "Save scope and modes")}
-      </Button>
+      {/* Barre d'enregistrement collante : le bouton passait sous la liste dépliée, on
+          cochait, on quittait la page et tout était perdu sans un mot. */}
+      <div
+        className={cn(
+          "sticky bottom-0 z-20 -mx-5 -mb-5 mt-2 border-t border-border bg-card/95 backdrop-blur",
+          "supports-[backdrop-filter]:bg-card/80 sm:-mx-6 sm:-mb-6",
+        )}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 sm:px-6">
+          <p
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "text-body",
+              enAttente > 0 ? "font-medium text-warning" : "text-muted-foreground",
+            )}
+          >
+            {enAttente > 0
+              ? t(
+                  `${enAttente} modification(s) non enregistrée(s)`,
+                  `${enAttente} unsaved change(s)`,
+                )
+              : t("Aucune modification en attente", "No pending change")}
+          </p>
+          <Button onClick={save} disabled={saving || enAttente === 0}>
+            <Save className="h-4 w-4" />
+            {saving
+              ? t("Enregistrement…", "Saving…")
+              : t("Enregistrer le périmètre et les modes", "Save scope and modes")}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

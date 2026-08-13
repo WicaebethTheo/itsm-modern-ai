@@ -15,10 +15,10 @@ LLM_BASE = "https://llm.test/v1"
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(db_url):
     settings = Settings(
         _env_file=None,  # isole du .env ambiant
-        database_url=f"sqlite:///{tmp_path / 'sbx.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         llm_base_url=LLM_BASE,
         polling_enabled=False,
@@ -211,6 +211,74 @@ def test_sandbox_journal_prompt_is_exactly_what_was_sent(client):
     # E-mail : masqué en Community → masqué des DEUX côtés (envoi et journal).
     assert "alice@acme.com" not in journalise and "alice@acme.com" not in envoye
     assert masking.EMAIL_PLACEHOLDER in journalise
+
+
+@respx.mock
+def test_sandbox_reports_what_the_run_cost(client):
+    """L'essai dit ce qu'il vient de coûter (modèle, tokens, euros).
+
+    La sandbox est comptée dans le plafond : taire la dépense obligeait à ouvrir le
+    Journal pour savoir ce qu'une simulation consomme, juste avant de décider si on
+    autorise le moteur sur un flux réel. Le coût rendu est CELUI qui est journalisé.
+    """
+    client.post(
+        "/api/config",
+        json={
+            "llm_api_key": "sk-test",
+            "llm_price_input_per_mtok": 2.0,
+            "llm_price_output_per_mtok": 6.0,
+        },
+    )
+    decision_json = (
+        '{"category":1,"priority":3,"technician_id":11,"draft":"Bonjour","confidence":0.88}'
+    )
+    respx.post(f"{LLM_BASE}/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": decision_json}}],
+                "usage": {"prompt_tokens": 1000, "completion_tokens": 500},
+            },
+        )
+    )
+    body = client.post("/api/sandbox", json={"content": "pc lent"}).json()
+    assert body["prompt_tokens"] == 1000 and body["completion_tokens"] == 500
+    assert body["model"]
+    # 1000/1e6*2 + 500/1e6*6 = 0.005 € — exactement ce que porte le journal.
+    assert body["cost_eur"] == pytest.approx(0.005)
+    assert body["cost_eur"] == pytest.approx(client.get("/api/cost").json()["spent_eur_last_24h"])
+
+
+@respx.mock
+def test_sandbox_sends_title_with_content(client):
+    """Le titre saisi part au LLM comme dans le moteur réel (titre + contenu concaténés).
+
+    Sans lui, l'essai n'est pas représentatif : le vrai cycle route sur le titre autant
+    que sur le corps.
+    """
+    import json
+
+    client.post("/api/config", json={"llm_api_key": "sk-test"})
+    route = respx.post(f"{LLM_BASE}/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"category":1,"priority":3,"technician_id":11,'
+                            '"draft":"Bonjour","confidence":0.88}'
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            },
+        )
+    )
+    r = client.post("/api/sandbox", json={"title": "Imprimante HS", "content": "bourrage papier"})
+    assert r.status_code == 200
+    envoye = json.loads(route.calls.last.request.content)["messages"][-1]["content"]
+    assert "Imprimante HS" in envoye and "bourrage papier" in envoye
 
 
 def test_sandbox_refused_over_cost_cap(client):

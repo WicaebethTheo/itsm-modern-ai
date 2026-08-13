@@ -40,6 +40,10 @@ class DecisionEntry(BaseModel):
     annotation: str
     mode: str = ""  # mode d'exécution résolu (suggestion | semi_auto | full_auto)
     applied: bool = False  # True si la Décision a muté les champs du Ticket GLPI
+    # Repli assigné MALGRÉ le refus (colonne distincte d'`applied` à dessein, cf.
+    # persistence/tables.py) : sans lui, un « à trier » repris par le repli et un « à
+    # trier » resté orphelin sont indiscernables dans le Journal.
+    fallback_applied: bool = False
 
 
 class AnnotationUpdate(BaseModel):
@@ -86,6 +90,7 @@ def _to_entry(
         annotation=row.annotation,
         mode=row.mode,
         applied=row.applied,
+        fallback_applied=row.fallback_applied,
     )
 
 

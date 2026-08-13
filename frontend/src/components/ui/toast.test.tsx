@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitForElementToBeRemoved } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ToastProvider, useToast } from "./toast";
@@ -24,18 +24,29 @@ describe("ToastProvider", () => {
     expect(await screen.findByText("Sauvegardé.")).toBeInTheDocument();
   });
 
-  it("auto-dismiss après 3 s", async () => {
-    const user = userEvent.setup();
-    render(
-      <ToastProvider>
-        <Trigger message="Réglages enregistrés." kind="success" />
-      </ToastProvider>,
-    );
-    await user.click(screen.getByText("fire"));
-    await screen.findByText("Réglages enregistrés.");
-    await waitForElementToBeRemoved(() => screen.queryByText("Réglages enregistrés."), {
-      timeout: 4000,
-    });
+  it("auto-dismiss après 3 s", () => {
+    // Timers factices, comme le cas des erreurs juste en dessous : attendre RÉELLEMENT 3 s
+    // ne prouvait rien de plus et coûtait 3 s à chaque exécution de la suite.
+    vi.useFakeTimers();
+    try {
+      render(
+        <ToastProvider>
+          <Trigger message="Réglages enregistrés." kind="success" />
+        </ToastProvider>,
+      );
+      fireEvent.click(screen.getByText("fire"));
+      expect(screen.getByText("Réglages enregistrés.")).toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(2500);
+      });
+      expect(screen.getByText("Réglages enregistrés.")).toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(screen.queryByText("Réglages enregistrés.")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("les erreurs restent affichées 6 s (au-delà des 3 s des succès)", () => {

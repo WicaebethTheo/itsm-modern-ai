@@ -35,11 +35,72 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.14", "3.13"]
+    # PostgreSQL est la SEULE base supportée : la suite ne peut plus tourner « à sec ».
+    # `tests/conftest.py` crée un SCHÉMA jetable par test sur ce serveur — pas une base
+    # par test, qui coûterait bien plus cher pour la même isolation.
+    # ⚠️ MAJEURE 17 OBLIGATOIRE, et pas « celle qui traîne » : c'est celle des composes
+    # (`postgres:17-alpine`) et du client embarqué dans l'image (`postgresql-client-17`).
+    # Tester sur une autre majeure reviendrait à valider une combinaison que le produit ne
+    # livre pas — et les tests de sauvegarde y seraient FAUX (un `pg_restore 17` pointé sur
+    # un serveur 16 échoue sur `SET transaction_timeout`). Égalité verrouillée par
+    # `tests/unit/test_deployment_files.py::test_la_majeure_postgres_de_la_ci_suit_celle_du_produit`.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: itsm
+          POSTGRES_PASSWORD: itsm
+          POSTGRES_DB: itsm
+        ports: ["5432:5432"]
+        # Sans healthcheck, les premières connexions partent avant que le serveur
+        # n'écoute : la suite échoue par intermittence, sur une cause qui n'a rien à
+        # voir avec la PR. `--health-*` retarde le job jusqu'à `pg_isready`.
+        options: >-
+          --health-cmd "pg_isready -U itsm -d itsm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # Lu par `tests/conftest.py`. Le défaut local vise le port 55432 (serveur de dev
+      # décalé) ; ici le service publie sur le 5432 standard du runner.
+      TEST_DATABASE_URL: postgresql+psycopg://itsm:itsm@localhost:5432/itsm
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+      # ⚠️ SANS CETTE ÉTAPE, LES TESTS DE SAUVEGARDE NE TOURNENT PAS. `tests/unit/test_backup.py`
+      # dumpe une vraie base avec le `pg_dump` du RUNNER ; celui d'ubuntu-latest est en 16,
+      # or `pg_dump` refuse de dumper un serveur d'une majeure supérieure (le service ci-dessus
+      # est en 17). Les tests s'ignoraient donc — mesuré : « 577 passed, 8 skipped », couverture
+      # toujours au-dessus du cliquet, rien de rouge. Autrement dit : la CI pouvait être verte
+      # sans avoir vérifié une seule fois que la sauvegarde ne ment pas. Le client vient du
+      # dépôt PGDG (les dépôts Ubuntu ne portent pas la 17), et l'étape est BLOQUANTE : pas de
+      # `continue-on-error`, sans quoi on retomberait exactement dans le même trou.
+      - name: Client PostgreSQL 17 (aligné sur le serveur et sur l'image livrée)
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc]" \
+            "https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          # PGDG installe ses binaires dans /usr/lib/postgresql/17/bin ; `/usr/bin/pg_dump`
+          # reste celui de la 16 PREINSTALLEE sur le runner. Sans cette ligne, l'etape
+          # « reussissait » en laissant un client 16 : mesure faite sur la PR #9, les huit
+          # tests de sauvegarde tombaient en erreur APRES 100 s de suite, sur une cause que
+          # cette etape etait censee ecarter.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          export PATH="/usr/lib/postgresql/17/bin:$PATH"
+          pg_dump --version
+          # ON VERIFIE. Installer n'est pas aligner : sans ce controle, l'etape affirme un
+          # alignement qu'elle n'a jamais constate, et delegue la decouverte de l'echec a la
+          # suite de tests — deux minutes plus tard, avec un message qui accuse le code.
+          majeure="$(pg_dump --version | grep -oE '[0-9]+' | head -1)"
+          test "$majeure" = "17" || { echo "pg_dump $majeure au lieu de 17 — client desaligne"; exit 1; }
       # setup-uv plutôt que `pip install uv` : version gérée par l'action + cache uv
       # automatique (clé sur uv.lock). Cohérent avec docker-publish.yml.
       # Épinglage sur la version EXACTE (`@v9.0.0`, pas `@v9`) : depuis sa v8 cette
@@ -69,6 +130,31 @@ jobs:
   #   3. aller-retour `downgrade -1` puis `upgrade head` (le chemin de `--rollback`).
   migrations:
     runs-on: ubuntu-latest
+    # Même majeure que le job `backend`, les composes et le client de l'image : cf. le
+    # commentaire ci-dessus. Une migration validée sur une autre majeure ne prouve rien
+    # du chemin réel de l'exploitant.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: itsm
+          POSTGRES_PASSWORD: itsm
+          POSTGRES_DB: itsm
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U itsm -d itsm"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # Deux BASES distinctes (et non deux schémas) : `alembic_version` vit dans la base,
+      # et les deux scénarios doivent avoir chacun leur propre historique de révisions.
+      # `DATABASE_URL` (lu par Alembic via Settings) porte le driver ; les blocs psycopg
+      # ci-dessous se connectent en direct, d'où les deux formes.
+      PG_ADMIN_URL: postgresql://itsm:itsm@localhost:5432/postgres
+      PG_SEEDED_URL: postgresql://itsm:itsm@localhost:5432/ci_seeded
+      URL_VIDE: postgresql+psycopg://itsm:itsm@localhost:5432/ci_empty
+      URL_PEUPLEE: postgresql+psycopg://itsm:itsm@localhost:5432/ci_seeded
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -79,13 +165,24 @@ jobs:
           enable-cache: true
       - name: Install deps (uv.lock figé)
         run: uv sync --frozen --all-extras
+      # Création via psycopg (déjà installé, c'est le driver du produit) plutôt que via
+      # `psql` : aucune hypothèse sur les clients présents dans l'image du runner.
+      - name: Créer les deux bases du scénario
+        run: |
+          uv run python - <<'PY'
+          import os, psycopg
+          with psycopg.connect(os.environ["PG_ADMIN_URL"], autocommit=True) as cx:
+              for base in ("ci_empty", "ci_seeded"):
+                  cx.execute(f"CREATE DATABASE {base}")
+          print("bases ci_empty et ci_seeded créées")
+          PY
       - name: upgrade head sur base vide
         env:
-          DATABASE_URL: sqlite:///./ci-empty.db
+          DATABASE_URL: ${{ env.URL_VIDE }}
         run: uv run alembic upgrade head
       - name: upgrade head sur base PEUPLÉE + aller-retour
         env:
-          DATABASE_URL: sqlite:///./ci-seeded.db
+          DATABASE_URL: ${{ env.URL_PEUPLEE }}
         run: |
           set -euo pipefail
           # On s'arrête une révision AVANT la tête, on peuple, puis on migre : c'est le
@@ -95,29 +192,31 @@ jobs:
           # à `head`, la base est ici à `head-1`. Passer par l'ORM ferait échouer ce job
           # dès qu'une migration ajoute une colonne — pour une raison sans rapport avec ce
           # qu'on veut prouver (les données survivent-elles à la migration ?).
+          # Valeurs passées en PARAMÈTRES : PostgreSQL n'accepte pas `0`/`1` pour un
+          # booléen ni un horodatage sans fuseau sur un `timestamptz`, contrairement à
+          # SQLite qui avalait les deux — c'est précisément ce laxisme qu'on quitte.
           uv run python - <<'PY'
-          import sqlite3
-          c = sqlite3.connect("./ci-seeded.db")
-          c.execute(
-              "INSERT INTO decisions"
-              " (ticket_id, ts, subject, accepted, reason, glpi_link, annotation, mode, applied)"
-              " VALUES (1, '2026-01-01 00:00:00', 'Ticket historique', 0, 'low_confidence',"
-              " '', '', 'suggestion', 0)"
-          )
-          c.commit()
+          import datetime, os, psycopg
+          with psycopg.connect(os.environ["PG_SEEDED_URL"], autocommit=True) as cx:
+              cx.execute(
+                  "INSERT INTO decisions"
+                  " (ticket_id, ts, subject, accepted, reason, glpi_link, annotation, mode, applied)"
+                  " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                  (1, datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC), "Ticket historique",
+                   False, "low_confidence", "", "", "suggestion", False),
+              )
           print("base peuplée avant migration")
           PY
           uv run alembic upgrade head
           uv run alembic downgrade -1
           uv run alembic upgrade head
+      # Relecture en direct (sans Alembic) : on vérifie la BASE, pas ce que le code croit.
       - name: Les données ont survécu à la migration
-        env:
-          DATABASE_URL: sqlite:///./ci-seeded.db
         run: |
           uv run python - <<'PY'
-          import sqlite3, sys
-          c = sqlite3.connect("./ci-seeded.db")
-          sujets = [r[0] for r in c.execute("SELECT subject FROM decisions")]
+          import os, sys, psycopg
+          with psycopg.connect(os.environ["PG_SEEDED_URL"]) as cx:
+              sujets = [r[0] for r in cx.execute("SELECT subject FROM decisions")]
           if sujets != ["Ticket historique"]:
               sys.exit(f"données perdues par la migration : {sujets!r}")
           print("données préservées :", sujets)

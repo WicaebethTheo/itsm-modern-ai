@@ -15,10 +15,10 @@ from itsm_modern_ai.api.app import create_app
 from itsm_modern_ai.config.settings import Settings
 
 
-def _settings(tmp_path, **over):
+def _settings(db_url, tmp_path, **over):
     return Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'm.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=True,
@@ -28,9 +28,9 @@ def _settings(tmp_path, **over):
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(db_url, tmp_path):
     (tmp_path / "dist").mkdir(parents=True, exist_ok=True)
-    with TestClient(create_app(_settings(tmp_path))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path))) as c:
         yield c
 
 
@@ -52,16 +52,16 @@ def test_requests_are_counted(client):
     assert 'path="/metrics"' not in body
 
 
-def test_metrics_can_be_disabled(tmp_path):
+def test_metrics_can_be_disabled(db_url, tmp_path):
     (tmp_path / "dist").mkdir(parents=True, exist_ok=True)
-    with TestClient(create_app(_settings(tmp_path, metrics_enabled=False))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path, metrics_enabled=False))) as c:
         assert c.get("/metrics").status_code == 404
 
 
-def test_metrics_token_required_when_set(tmp_path):
+def test_metrics_token_required_when_set(db_url, tmp_path):
     """Si `metrics_token` est défini, /metrics exige le jeton (401 sinon)."""
     (tmp_path / "dist").mkdir(parents=True, exist_ok=True)
-    with TestClient(create_app(_settings(tmp_path, metrics_token="scrape-secret"))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path, metrics_token="scrape-secret"))) as c:
         # Sans jeton → 401.
         assert c.get("/metrics").status_code == 401
         # Mauvais jeton → 401.
@@ -99,36 +99,39 @@ def test_non_ascii_presented_token_returns_false_not_typeerror():
 # `metrics_token=""` (défaut) rendait /metrics lisible par n'importe qui : les séries
 # exposent `itsm_http_requests_total{path="/api/auth/login",status="200"}`, c'est-à-dire
 # QUAND un admin se connecte et si une force brute est détectée (401 puis 429).
-def _secured(tmp_path, **over):
+def _secured(db_url, tmp_path, **over):
     (tmp_path / "dist").mkdir(parents=True, exist_ok=True)
     return Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'm.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=False,
         session_https_only=False,
-        admin_password="s3cret-pilote",
         frontend_dist=str(tmp_path / "dist"),
         **over,
     )
 
 
-def test_metrics_requires_session_when_no_token_configured(tmp_path):
-    with TestClient(create_app(_secured(tmp_path))) as c:
+def test_metrics_requires_session_when_no_token_configured(db_url, tmp_path, creer_compte_admin):
+    with TestClient(create_app(_secured(db_url, tmp_path))) as c:
+        creer_compte_admin(c)
         r = c.get("/metrics")
         assert r.status_code == 401
         # Le refus ne doit rien laisser filtrer des séries.
         assert "itsm_http_requests_total" not in r.text
         # Session admin → lecture autorisée (l'exploitant garde son endpoint).
-        assert c.post("/api/auth/login", json={"password": "s3cret-pilote"}).status_code == 200
+        assert c.post(
+            "/api/auth/login", json={"email": "admin@exemple.fr", "password": "s3cret-pilote"}
+        ).status_code == 200
         r2 = c.get("/metrics")
         assert r2.status_code == 200 and "itsm_http_requests_total" in r2.text
 
 
-def test_metrics_token_still_allows_anonymous_scrape(tmp_path):
+def test_metrics_token_still_allows_anonymous_scrape(db_url, tmp_path, creer_compte_admin):
     """COMPATIBILITÉ : jeton configuré = scrape sans session, comme avant (Prometheus)."""
-    with TestClient(create_app(_secured(tmp_path, metrics_token="scrape-secret"))) as c:
+    with TestClient(create_app(_secured(db_url, tmp_path, metrics_token="scrape-secret"))) as c:
+        creer_compte_admin(c)
         r = c.get("/metrics", headers={"Authorization": "Bearer scrape-secret"})
         assert r.status_code == 200 and "itsm_http_requests_total" in r.text
         assert c.get("/metrics").status_code == 401  # sans jeton, toujours refusé

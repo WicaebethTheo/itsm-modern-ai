@@ -11,10 +11,11 @@
 
 ### Moyen terme
 
-- **Portage PostgreSQL** — ✅ **livré en Beta** (`docs/postgresql.md`). Driver `psycopg` en
-  extra, pooling auto pour les bases réseau, service compose optionnel. Migrations Alembic +
-  ORM validés sur PostgreSQL 16 réel. SQLite reste le défaut éprouvé. Reste à éprouver en
-  prod (backups, HA, CI dédiée Postgres).
+- **Portage PostgreSQL** — ✅ **livré, et désormais EXCLUSIF** (`docs/postgresql.md`) : SQLite
+  a disparu du produit. Driver `psycopg`, service `postgres` à part entière des composes,
+  migrations Alembic + ORM + suite de tests validés sur **PostgreSQL 17** réel (la majeure
+  des composes, du `postgresql-client-17` de l'image et de la CI — les trois bougent
+  ensemble). Reste à éprouver en prod (HA, gros volumes).
 - **Connecteur GLPI API V2** — ✅ **livré en Beta** (`docs/glpi-api-v2.md`). API haut-niveau
   OAuth2 de GLPI 11 (`/Assistance/Ticket`, `Timeline/Followup`, `TeamMember`, RSQL), bascule
   `GLPI_API_VERSION=v2`. Le connecteur legacy `apirest.php` reste le **défaut** et la source

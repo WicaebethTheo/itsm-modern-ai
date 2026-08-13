@@ -11,7 +11,7 @@ from itsm_modern_ai.config.settings import Settings
 
 
 @pytest.fixture
-def spa_client(tmp_path):
+def spa_client(db_url, tmp_path):
     """App avec une SPA buildée minimale + un fichier secret HORS du dist."""
     dist = tmp_path / "dist"
     (dist / "assets").mkdir(parents=True)
@@ -23,7 +23,7 @@ def spa_client(tmp_path):
 
     settings = Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'a.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         dev_open_admin=True,

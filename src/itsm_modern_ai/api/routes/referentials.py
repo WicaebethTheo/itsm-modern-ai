@@ -7,6 +7,8 @@ d'utiliser — catégories/entités du périmètre, techniciens/groupes éligibl
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session
@@ -34,6 +36,12 @@ class RefItem(BaseModel):
     # Cible de repli (entités) : acteur assigné quand le garde-fou refuse une Décision.
     fallback_group_id: int | None = None
     fallback_technician_id: int | None = None
+    # Date du DERNIER SCAN GLPI qui a vu cet objet. Exposée parce que la console n'avait
+    # aucun moyen de dire de quand datait le cache : un technicien parti il y a trois mois
+    # restait proposé au routage sans que rien ne signale que la liste était périmée.
+    # Côté serveur uniquement — un repli `localStorage` mentirait sur une console partagée
+    # (chaque navigateur aurait « sa » date de dernière synchro).
+    updated_at: datetime | None = None
 
 
 class SyncResult(BaseModel):
@@ -73,12 +81,25 @@ def _item(row) -> RefItem:
         mode=getattr(row, "mode", None), auto_min_confidence=getattr(row, "auto_min_confidence", None),
         fallback_group_id=getattr(row, "fallback_group_id", None),
         fallback_technician_id=getattr(row, "fallback_technician_id", None),
+        updated_at=getattr(row, "updated_at", None),
     )
 
 
 @router.post("/glpi/sync", response_model=SyncResult)
 async def sync_glpi(request: Request, session: Session = Depends(get_session)) -> SyncResult:
-    """Scanne GLPI et met à jour le cache local (préserve les sélections existantes)."""
+    """Scanne GLPI et met à jour le cache local (préserve les sélections existantes).
+
+    L'horodatage du scan est posé par `referentials.sync`, ligne par ligne et seulement
+    sur les objets RÉELLEMENT vus (cf. sa docstring) : un objet disparu de GLPI est
+    conservé, mais il garde la date du dernier scan qui l'a vu.
+
+    Un scan qui ne rapporte AUCUN objet alors que le cache en contient déjà n'est pas un
+    succès : GLPI répond 200 avec des listes vides quand le compte technique a perdu ses
+    droits, quand l'entité active est la mauvaise ou quand le profil est restreint. Le
+    signaler `ok=True` afficherait un scan vert sur un périmètre que GLPI vient de
+    désavouer — et rajeunirait un cache que plus rien ne confirme. On refuse donc, sans
+    rien supprimer : le cache reste exploitable, il cesse juste d'être certifié frais.
+    """
     connector = build_connector(request.app.state.settings, request.app.state.secrets_box)
     if connector is None:
         raise HTTPException(409, {"code": "glpi_not_configured", "message": "Configurer GLPI d'abord."})
@@ -86,7 +107,18 @@ async def sync_glpi(request: Request, session: Session = Depends(get_session)) -
         refs = await connector.get_referentials()
     except Exception as exc:  # noqa: BLE001 — surface en message clair
         return SyncResult(ok=False, detail=f"Échec du scan GLPI : {exc}")
+    deja_en_cache = referentials.cache_size(session)
     counts = referentials.sync(session, refs)
+    if sum(counts.values()) == 0 and deja_en_cache:
+        return SyncResult(
+            ok=False,
+            detail=(
+                f"GLPI n'a renvoyé aucun objet alors que le cache en contient "
+                f"{deja_en_cache} : vérifiez les droits du compte technique et son entité "
+                "active. Le cache est conservé tel quel, sans être marqué frais."
+            ),
+            counts=counts,
+        )
     return SyncResult(ok=True, detail="Référentiels synchronisés.", counts=counts)
 
 

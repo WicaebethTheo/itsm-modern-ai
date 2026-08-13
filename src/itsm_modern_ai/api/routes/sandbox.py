@@ -34,6 +34,14 @@ class SandboxResponse(BaseModel):
     group_name: str | None = None  # nom GLPI du groupe routé
     confidence: float | None = None
     draft: str | None = None
+    # Ce que l'essai vient de COÛTER. Les trois chiffres sont déjà calculés ici (ils
+    # alimentent le journal LLM et le cost cap) ; les taire obligeait l'admin à ouvrir
+    # le Journal pour savoir ce qu'une simulation dépense — juste avant de décider s'il
+    # autorise le moteur sur un flux réel. Aucun calcul nouveau, simple remontée.
+    model: str | None = None
+    cost_eur: float | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
 
 
 def _name_map(session, kind: str) -> dict[int, str]:
@@ -87,7 +95,9 @@ async def sandbox(body: SandboxRequest, request: Request) -> SandboxResponse:
     # produisait l'inverse : un journal affichant `[IBAN]`/`[SECRET]`/`[IP]` pour des données
     # parties en clair, soit une preuve d'audit qui ment à la DPO — précisément sur les
     # catégories que `docs/dpo.md` signale comme NON masquées en Community.
+    cost_of_run: float | None = None
     if result is not None:
+        cost_of_run = cost_cap.cost_eur(result.prompt_tokens, result.completion_tokens, price_in, price_out)
         with db.session_scope() as session:
             journal.record_llm_call(
                 session,
@@ -97,9 +107,7 @@ async def sandbox(body: SandboxRequest, request: Request) -> SandboxResponse:
                 response_received=result.raw_response,
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,
-                cost_eur=cost_cap.cost_eur(
-                    result.prompt_tokens, result.completion_tokens, price_in, price_out
-                ),
+                cost_eur=cost_of_run,
             )
     d = outcome.decision
     # Résolution des noms via le cache de référentiels (même source que le Journal),
@@ -120,4 +128,8 @@ async def sandbox(body: SandboxRequest, request: Request) -> SandboxResponse:
         group_name=groups.get(d.group_id) if d and d.group_id is not None else None,
         confidence=d.confidence if d else None,
         draft=d.draft if d else None,
+        model=result.model if result else None,
+        cost_eur=cost_of_run,
+        prompt_tokens=result.prompt_tokens if result else None,
+        completion_tokens=result.completion_tokens if result else None,
     )

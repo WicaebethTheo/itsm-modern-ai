@@ -2,10 +2,11 @@
 # On-premise installer — COMMUNITY edition.
 #
 # Checks prerequisites (offers to install missing ones), prepares config, starts the
-# service, creates the admin account, then prints a final CHECKLIST of system state.
+# service, then prints a final CHECKLIST of system state and the URL of the
+# account-creation screen (the admin account is created IN THE WEB UI, not here).
 #
 # Une seule commande pour TOUT : installer ET mettre à jour. Si une instance existe
-# déjà dans ce dossier, un menu propose « Mettre à jour » (sauvegarde ./data incluse)
+# déjà dans ce dossier, un menu propose « Mettre à jour » (sauvegarde base + clé incluse)
 # ou « Réinstaller ». Pas de second script à connaître.
 #
 # Usage:
@@ -16,12 +17,20 @@
 #   ./install.sh --build                  # force a rebuild of the current code (no pull)
 #   ./install.sh --port 8080              # publish on a different host port
 #   ./install.sh --yes                    # non-interactive (accept proposed installs)
-#   ./install.sh --reset-password         # change the admin password of an instance
+#   ./install.sh --reset-password         # RECUPERATION : mot de passe admin oublie
 #   ./install.sh --rollback [horodatage]  # RETOUR ARRIERE : restaure backups/<ts> (base + cle + image)
 #   ./install.sh --list-backups           # liste les sauvegardes disponibles
 #
-# The admin password is entered interactively (hidden) and stored ONLY as an encrypted
-# Argon2 hash (never in clear text). In non-interactive mode, set ITSM_ADMIN_PASSWORD.
+# Le retour arriere ECRASE la base : il exige une confirmation TAPEE (l'horodatage de la
+# sauvegarde). `--yes` ne suffit pas et une absence de terminal ne vaut pas accord ; sans
+# terminal, declarez-le : ITSM_ROLLBACK_CONFIRME=<horodatage> ./install.sh --rollback <horodatage>
+#
+# COMPTE ADMINISTRATEUR : il se cree DANS L'INTERFACE, a la premiere visite (email + mot
+# de passe), pas ici. Le moteur ne lit plus aucun mot de passe dans l'environnement ; seul
+# un hash Argon2 chiffre est conserve.
+# ⚠️ RISQUE ASSUME : tant que ce compte n'existe pas, quiconque atteint le port peut le
+# creer et prendre le controle de l'instance. N'EXPOSEZ PAS le port publiquement avant
+# d'avoir cree votre compte. Mot de passe oublie : ./install.sh --reset-password
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -42,7 +51,7 @@ while [ $# -gt 0 ]; do
     --rollback) ROLLBACK=true; MODE_GIVEN=true
                 case "${2:-}" in ""|-*) : ;; *) ROLLBACK_TS="$2"; shift ;; esac ;;
     --list-backups) LIST_BACKUPS=true; MODE_GIVEN=true ;;
-    -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac; shift
 done
@@ -53,6 +62,11 @@ say()  { printf '%s▶ %s%s\n' "$c_cyan" "$1" "$c_off"; }
 warn() { printf '%s! %s%s\n' "$c_yel" "$1" "$c_off"; }
 die()  { printf '%s✗ %s%s\n' "$c_red" "$1" "$c_off" >&2; exit 1; }
 ask()  { # 0 = oui. --yes => oui ; TTY (stdin OU /dev/tty, ex. curl|sh) => demande (defaut OUI) ; sinon => oui (auto, CI).
+  # ⚠️ COMPLAISANT PAR CONSTRUCTION, et ce n'est acceptable que pour des questions
+  # REVERSIBLES (installer un prerequis, rebatir une image). Pour tout ce qui detruit des
+  # donnees, utiliser `confirmer_ecrasement` : `ask` repond oui sur Entree, oui avec --yes
+  # et oui tout seul hors TTY — trois facons d'ecraser une base sans qu'un humain ait rien
+  # tape.
   $ASSUME_YES && return 0
   local r=""
   if [ -t 0 ]; then
@@ -64,6 +78,38 @@ ask()  { # 0 = oui. --yes => oui ; TTY (stdin OU /dev/tty, ex. curl|sh) => deman
     return 0   # non-interactif (CI) : on installe les prerequis automatiquement
   fi
   case "$r" in [nN]*) return 1 ;; *) return 0 ;; esac
+}
+
+# Confirmation d'une operation DESTRUCTRICE (restauration : la base est ecrasee).
+# Trois differences volontaires avec `ask`, chacune vaut pour une facon de perdre une base :
+#   1. il faut TAPER le mot attendu — Entree ne vaut plus oui (« j'ai valide sans lire ») ;
+#   2. `--yes` ne suffit PAS — ce drapeau vise les prerequis, pas la destruction de donnees ;
+#   3. hors TTY, on N'INVENTE PAS de reponse : on s'arrete. La seule facon de restaurer sans
+#      terminal est de le DECLARER, en nommant la sauvegarde visee :
+#        ITSM_ROLLBACK_CONFIRME=<horodatage> ./install.sh --rollback <horodatage>
+#      (impossible a declencher par accident, et tracable dans l'historique du shell).
+confirmer_ecrasement() {
+  local attendu="$1" question="$2" invite r=""
+  if [ -n "${ITSM_ROLLBACK_CONFIRME:-}" ]; then
+    if [ "$ITSM_ROLLBACK_CONFIRME" = "$attendu" ]; then
+      warn "Ecrasement confirme par ITSM_ROLLBACK_CONFIRME=$attendu (mode non interactif)."
+      return 0
+    fi
+    die "ITSM_ROLLBACK_CONFIRME=$ITSM_ROLLBACK_CONFIRME ne designe pas la sauvegarde $attendu — rien n'a ete modifie."
+  fi
+  invite="$(printf '%s? %s\n  Tapez %s pour confirmer (toute autre saisie annule) : %s' \
+    "$c_yel" "$question" "$attendu" "$c_off")"
+  if [ -t 0 ]; then
+    read -r -p "$invite" r
+  elif [ -r /dev/tty ] && [ -t 1 ]; then
+    printf '%s' "$invite" > /dev/tty
+    IFS= read -r r < /dev/tty || r=""
+  else
+    die "Aucun terminal pour confirmer une operation DESTRUCTRICE — rien n'a ete modifie.
+   Pour restaurer sans terminal, declarez-le explicitement :
+     ITSM_ROLLBACK_CONFIRME=$attendu ./install.sh --rollback $attendu"
+  fi
+  [ "$r" = "$attendu" ] || { say "Annule — aucune modification."; exit 0; }
 }
 
 CHECKS=()
@@ -82,6 +128,97 @@ IMAGE="itsm-modern-ai:latest"
 backups_list() { ls -1 backups 2>/dev/null | sort; }
 latest_backup() { backups_list | tail -1; }
 
+# ── Garde de MAJEURE PostgreSQL ──────────────────────────────────────────────
+# Le repertoire de donnees d'un cluster n'est PAS relisible par une autre majeure. Un
+# `docker compose pull && up -d` apres un bump de tag (16 -> 17) donne, sur un
+# ./data/postgres existant :
+#     FATAL: database files are incompatible with server
+#     DETAIL: The data directory was initialized by PostgreSQL version 16, ...
+# … puis, avec `restart: unless-stopped`, une boucle de redemarrage : postgres n'atteint
+# jamais `healthy`, `depends_on: service_healthy` empeche le moteur de demarrer, et la
+# console disparait. Un FATAL de PostgreSQL dans `docker logs` n'est pas un diagnostic.
+#
+# C'EST ICI QUE LE GARDE PROTEGE REELLEMENT, et pas dans l'entrypoint du moteur : sous
+# compose, le moteur n'est jamais demarre quand la base boucle (service_healthy), donc son
+# entrypoint ne s'execute pas. L'installeur, lui, parle AVANT le `up -d`. (Un garde de
+# repli existe tout de meme dans docker/entrypoint.sh pour les topologies ou le PGDATA est
+# visible du moteur sans depends_on.)
+#
+# La majeure ATTENDUE est lue dans docker-compose.yml : une seule source de verite, donc
+# aucune valeur a bumper ici le jour d'une montee de version.
+majeure_postgres_du_compose() {
+  sed -n 's/^[[:space:]]*image:[[:space:]]*postgres:\([0-9]\{1,2\}\).*/\1/p' \
+    docker-compose.yml 2>/dev/null | head -1
+}
+
+majeure_du_pgdata() {
+  # PG_VERSION est ecrit par initdb et contient la majeure du cluster (« 16 », « 17 »).
+  [ -r data/postgres/PG_VERSION ] || return 1
+  tr -dc '0-9.' < data/postgres/PG_VERSION | cut -d. -f1
+}
+
+verifier_majeure_postgres() {
+  local presente attendue
+  presente="$(majeure_du_pgdata)" || return 0     # pas de cluster local : rien a verifier
+  attendue="$(majeure_postgres_du_compose)"
+  [ -n "$presente" ] && [ -n "$attendue" ] || return 0
+  [ "$presente" = "$attendue" ] && return 0
+  die "BASE INCOMPATIBLE : ./data/postgres a ete initialise par PostgreSQL $presente, mais la
+   stack demande PostgreSQL $attendue. Les fichiers d'un cluster ne se relisent PAS d'une
+   majeure a l'autre : demarrer ainsi donnerait « database files are incompatible with
+   server », une boucle de redemarrage et une console injoignable. Rien n'a ete modifie.
+
+   Migration (moteur a l'arret, ~5 min, la base reste lisible par SON image d'origine) :
+     docker compose stop itsm
+     docker run -d --name itsm-pg-avant \\
+       -v \"\$PWD/data/postgres:/var/lib/postgresql/data\" postgres:$presente-alpine
+     docker exec itsm-pg-avant pg_dump -U itsm -Fc itsm > avant-bump.dump
+     docker rm -f itsm-pg-avant                       # dump pris par l'ANCIENNE majeure
+     mv data/postgres data/postgres.pg$presente.bak   # on GARDE l'ancien cluster
+   (jamais \`docker exec -t\` pour un dump : le pseudo-terminal corrompt le binaire.)
+     docker compose up -d postgres                    # nouveau cluster, vide
+     docker compose exec -T postgres pg_restore -U itsm -d itsm --no-owner < avant-bump.dump
+     docker compose up -d itsm
+   Verifiez la console AVANT de supprimer data/postgres.pg$presente.bak.
+
+   (Repartir de l'image d'origine est aussi valable : remettre postgres:$presente-alpine
+   dans docker-compose.yml redonne une stack qui demarre, sans rien migrer.)"
+}
+
+# ── Base PostgreSQL : identifiants + disponibilite ───────────────────────────
+# Memes variables que celles lues par le compose (cf. .env.example) : on parle a la base
+# avec le role qui la possede. Defauts alignes sur ceux du compose.
+pg_user() { local v; v="$(grep -E '^POSTGRES_USER=' .env 2>/dev/null | head -1 | cut -d= -f2-)"; echo "${v:-itsm}"; }
+pg_db()   { local v; v="$(grep -E '^POSTGRES_DB=' .env 2>/dev/null | head -1 | cut -d= -f2-)"; echo "${v:-itsm}"; }
+
+# Demarre la base SEULE (sans le moteur) et attend qu'elle accepte les connexions.
+# `up -d postgres` est non destructif et sans effet si elle tourne deja : c'est ce qui
+# permet de sauvegarder ET de restaurer meme quand le moteur est a l'arret — un dump ne
+# peut pas etre pris sur un serveur eteint, contrairement a l'ancien fichier SQLite.
+# Attente BORNEE (~60 s) : au-dela, on rend la main a l'appelant qui decide (die).
+pg_ready() {
+  local u d i
+  u="$(pg_user)"; d="$(pg_db)"
+  docker compose up -d postgres >/dev/null 2>&1
+  for i in $(seq 1 30); do
+    docker compose exec -T postgres pg_isready -U "$u" -d "$d" >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  return 1
+}
+
+# Dump VERIFIE de la base vers "$1". Le dump est pris au format `custom` (celui que
+# produit et relit `python -m itsm_modern_ai.backup`), puis RELU par `pg_restore --list` :
+# un fichier tronque ou vide est ainsi refuse ici, pas le jour de la restauration.
+pg_dump_verifie() {
+  local cible="$1" u d
+  u="$(pg_user)"; d="$(pg_db)"
+  docker compose exec -T postgres pg_dump -U "$u" -d "$d" --format=custom > "$cible" 2>/dev/null || return 1
+  [ -s "$cible" ] || return 1
+  docker compose exec -T postgres pg_restore --list < "$cible" 2>/dev/null | grep -q 'TABLE DATA' || return 1
+  return 0
+}
+
 show_backups() {
   local ts n
   n=0
@@ -90,8 +227,10 @@ show_backups() {
     [ -d "backups/$ts" ] || continue
     n=$((n+1))
     printf '   %s' "$ts"
-    [ -f "backups/$ts/itsm.db" ] && printf '  base SQLite (%s)' "$(du -h "backups/$ts/itsm.db" | cut -f1)"
-    [ -f "backups/$ts/dump.sql" ] && printf '  dump PostgreSQL'
+    [ -f "backups/$ts/itsm.dump" ] && printf '  dump PostgreSQL (%s)' "$(du -h "backups/$ts/itsm.dump" | cut -f1)"
+    # Format SQL brut : produit par les versions anterieures de ce script. Toujours
+    # restaurable (via psql), donc toujours liste.
+    [ -f "backups/$ts/dump.sql" ] && printf '  dump PostgreSQL SQL (%s)' "$(du -h "backups/$ts/dump.sql" | cut -f1)"
     [ -f "backups/$ts/master.key" ] && printf '  + master.key'
     [ -f "backups/$ts/VERSION" ] && printf '  v%s' "$(cat "backups/$ts/VERSION")"
     printf '\n'
@@ -103,17 +242,22 @@ show_backups() {
 
 # Restaure une sauvegarde : base + master.key + code/image de l'époque, puis redémarre.
 do_rollback() {
-  local ts="$1" bk safe f img rev
+  local ts="$1" bk safe img rev u d
   [ -n "$ts" ] || ts="$(latest_backup)"
   [ -n "$ts" ] || { show_backups; die "Aucune sauvegarde à restaurer."; }
   bk="backups/$ts"
   [ -d "$bk" ] || { show_backups; die "Sauvegarde introuvable : $bk"; }
-  if [ ! -f "$bk/itsm.db" ] && [ ! -f "$bk/dump.sql" ]; then
-    die "$bk ne contient aucune base ($bk/itsm.db ou $bk/dump.sql) — restauration impossible."
+  if [ ! -f "$bk/itsm.dump" ] && [ ! -f "$bk/dump.sql" ]; then
+    die "$bk ne contient aucune base ($bk/itsm.dump) — restauration impossible."
   fi
+  u="$(pg_user)"; d="$(pg_db)"
   say "Retour arrière vers la sauvegarde $ts"
-  ask "Confirmer : l'état actuel sera MIS DE CÔTÉ (jamais supprimé) et remplacé par $ts" \
-    || { say "Annulé — aucune modification."; exit 0; }
+  # Confirmation EXPLICITE : la restauration est destructive (le schéma actuel de la base
+  # « $d » est SUPPRIMÉ puis rebâti depuis l'archive). L'état courant est dumpé juste avant
+  # dans data/pre-rollback-<horodatage> — donc réversible, mais on ne le fait pas en
+  # silence, et surtout pas sur une simple touche Entrée (cf. `confirmer_ecrasement`).
+  confirmer_ecrasement "$ts" \
+    "La base « $d » va être ÉCRASÉE par la sauvegarde $ts (son état actuel est dumpé avant)."
 
   # Port publié CONSERVÉ : sans cela, une instance installée avec --port 8080
   # ressusciterait sur 8000 après un rollback (console « disparue » pour les clients).
@@ -124,27 +268,69 @@ do_rollback() {
   export ITSM_HOST_PORT="$PORT"
   say "Port publié conservé : $PORT"
 
-  # 1) Arrêt du service (JAMAIS `down -v` : cela détruirait le volume de données).
-  docker compose stop >/dev/null 2>&1 || true
+  # 1) Seul le MOTEUR est arrêté : la base doit rester en marche pour être restaurée
+  # (JAMAIS `down -v` : cela détruirait le volume de données).
+  docker compose stop itsm >/dev/null 2>&1
+  pg_ready || die "Base PostgreSQL injoignable — restauration impossible (docker compose logs postgres)."
 
-  # 2) L'état courant est DÉPLACÉ, pas écrasé : un rollback raté reste réversible.
+  # 2) L'état courant est DUMPÉ avant d'être écrasé : un rollback raté reste réversible.
+  # Un dump impossible n'est PAS une question à poser : sans lui, la remise à plat de
+  # l'étape 3 devient un aller simple. On refuse, on ne demande pas — l'exploitant garde
+  # une base intacte et peut réparer l'accès (docker compose logs postgres) avant de
+  # relancer. (Poser la question ici était doublement piégeux : hors TTY, l'ancienne
+  # `ask` répondait oui toute seule et écrasait la base sans une seule invite.)
   safe="data/pre-rollback-$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$safe"
-  for f in data/itsm.db data/itsm.db-wal data/itsm.db-shm; do
-    [ -e "$f" ] && mv "$f" "$safe/"
-  done
-  if [ -f "$bk/master.key" ] && [ -f data/master.key ]; then mv data/master.key "$safe/"; fi
-  say "État précédent conservé dans $safe (à supprimer une fois le rollback validé)"
-
-  # 3) Base + clé de chiffrement restaurées ENSEMBLE (une base sans sa clé est illisible).
-  if [ -f "$bk/itsm.db" ]; then
-    cp -a "$bk/itsm.db" data/itsm.db
-    for f in itsm.db-wal itsm.db-shm; do [ -f "$bk/$f" ] && cp -a "$bk/$f" "data/$f"; done
-    echo "  base SQLite restaurée depuis $bk/itsm.db"
+  if pg_dump_verifie "$safe/itsm.dump"; then
+    say "État actuel de la base dumpé dans $safe/itsm.dump (à supprimer une fois le rollback validé)"
   else
-    warn "Sauvegarde PostgreSQL : la base N'EST PAS restaurée automatiquement (destructif)."
-    warn "  docker compose --profile postgres up -d postgres"
-    warn "  docker compose exec -T postgres psql -U itsm -d itsm < $bk/dump.sql"
+    rm -f "$safe/itsm.dump"; rmdir "$safe" 2>/dev/null || true
+    die "Impossible de dumper l'état ACTUEL de la base — restauration REFUSÉE (elle serait irréversible).
+   Rien n'a été modifié. Vérifiez la base (docker compose logs postgres) puis relancez.
+   L'instance est repartie ? relancez simplement : docker compose up -d"
+  fi
+  # La clé courante est COPIÉE (et non déplacée) à côté du dump de sécurité : elle reste en
+  # place tant que la restauration n'a pas abouti. Un `mv` laissait une fenêtre où
+  # data/master.key manquait — si la suite échouait, l'instance redémarrait sans sa clé et
+  # se heurtait au garde-fou `MasterKeyLostError`, pour un rollback qui n'avait même pas eu
+  # lieu. Elle sera écrasée par celle de la sauvegarde à l'étape suivante.
+  if [ -f "$bk/master.key" ] && [ -f data/master.key ]; then
+    cp -a data/master.key "$safe/" && chmod 600 "$safe/master.key" 2>/dev/null || true
+  fi
+
+  # 3) SCHÉMA REMIS À PLAT, puis restauration. C'est le point le plus contre-intuitif du
+  # retour arrière PostgreSQL, et celui qui l'a rendu faux : `pg_restore --clean` ne
+  # supprime QUE les objets présents DANS L'ARCHIVE. Une table créée par une migration
+  # POSTÉRIEURE à la sauvegarde (p. ex. `technician_absences`) survit donc à la
+  # restauration, pendant qu'`alembic_version` est rembobiné. Le rollback rend 0, et c'est
+  # la mise à jour SUIVANTE qui meurt :
+  #     psycopg.errors.DuplicateTable: relation "technician_absences" already exists
+  # … dans un entrypoint en `set -euo pipefail`, donc en boucle de redémarrage, console
+  # inaccessible. L'ère SQLite ne pouvait pas avoir ce défaut : elle remplaçait le FICHIER
+  # entier. On reproduit cette propriété — un schéma vide, puis l'archive — ce qui rend la
+  # restauration idempotente et indépendante de l'écart de révisions.
+  # L'ordre compte : la remise à plat n'a lieu qu'APRÈS un dump de sécurité VÉRIFIÉ (2).
+  say "Remise à plat du schéma « public » (l'état d'avant est dans $safe/itsm.dump)"
+  docker compose exec -T postgres psql -U "$u" -d "$d" -v ON_ERROR_STOP=1 -q \
+    -c 'DROP SCHEMA IF EXISTS public CASCADE' -c 'CREATE SCHEMA public' \
+    || die "Remise à plat du schéma échouée — base INCHANGÉE, rien n'a été restauré."
+
+  # Base + clé de chiffrement restaurées ENSEMBLE (une base sans sa clé est illisible).
+  # Plus de `--clean --if-exists` : il n'a plus rien à nettoyer (le schéma vient d'être
+  # recréé vide) et c'est précisément lui qui donnait l'illusion d'une base remise à
+  # l'identique. `--exit-on-error` : une restauration à moitié faite est pire qu'une
+  # restauration refusée — on s'arrête à la première erreur, l'état d'avant est dans $safe.
+  if [ -f "$bk/itsm.dump" ]; then
+    docker compose exec -T postgres pg_restore -U "$u" -d "$d" \
+      --no-owner --exit-on-error < "$bk/itsm.dump" \
+      || die "Restauration échouée — base dans un état intermédiaire. Reprise : pg_restore ... < $safe/itsm.dump"
+    echo "  base PostgreSQL restaurée depuis $bk/itsm.dump"
+  else
+    # Format SQL brut produit par les versions antérieures de ce script. `ON_ERROR_STOP=1`
+    # pour la même raison que `--exit-on-error` ci-dessus (psql ignore les erreurs sinon).
+    docker compose exec -T postgres psql -U "$u" -d "$d" -v ON_ERROR_STOP=1 < "$bk/dump.sql" >/dev/null \
+      || die "Restauration échouée — base dans un état intermédiaire. Reprise : pg_restore ... < $safe/itsm.dump"
+    echo "  base PostgreSQL restaurée depuis $bk/dump.sql (format SQL)"
   fi
   if [ -f "$bk/master.key" ]; then
     cp -a "$bk/master.key" data/master.key; chmod 600 data/master.key
@@ -300,6 +486,12 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 check_add "docker compose v2" ok
 
+# Garde de MAJEURE : AVANT tout `docker compose up`, y compris celui que `pg_ready`
+# déclenche pour sauvegarder ou restaurer. Un cluster d'une autre majeure ne démarrera pas,
+# et l'exploitant doit lire la procédure, pas un crash-loop (cf. verifier_majeure_postgres).
+verifier_majeure_postgres
+check_add "Majeure PostgreSQL du cluster" ok
+
 # Retour arrière : dès que Docker + compose répondent, on n'a besoin de rien d'autre
 # (ni port libre, ni .env, ni build) — do_rollback se termine par `exit`.
 if $ROLLBACK; then do_rollback "$ROLLBACK_TS"; fi
@@ -332,18 +524,18 @@ if [ ! -f .env ]; then
   say "Creating .env from .env.example (MASTER_KEY generated on first start in ./data)"
   cp .env.example .env
 fi
-# Durcissement : .env peut contenir un secret d'amorçage (ITSM_ADMIN_PASSWORD/ADMIN_PASSWORD
-# en mode non-interactif) → propriétaire seul (jamais world-readable).
+# Durcissement : .env porte MASTER_KEY (celle qui déchiffre tous les autres secrets) et le
+# mot de passe de la base → propriétaire seul (jamais world-readable).
 chmod 600 .env 2>/dev/null || true
 check_add ".env file (chmod 600)" ok
 export ITSM_HOST_PORT="$PORT"
 
-# ── 2b) Mise à jour : SAUVEGARDE ./data, puis récupère la dernière version ─────
-# La mise à jour (sélecteur ou --update) sauvegarde ./data AVANT toute migration, puis
-# récupère le code (git) et reconstruit l'image ; ./data (config + DB + master.key) est
-# préservé. En mode offline/bundle (pas de checkout git) le pull est ignoré.
+# ── 2b) Mise à jour : SAUVEGARDE la base, puis récupère la dernière version ────
+# La mise à jour (sélecteur ou --update) dumpe la base + copie la master.key AVANT toute
+# migration, puis récupère le code (git) et reconstruit l'image ; le volume (cluster
+# PostgreSQL + master.key) est préservé. En mode offline/bundle (pas de checkout git) le
+# pull est ignoré.
 LAST_BACKUP_TS=""      # horodatage de la sauvegarde de cette exécution (pour --rollback)
-SERVICE_STOPPED=false  # vrai entre `docker compose stop` et le redémarrage effectif
 
 # Repères de l'instance AVANT mise à jour : sans eux, revenir à « la version d'avant »
 # est une devinette. IMAGE_ID permet un retour arrière instantané et hors-ligne
@@ -357,82 +549,48 @@ record_backup_metadata() {
   for f in GIT_REV IMAGE_ID VERSION; do [ -s "$bk/$f" ] || rm -f "$bk/$f"; done
 }
 
+# Sauvegarde AVANT toute migration. BLOQUANTE : sans elle, `--rollback` n'a rien à
+# restaurer et une migration qui se passe mal devient un aller simple. Un `warn` ne
+# suffirait pas — l'exploitant ne lit les avertissements qu'après coup.
+# Le dump est pris À CHAUD (pg_dump travaille sur un instantané transactionnel cohérent) :
+# inutile d'arrêter le moteur, donc pas d'interruption de service pour la sauvegarde.
 backup_data() {
   [ -d data ] || return 0
   local ts bk; ts="$(date +%Y%m%d-%H%M%S)"; bk="backups/$ts"; mkdir -p "$bk"
-  say "Sauvegarde de ./data avant mise à jour → $bk"
+  say "Sauvegarde avant mise à jour → $bk"
   cp -a data/master.key "$bk/" 2>/dev/null && chmod 600 "$bk/master.key" 2>/dev/null || true
   record_backup_metadata "$bk"
-  if [ -n "$(docker compose ps -q postgres 2>/dev/null || true)" ] || grep -qiE '^ITSM_DATABASE_URL=.*postgres' .env 2>/dev/null; then
-    local pu pd; pu="$(grep -E '^POSTGRES_USER=' .env 2>/dev/null | head -1 | cut -d= -f2-)"; pu="${pu:-itsm}"
-    pd="$(grep -E '^POSTGRES_DB=' .env 2>/dev/null | head -1 | cut -d= -f2-)"; pd="${pd:-itsm}"
-    if docker compose exec -T postgres pg_dump -U "$pu" "$pd" > "$bk/dump.sql" 2>/dev/null && [ -s "$bk/dump.sql" ]; then
-      echo "  dump PostgreSQL OK → $bk/dump.sql"; check_add "Sauvegarde ./data" "ok:$bk"; LAST_BACKUP_TS="$ts"
-    else
-      rm -f "$bk/dump.sql"
-      warn "pg_dump indisponible — AUCUNE sauvegarde de la base (instance arrêtée ?)."
-      warn "  Aucun retour arrière ne sera possible sur la base. Interrompez (Ctrl-C) si ce n'est pas voulu."
-      check_add "Sauvegarde ./data" "warn:DB NON sauvegardée"
-    fi
+  # `pg_ready` démarre la base au besoin : une instance à l'arrêt reste sauvegardable
+  # (contrairement à un serveur éteint, dont on ne peut rien dumper).
+  if ! pg_ready; then
+    check_add "Sauvegarde ./data" "fail:base injoignable"
+    die "Base PostgreSQL injoignable — sauvegarde impossible, rien n'a été modifié (docker compose logs postgres)."
+  fi
+  if pg_dump_verifie "$bk/itsm.dump"; then
+    echo "  dump PostgreSQL vérifié → $bk/itsm.dump ($(du -h "$bk/itsm.dump" | cut -f1))"
+    check_add "Sauvegarde ./data" "ok:$bk"; LAST_BACKUP_TS="$ts"
   else
-    # Copie SQLite À FROID : le moteur est arrêté, donc `itsm.db` + `-wal` forment un
-    # ensemble cohérent (le `-wal` seul contient parfois des SEMAINES d'écritures non
-    # checkpointées : le copier est OBLIGATOIRE). Si un Python est disponible on
-    # préfère `VACUUM INTO`, qui produit UN fichier déjà consolidé et vérifiable.
-    docker compose stop >/dev/null 2>&1 || true; SERVICE_STOPPED=true
-    if [ ! -f data/itsm.db ]; then
-      warn "Aucune base data/itsm.db à sauvegarder."; check_add "Sauvegarde ./data" "warn:pas de base"
-      return 0
-    fi
-    local py=""; for c in .venv/bin/python python3 python; do command -v "$c" >/dev/null 2>&1 && { py="$c"; break; }; done
-    local done_ok=false
-    if [ -n "$py" ]; then
-      if "$py" -c "
-import sqlite3, sys
-src, dst = sys.argv[1], sys.argv[2]
-con = sqlite3.connect(src, timeout=30)
-try:
-    con.execute('VACUUM INTO ?', (dst,))
-finally:
-    con.close()
-chk = sqlite3.connect(dst)
-try:
-    if chk.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
-        sys.exit('integrity_check KO')
-finally:
-    chk.close()
-" data/itsm.db "$bk/itsm.db" 2>&1; then done_ok=true; fi
-    fi
-    if ! $done_ok; then
-      cp -a data/itsm.db* "$bk/" 2>/dev/null && [ -f "$bk/itsm.db" ] && done_ok=true
-    fi
-    if $done_ok; then
-      echo "  sauvegarde SQLite OK ($(du -h "$bk/itsm.db" | cut -f1))"
-      check_add "Sauvegarde ./data" "ok:$bk"; LAST_BACKUP_TS="$ts"
-    else
-      warn "SAUVEGARDE SQLITE ÉCHOUÉE — mise à jour interrompue (aucun retour arrière possible)."
-      check_add "Sauvegarde ./data" "fail:copie impossible"
-      die "Impossible de sauvegarder data/itsm.db — rien n'a été modifié."
-    fi
+    rm -f "$bk/itsm.dump"
+    check_add "Sauvegarde ./data" "fail:pg_dump KO"
+    die "Sauvegarde de la base ÉCHOUÉE (pg_dump) — mise à jour interrompue, rien n'a été modifié."
   fi
 }
 
-# Filet de sécurité de la mise à jour : `backup_data` ARRÊTE le conteneur, et tout ce qui
-# suit (git, docker build) peut échouer. Sans ce trap, le script mourait en laissant
-# l'instance À L'ARRÊT — panne totale, pour une mise à jour qui n'a même pas eu lieu.
-# On redémarre alors l'ANCIENNE image (le build raté n'a rien retagué) et on rappelle
-# la commande de retour arrière complet.
+# Filet de sécurité de la mise à jour : tout ce qui suit la sauvegarde (git, docker build,
+# `up -d --force-recreate`) peut échouer, et un `--force-recreate` interrompu laisse le
+# conteneur À L'ARRÊT — panne totale, pour une mise à jour qui n'a même pas eu lieu.
+# On tente donc TOUJOURS un redémarrage (`up -d` est idempotent : sans effet si l'instance
+# tourne déjà, et il repart sur l'ANCIENNE image puisqu'un build raté n'a rien retagué),
+# puis on rappelle la commande de retour arrière complet.
 restore_service_on_failure() {
   local code=$?
   trap - EXIT
   [ "$code" -eq 0 ] && exit 0
-  if [ "$SERVICE_STOPPED" = true ]; then
-    warn "Mise à jour interrompue (code $code) — redémarrage de l'instance précédente…"
-    if docker compose up -d >/dev/null 2>&1; then
-      warn "Instance redémarrée sur la version PRÉCÉDENTE (aucune donnée perdue)."
-    else
-      warn "Redémarrage automatique impossible : lancez « docker compose up -d »."
-    fi
+  warn "Mise à jour interrompue (code $code) — redémarrage de l'instance précédente…"
+  if docker compose up -d >/dev/null 2>&1; then
+    warn "Instance redémarrée sur la version PRÉCÉDENTE (aucune donnée perdue)."
+  else
+    warn "Redémarrage automatique impossible : lancez « docker compose up -d »."
   fi
   # Vaut aussi quand le moteur a démarré puis planté (migration incompatible…) :
   # revenir à l'image précédente SANS restaurer la base ne fait que déplacer la panne.
@@ -488,13 +646,11 @@ if [ "$DO_BUILD" = true ]; then
   # --force-recreate : remplace un conteneur perime/casse (p.ex. dont le dossier ./data
   # monte a ete supprime). Sans danger : les donnees vivent dans le volume ./data de l'hote.
   docker compose up -d --force-recreate || die "Start failed (see: docker compose logs)."
-  SERVICE_STOPPED=false
   check_add "Image built" ok
 else
   docker image inspect "$IMAGE" >/dev/null 2>&1 || die "Image $IMAGE absent. Provide --bundle or drop --no-build."
   say "Starting with image $IMAGE (no build)"
   docker compose up -d --force-recreate || die "Start failed (see: docker compose logs)."
-  SERVICE_STOPPED=false
   check_add "Image present ($IMAGE)" ok
 fi
 
@@ -530,45 +686,72 @@ else
   die "Engine did not become ready in time (see logs above)."
 fi
 
-# ── 5) Admin account — REQUIRED (the console must never be left unprotected) ────
+# ── 5) Compte administrateur — CRÉÉ DANS L'INTERFACE, plus ici ──────────────────
+# L'installeur ne demande plus de mot de passe et n'oppose plus de porte dure « pas de mot
+# de passe = refus de terminer ». La raison n'est pas un relâchement : le compte se crée à
+# la première visite de la console (email + mot de passe), et le moteur ne lit PLUS aucun
+# mot de passe dans l'environnement — un prompt ici n'aurait ni adresse à proposer, ni
+# moyen non-interactif de fonctionner (one-liner `curl … | bash` sans TTY, CI, Ansible).
+#
+# ⚠️ Ce que cela coûte, dit franchement : entre ce `up -d` et la création du compte,
+# quiconque atteint le port peut revendiquer l'administration. C'est un choix délibéré
+# (aucun jeton d'amorçage à transporter) — l'installeur le RAPPELLE dans sa conclusion, et
+# le moteur le répète à chaque démarrage tant que le compte n'existe pas.
+#
+# `--reset-password` reste, et devient le SEUL chemin de récupération d'un mot de passe
+# oublié : il délègue à la CLI embarquée dans l'image.
 admin_is_set() { docker compose exec -T itsm python -m itsm_modern_ai.admin_setup --check >/dev/null 2>&1; }
-# Peut-on demander interactivement ? stdin = TTY direct, OU un /dev/tty utilisable même
-# quand stdin est un pipe (cas du one-liner `curl … | sh`).
-can_prompt() { [ -t 0 ] || { [ -r /dev/tty ] && [ -w /dev/tty ]; }; }
-run_admin_setup() {  # "$@" → extra flags ; returns the setup exit code
+
+# Exécute la CLI admin en lui donnant un vrai terminal (saisie masquée). stdin = TTY
+# direct, ou /dev/tty quand stdin est un pipe (one-liner `curl … | bash`).
+# ⚠️ La détection du second cas est `[ -r /dev/tty ] && [ -t 1 ]`, la MÊME que `ask` et
+# `confirmer_ecrasement` — et pas `[ -w /dev/tty ]` : dans un conteneur de CI, /dev/tty
+# EXISTE et passe les tests de mode, mais son ouverture échoue faute de terminal de
+# contrôle. On aurait alors un « mot de passe non modifié » au lieu du vrai diagnostic.
+run_admin_setup() {  # "$@" → drapeaux ; renvoie le code de sortie de la CLI
   if [ -t 0 ]; then
     docker compose exec itsm python -m itsm_modern_ai.admin_setup "$@"
-  elif [ -r /dev/tty ] && [ -w /dev/tty ]; then
-    # one-liner `curl … | sh` : stdin = pipe, mais le terminal reste accessible via /dev/tty
+  elif [ -r /dev/tty ] && [ -t 1 ]; then
     docker compose exec itsm python -m itsm_modern_ai.admin_setup "$@" < /dev/tty
-  elif [ -n "${ITSM_ADMIN_PASSWORD:-}" ]; then
-    docker compose exec -T -e ITSM_ADMIN_PASSWORD itsm python -m itsm_modern_ai.admin_setup "$@"
   else
-    die "Pas de terminal interactif et ITSM_ADMIN_PASSWORD non defini - mot de passe admin REQUIS."
+    die "Pas de terminal interactif : le mot de passe ne peut pas etre saisi (il n'est plus
+   lu dans l'environnement, par conception). Depuis un terminal :
+     docker compose exec itsm python -m itsm_modern_ai.admin_setup --force"
   fi
 }
-if [ "$RESET" = true ]; then
-  say "Resetting the administrator password (required)"; run_admin_setup --force || true
-elif admin_is_set; then
-  say "An administrator password is already configured — left unchanged."
-fi
-# Enforce: a password MUST be set. Interactive → retry until set (typo/too short).
-if ! admin_is_set; then
-  if can_prompt; then
-    tries=0
-    until admin_is_set; do
-      tries=$((tries+1)); [ "$tries" -gt 5 ] && die "Mot de passe admin toujours non defini apres plusieurs tentatives."
-      say "Definissez le mot de passe administrateur - REQUIS (min. 8 caracteres)"
-      run_admin_setup || warn "Non defini (incoherence ou trop court) - reessayez."
-    done
+
+# Récupération : nouveau mot de passe pour le compte existant. La CLI EXIGE `--email` à la
+# CRÉATION (sans adresse, aucune connexion ne pourrait aboutir : le login compare le couple
+# email + mot de passe) — on ne l'ajoute donc QUE lorsqu'aucun compte n'existe.
+reset_admin_password() {
+  local email=""
+  if admin_is_set; then
+    say "Nouveau mot de passe administrateur (l'adresse de connexion est conservee)"
+    run_admin_setup --force || die "Mot de passe admin NON modifie (voir le message ci-dessus)."
   else
-    run_admin_setup || true
-    admin_is_set || die "Impossible de definir le mot de passe admin depuis ITSM_ADMIN_PASSWORD (min. 8 caracteres)."
+    warn "Aucun compte administrateur sur cette instance : il n'y a rien a reinitialiser."
+    warn "La voie normale est l'ecran de creation de la console (premier ecran)."
+    if [ -t 0 ]; then
+      read -r -p "$(printf '%s? Adresse de connexion a creer (vide = annuler) : %s' "$c_yel" "$c_off")" email
+    elif [ -r /dev/tty ] && [ -t 1 ]; then
+      printf '%s? Adresse de connexion a creer (vide = annuler) : %s' "$c_yel" "$c_off" > /dev/tty
+      IFS= read -r email < /dev/tty || email=""
+    fi
+    [ -n "$email" ] || die "Annule - creez le compte depuis la console web."
+    run_admin_setup --email "$email" || die "Compte admin NON cree (voir le message ci-dessus)."
   fi
+}
+
+if [ "$RESET" = true ]; then
+  reset_admin_password
 fi
-# Hard gate: refuse to finish if there is still no admin password.
-admin_is_set && check_add "Admin password" ok \
-  || { check_add "Admin password" fail; die "No admin password configured — refusing to finish (console would be UNPROTECTED)."; }
+if admin_is_set; then
+  check_add "Compte administrateur" ok
+else
+  # PAS un échec d'installation : c'est l'état NORMAL d'une instance neuve, et l'écran de
+  # création attend l'exploitant. On le signale en `warn` pour qu'il soit vu, jamais ignoré.
+  check_add "Compte administrateur" "warn:a creer au 1er acces (instance revendicable d'ici la)"
+fi
 
 # ── 6) Runtime checks ────────────────────────────────────────────────────────
 # /health reflète GLPI+LLM : 503 si l'un est configuré-injoignable (ou pas encore
@@ -599,8 +782,9 @@ with db.session_scope() as ss:
     print(verify_license(cfg.get('license_key') or '', today=date.today()).edition)
 " 2>/dev/null | tr -d '\r')"
 check_add "Edition" "ok:${edition:-unknown}"
-# Open-admin mode bypasses login ONLY when no password is set; we now force one, but
-# warn loudly if it's enabled so it isn't left on by accident in production.
+# DEV_OPEN_ADMIN ouvre l'admin SANS login tant qu'aucun compte n'existe — et une instance
+# neuve est justement dans cet état, désormais, jusqu'à la première visite. Ce drapeau est
+# donc plus dangereux qu'avant : on l'annonce fort s'il est resté activé.
 if docker compose exec -T itsm python -c "from itsm_modern_ai.config.settings import get_settings as g; import sys; sys.exit(0 if g().dev_open_admin else 1)" >/dev/null 2>&1; then
   check_add "Open-admin (DEV_OPEN_ADMIN)" "warn:ENABLED — disable for production (DEV_OPEN_ADMIN=false)"
 fi
@@ -630,7 +814,20 @@ if $allgood; then
   else
     printf '   Console : %shttp://localhost:%s%s\n' "$c_grn" "$PORT" "$c_off"
   fi
-  echo "   Configurez GLPI, le fournisseur LLM et le perimetre depuis la console web."
+  if admin_is_set; then
+    echo "   Connectez-vous avec votre compte administrateur."
+  else
+    echo
+    printf '%s== A FAIRE MAINTENANT : creer le compte administrateur ==%s\n' "$c_yel" "$c_off"
+    echo "   Ouvrez l'URL ci-dessus : le premier ecran demande une adresse email et un"
+    echo "   mot de passe (min. 8 caracteres). C'est le compte administrateur unique."
+    warn "Tant que ce compte n'existe pas, QUICONQUE ATTEINT CE PORT peut le creer"
+    warn "et prendre le controle de l'instance : n'exposez pas ce port publiquement"
+    warn "avant d'avoir termine cette etape."
+    echo "   (Mot de passe oublie plus tard : ./install.sh --reset-password)"
+    echo
+  fi
+  echo "   Configurez ensuite GLPI, le fournisseur LLM et le perimetre depuis la console."
   echo "   Devenir Supporter : collez votre cle de licence dans la page Supporter."
   # Procedure de retour arriere annoncee AVANT d'en avoir besoin : a 2 h du matin, on ne
   # cherche pas la commande, on la relit dans le journal de la mise a jour.

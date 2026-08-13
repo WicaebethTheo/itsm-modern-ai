@@ -1,3 +1,378 @@
+## 2026-08-12 — 0.9.80 — L'interface cesse d'affirmer ce qu'elle n'a pas mesuré
+
+Une revue écran par écran de la console. Le fil rouge n'était pas esthétique : à plusieurs
+endroits l'interface affirmait des choses qu'elle n'avait pas mesurées, ou nommait mal ce
+qu'elle montrait. Aucun changement de comportement du moteur.
+
+### Ce qui était faux
+
+- **Un moteur qui n'a jamais bouclé s'affichait en vert.** Le moteur sérialise toujours son
+  bloc de dernier cycle avec `has_run: false` et des compteurs à zéro ; la console testait la
+  présence de valeurs non nulles, et `0` n'est pas `null` — « aucun cycle exécuté » était donc
+  classé « a tourné ». C'était le mauvais diagnostic pour le symptôme n°1 que la page Statut
+  existe pour rendre visible.
+- **Les tuiles de Statut affirmaient « En pause » et « Non configuré » pendant le chargement**,
+  et après une panne d'API. Aucune de ces affirmations n'était mesurée.
+- **L'âge du dernier cycle se figeait à l'ouverture de la page** : « cycle trop ancien » ne
+  pouvait donc jamais se déclencher sur un onglet resté ouvert.
+- **La courbe « Coût LLM » du tableau de bord traçait le volume de tickets**, le badge « live »
+  ne rafraîchissait rien, et l'en-tête annonçait « 14 jours » sur des compteurs cumulés depuis
+  la mise en service.
+- **La carte de rétention affichait des durées sans dire si la purge était activée** : purge
+  coupée, on lisait « 30 j » et on en concluait que les données étaient purgées.
+- **Un module Supporter « à venir » s'affichait « Débloqué »** dès qu'une licence l'autorisait,
+  et une licence ne couvrant pas un module affichait quand même « Activez votre licence ».
+- **Le motif de refus s'affichait en anglais brut** (`technician_not_in_whitelist`), et la
+  Sandbox le rangeait sous « Validation liste blanche » y compris pour un refus de seuil.
+
+### Ce qui pouvait vous coûter quelque chose
+
+- **« Scanner GLPI » effaçait la saisie en cours** sur Périmètre, Techniciens et Groupes : le
+  rechargement des référentiels réinitialisait le brouillon, sans un mot.
+- **Une absence du jour masquait toutes les absences à venir**, sur la seule vue de planification.
+- **Les navigateurs proposaient d'enregistrer le jeton GLPI et la clé LLM** dans leur
+  gestionnaire de mots de passe synchronisé — un secret qui sortait du coffre Fernet par une
+  porte non prévue.
+- **Les messages anti-SSRF se perdaient en « API 422 »** : les 422 de FastAPI portent leur
+  détail dans un tableau, que le client n'ouvrait pas.
+- **Le mode semi-auto n'avertissait pas qu'il écrit dans GLPI**, alors que la page Périmètre le
+  faisait pour le même réglage.
+- **Périmètre armait « Enregistrer » sur une page que personne n'avait touchée.** Le compteur
+  de modifications compare l'écran au serveur ; il comparait à la réponse dès son arrivée,
+  soit un rendu avant que l'écran en soit issu. Le temps d'un rafraîchissement, N lignes
+  cochées côté serveur face à un écran encore vide se lisaient « N modification(s) non
+  enregistrée(s) », et le bouton d'écriture devenait cliquable. Il compare désormais à la
+  version du serveur dont l'écran est effectivement issu.
+
+### Menu latéral
+
+Toutes les entrées portent une **icône** — elles étaient quatre sur quinze, et ces quatre-là
+donnaient à « Opération » un relief que les deux autres sections n'avaient pas. Chaque section
+est désormais une **liste nommée par son intertitre** : « Opération / Configuration / Avancé »
+n'était que du texte gris pour un lecteur d'écran, qui annonçait quinze liens à plat.
+
+Le classement répond à trois questions distinctes — ce que le moteur **a fait** (écrans de
+lecture), ce qu'il a **le droit** de faire (les garde-fous), et les outils qu'on n'ouvre pas
+toutes les semaines. Deux entrées changent donc de section :
+
+- **« Connexion GLPI » passe en Configuration.** On y saisit une URL, un jeton, et on teste :
+  c'est un réglage. L'état de la connexion, lui, est déjà porté par le chip de la topbar et
+  par la page Statut, qui sont, eux, des écrans de lecture.
+- **« Coûts & quotas » passe en Opération.** La page le dit elle-même en pied d'écran : « le
+  plafond et les tarifs se règlent dans Moteur, cette page est en lecture seule ».
+
+Dans « Configuration », l'ordre suit le pipeline de triage : d'où viennent les tickets, qui
+les lit, sous quelles limites, sur quel périmètre, vers qui, avec quel masquage.
+
+### Le Moteur devient une section, et chaque écran règle ce qu'il montre
+
+La page **Moteur** portait dix-sept contrôles, en sept cartes et quatre thèmes sans rapport :
+les bornes de sécurité du triage y voisinaient avec la fenêtre d'analyse d'un graphique et le
+ton d'une réponse. Le tout derrière un **unique « Enregistrer » qui réécrivait les dix-sept
+réglages d'un coup** — deux onglets ouverts se défaisaient donc l'un l'autre en silence.
+
+Elle devient une **section du menu**, avec quatre écrans qui suivent l'ordre du pipeline :
+
+| Écran | Ce qu'il règle |
+|---|---|
+| **Garde-fous** | seuil de confiance · plafond de coût €/jour · tentatives LLM |
+| **Modes d'exécution** | mode par défaut · seuil du mode semi-auto |
+| **Ingestion** | polling activé · intervalle |
+| **Prompt & réponse** | prompt système · ton · signature · consignes de routage |
+
+Chaque écran n'envoie plus que **ses propres clés** (`ConfigUpdate` est un patch côté
+serveur) : un écran ne peut plus écraser les réglages d'un autre. L'écran qui peut **armer une
+écriture GLPI** est enfin seul sur le sien, avec sa confirmation et son avertissement.
+
+Deux cartes ont quitté le moteur pour la page qui possède leur sujet :
+
+- **Les quatre bascules de masquage rejoignent Confidentialité (DPO).** Cette page expliquait
+  à la DPO ce qui sort en clair sans pouvoir y changer quoi que ce soit, tandis que le seul
+  écran capable d'éteindre un motif s'appelait « Moteur ». Le tableau dit ce qui sort, la
+  carte juste en dessous en décide — et le tableau est relu après l'enregistrement, sinon il
+  démentait ce qu'on venait de faire.
+- **La fenêtre d'analyse et le seuil d'anomalie rejoignent le Tableau de bord**, dont le
+  libellé disait déjà « sans effet sur le triage ». Les métriques sont recalculées côté
+  serveur : la page les relit, au lieu d'annoncer une fenêtre qu'elle n'affiche pas encore.
+
+⚠️ **`/engine` redirige** vers *Garde-fous* : aucun signet ni lien de doc ne casse.
+
+### Typographie — la police du produit n'avait jamais été chargée
+
+`--font-sans` déclarait `"Geist Variable"` depuis la première version, avec ce commentaire :
+« tant que le paquet n'est pas installé, le fallback s'applique sans casse ». Le paquet n'avait
+jamais été installé et aucun fichier ne l'importait : le document ne portait **aucune**
+`@font-face`, et `"Geist Variable"` mesurait exactement comme une famille inventée. Toute la
+console tournait donc sur la police par défaut du navigateur — c'est-à-dire sur une police
+différente d'un poste à l'autre. Un stack de polices échoue toujours en silence : c'est sa
+raison d'être. **Geist est désormais embarquée**, servie par l'instance (aucun CDN, l'invariant
+de souveraineté tient, et une instance air-gap affiche la même chose qu'une autre) ; le
+navigateur ne télécharge que le sous-ensemble latin, 29 Ko. Deux tests E2E verrouillent le
+point : la police est *chargée* et non seulement déclarée, et aucune requête ne quitte la
+machine.
+
+`-webkit-font-smoothing: antialiased` est retiré. Il coupe le rendu sous-pixel : flatteur sur
+un écran Retina, il jette sur un écran 1× — la majorité des postes d'exploitation — les deux
+tiers de l'information que la dalle sait afficher, et le texte paraît pâle et cotonneux.
+
+Les icônes de la barre latérale sont dessinées dans un carré de 24 et rendues à 16 px : avec
+le trait par défaut de la bibliothèque, elles peignaient un trait de **1,31 px**, à cheval sur
+deux colonnes de pixels. Il vaut désormais **1 px pile**, comme les SVG dessinés à la main
+qu'elles remplacent (1,7 sur 14 px).
+
+### Compte administrateur
+
+L'entête passe de neuf objets à quatre, et affiche enfin **quel compte est connecté**
+(`GET /api/auth/me`, authentifiée — `/api/auth/status` reste publique et sans adresse, un test
+le verrouille). Nouvelle page **Compte & sécurité** : changer son mot de passe ne demande plus
+de passer par `docker compose exec`. La route partage le compteur anti-brute-force de la
+connexion, et toutes les sessions tombent au changement.
+
+### Aussi
+
+Recherche et filtre sur le Journal, qui dit désormais que sa liste est plafonnée. Tableaux qui
+défilent au lieu d'être coupés sans barre de défilement. `by_reason` affiché sur le tableau de
+bord — la seule donnée qui dise **quoi régler**. La Sandbox transmet enfin le titre du ticket,
+affiche le seuil requis, le coût de l'essai et le texte réellement envoyé au LLM. Treize
+tailles de texte ramenées à six rôles, une seule primitive de liste déroulante, libellés de
+formulaire enfin associés à leur champ, contraste du jaune corrigé en thème clair.
+
+Couverture front : cliquets remontés de 65/56/65 à **85/78/86**. **668 tests pytest**
+(652 avant), **358 Vitest** (194 avant), 7 Playwright.
+
+## 2026-08-11 — 0.9.70 — Le compte administrateur se crée à la première visite
+
+> ⚠️ **Version de rupture.** `ITSM_ADMIN_PASSWORD` et `ADMIN_PASSWORD` **ne sont plus lus**.
+> Une instance existante continue de fonctionner — le compte déjà en base n'est pas touché —
+> mais la connexion se fait désormais avec **une adresse email**, qu'un compte amorcé par
+> variable ne possède pas. Il faut donc lui en attribuer une :
+> `docker compose exec itsm python -m itsm_modern_ai.admin_setup --email-only vous@exemple.fr`
+
+### Le geste
+
+On déploie, on ouvre l'URL, on crée son compte. C'est tout.
+
+Avant, il fallait choisir un mot de passe **au moment de l'installation**, dans un fichier
+`.env` ou un champ de stack Portainer, et le passer par une variable d'environnement — c'est-
+à-dire l'écrire en clair quelque part avant même d'avoir vu le produit. Un écran d'accueil
+demande maintenant une adresse email, un mot de passe et sa confirmation, puis ouvre la
+session dans la foulée. Le premier écran du produit ressemble enfin à un produit.
+
+### ⚠️ Le risque que ça introduit, dit sans détour
+
+Entre le démarrage du conteneur et la création du compte, **quiconque atteint le port peut
+revendiquer l'administration de l'instance**. Il n'y a ni jeton d'amorçage, ni fenêtre
+temporelle : c'est un choix délibéré en faveur de la simplicité, pas un oubli.
+
+**N'exposez pas le port publiquement avant d'avoir créé votre compte.** Le moteur le rappelle
+lui-même : tant qu'aucun compte n'existe, un avertissement est journalisé **à chaque
+démarrage**, disant que l'instance est revendicable.
+
+### Mot de passe oublié
+
+C'est la question que pose immédiatement quiconque perd sa variable d'environnement, et la
+réponse n'existait nulle part. Le seul chemin de récupération est la ligne de commande :
+
+```bash
+docker compose exec itsm python -m itsm_modern_ai.admin_setup --force
+```
+
+Il n'y a **aucun email de réinitialisation** : l'accès shell à l'hôte *est* le facteur
+d'authentification de dernier recours. La CLI gère aussi `--email`, `--email-only` (changer
+l'adresse sans toucher au secret ni révoquer les sessions), `--display-name` et `--check`.
+
+### Ce qui a été retiré
+
+`Settings.admin_password`, l'amorçage paresseux de `security.py`, le bloc d'amorçage de
+l'entrypoint, la saisie de mot de passe de `install.sh` et sa porte dure qui refusait de
+terminer sans compte configuré, et la variable dans les deux composes et `.env.example`.
+
+**Un bug est corrigé au passage** : `admin_setup` lisait la variable d'environnement **avant**
+l'entrée standard et avant la saisie interactive. Dans un conteneur portant encore la
+variable, `--force` réinstallait donc silencieusement le même mot de passe **en affichant un
+message de succès** — mesuré, l'ancien mot de passe continuait d'authentifier. La CLI ne
+consulte plus l'environnement du tout.
+
+### Connexion par email
+
+L'échec de connexion ne permet **jamais** de distinguer « adresse inconnue » de « mot de passe
+faux » : même code, même message, et le hash Argon2 est vérifié dans tous les cas pour ne pas
+ouvrir un canal temporel qui révélerait l'existence d'une adresse. L'email est comparé sans
+tenir compte de la casse ni des espaces de bord, et **n'apparaît sur aucune réponse publique**.
+
+L'endpoint de création est public mais fail-closed — il refuse dès qu'un compte existe (409) —
+et passe par le **même limiteur de tentatives** que la connexion, sans quoi il offrirait un
+point de force brute non compté.
+
+### Le smoke test de publication est meilleur qu'avant
+
+Il vérifiait la présence d'un message dans les journaux du conteneur. Il exerce désormais le
+parcours réel sur l'image construite : création (200), rejeu refusé (409), connexion avec les
+identifiants créés (200).
+
+### Tests
+
+**596 → 652** backend, **153 → 194** frontend (26 fichiers), 7 parcours Playwright. Couverture
+backend 89 %.
+
+## 2026-08-11 — 0.9.60 — PostgreSQL exclusif : SQLite est retiré du produit
+
+> ⚠️ **Version de rupture.** Le moteur ne sait plus lire une base SQLite. Une instance
+> existante **ne peut pas être mise à jour en place** : la base repart vierge. Aucun outil de
+> migration SQLite → PostgreSQL n'est fourni, et il n'y en aura pas — la seule chose à
+> conserver est la `master.key`, sans laquelle les secrets déjà chiffrés seraient perdus.
+> La montée de version mineure marque cette rupture.
+
+### Pourquoi
+
+SQLite tenait le pilote, mais son mono-écrivain et son typage laxiste plafonnaient tout le
+reste : pas de second worker, pas de sauvegarde chaude réellement vérifiable, un typage
+temporel qui a déjà coûté deux migrations correctives. Le portage PostgreSQL existait depuis
+plusieurs versions en « Beta » et n'était **testé nulle part** — la CI tournait en SQLite.
+Deux bases supportées dont une non testée, ce n'est pas un choix offert à l'exploitant, c'est
+une dette qui attend. PostgreSQL devient la seule base, et elle est testée pour de bon.
+
+### Ce que ça coûte, dit franchement
+
+La stack passe **d'un service à deux**. Le `docker run` d'un seul conteneur disparaît au
+profit d'un réseau et de deux volumes (`itsm_data` pour la `master.key`, un volume dédié au
+PGDATA). Compter environ **250 Mio réservés** pour la base en plus des 128 Mio du moteur.
+Et il faut désormais **suivre une majeure PostgreSQL** : le répertoire de données n'est pas
+compatible d'une majeure à l'autre.
+
+Le produit est livré en **PostgreSQL 17**, épinglé de façon solidaire entre l'image, les deux
+composes et la CI — un client désaligné casse la restauration, ce qui est vérifié par un test.
+
+### Sauvegarde : réécrite, et vérifiée en deux temps
+
+`VACUUM INTO` et `PRAGMA integrity_check` laissent la place à `pg_dump --format=custom`. La
+garantie de 0.9.56 — une sauvegarde est **produite ET vérifiée** — est conservée, avec deux
+contrôles distincts et tous deux nécessaires :
+
+1. **structure** : `pg_restore --list` relit l'en-tête et le sommaire, et l'on exige une
+   entrée `TABLE DATA` pour chaque table de la base vive ;
+2. **contenu** : `pg_restore --data-only` relit l'archive **en entier** et recompte les lignes
+   table par table contre la base.
+
+Le second n'est pas du luxe : une archive `--schema-only` passe le premier contrôle, et une
+archive tronquée aussi — le sommaire est en tête de fichier. Le mot de passe passe par
+`PGPASSWORD` et jamais par la ligne de commande, où `ps` le lirait.
+
+La `master.key` reste jointe à la sauvegarde, ou son absence explicitement signalée. Le client
+`pg_dump` est embarqué dans l'image : la voie *pull-only* reste sauvegardable sans les sources.
+
+### Restauration : elle restaure enfin
+
+`install.sh --rollback` se contentait, sur PostgreSQL, d'**afficher** une marche à suivre. Elle
+est désormais réellement automatisée — et corrigée d'un piège qui l'aurait rendue nuisible :
+une restauration par `pg_restore --clean` ne supprime que les objets **présents dans
+l'archive**, donc une table créée par une migration postérieure survivait pendant que le
+numéro de révision, lui, était rembobiné. Le retour arrière semblait réussir, et c'est la
+**mise à jour suivante** qui mourait sur un `DuplicateTable`. Le schéma est maintenant remis à
+plat après que le dump de sécurité a été pris et vérifié.
+
+Cette opération étant destructive, elle exige désormais une confirmation **explicite** : taper
+l'horodatage de la sauvegarde. Elle ne s'auto-confirme plus hors terminal, et elle refuse de
+s'exécuter plutôt que de demander quand l'état courant n'est pas sauvegardable.
+
+### Garde-fou `master.key` durci
+
+Le garde-fou qui empêche de générer une clé neuve par-dessus des secrets déjà chiffrés lisait
+le fichier de base voisin ; il interroge désormais le moteur. En le portant, deux trous sont
+apparus :
+
+- le moteur était ouvert **après** la construction de la boîte à secrets, si bien que le
+  garde-fou répondait toujours « indéterminé » et ne protégeait plus rien ;
+- une base injoignable était confondue avec une base vide — l'instance écrivait alors une clé
+  neuve, et comme le fichier existait au démarrage suivant, **plus aucun boot n'avertissait**.
+  L'instance tournait « au vert » avec des secrets définitivement muets.
+
+Les deux sont corrigés : le moteur est ouvert en premier, et « je n'ai pas pu poser la
+question » est désormais distinct de « la base est vide ». Dans le doute, on refuse de démarrer
+plutôt que d'écrire un fichier irréversible.
+
+### Deux migrations publiées corrigées
+
+`c1a7e4b2` et `d2f8a9c5` convertissaient les colonnes temporelles en `timestamptz` sans clause
+`USING`. Sur un serveur dont le fuseau n'est pas UTC, PostgreSQL interprète alors les valeurs
+existantes dans **son** fuseau : mesuré, un horodatage à 12:00 UTC devenait 11:00. Le journal
+d'audit est la donnée concernée. Concerne une base PostgreSQL non-UTC **pas encore** passée par
+ces révisions ; une base déjà migrée a subi le décalage et il n'est pas rattrapable.
+
+Deux colonnes `updated_at` étaient par ailleurs restées sans fuseau : une révision les aligne.
+
+### Exploitation
+
+Le moteur **attend la base** avant de migrer, avec un plafond de tentatives et un échec
+explicite — sans quoi le premier `up` partait en crash-loop. Un garde refuse de démarrer sur un
+répertoire de données d'une autre majeure, en donnant la procédure, plutôt que de laisser
+l'exploitant face à un `FATAL` de PostgreSQL en boucle. Le service de base entre dans le
+contrat d'exploitation testé : limites de ressources, rotation des journaux, durcissement.
+
+Correction d'une anomalie plus ancienne : sous Compose, `environment:` l'emporte sur
+`env_file:`, si bien que poser `DATABASE_URL` dans le `.env` — ce que la documentation
+demandait — **n'avait aucun effet**. La molette est `ITSM_DATABASE_URL`, et c'est écrit.
+
+### Tests
+
+**555 → 596**, couverture 88 %. La fixture de test crée un **schéma PostgreSQL jetable par
+test** : lancer la suite exige donc un serveur (`TEST_DATABASE_URL`), et `docs/testing.md`
+explique comment le monter. La CI installe le client aligné sur le serveur — sans quoi les
+tests de sauvegarde se **sautaient en silence** sans rien faire rougir.
+
+## 2026-08-11 — 0.9.57 — « Congés & remplaçants » remonte en tête + rétroéclairage du châssis
+
+Trois corrections d'ergonomie et d'interface, sans aucun changement de comportement moteur.
+
+### 1. Les congés ne sont plus enterrés en bas de page
+
+La carte « Congés & remplaçants » vivait **sous** la liste des techniciens : pour déclarer une
+absence il fallait dérouler tout le référentiel. Or c'est le geste le plus fréquent et le plus
+urgent de la page — un technicien absent qu'on oublie de déclarer reste dans le périmètre et
+continue de se voir assigner des tickets.
+
+La carte remonte donc **en tête**, juste sous la barre du haut, avec :
+
+- une **ligne de résumé permanente** qui dit l'état du jour d'un coup d'œil (« Toute l'équipe
+  est disponible aujourd'hui », ou la liste des absents et de leurs remplaçants) ;
+- un bouton primaire **« Déclarer une absence »** ;
+- la table repliée derrière, pour ne pas repousser le référentiel plus bas qu'avant ;
+- un **bouton calendrier sur chaque ligne de technicien** éligible, qui ouvre la table avec la
+  ligne déjà pré-remplie pour l'intéressé — on part de la personne, plus du formulaire.
+
+Le calcul des **domaines perdus** (compétences que plus personne ne couvre pendant l'absence)
+ignore volontairement deux cas : les domaines tenus par un **groupe** (le repli groupe joue son
+rôle) et ceux que **personne ne tenait déjà** — signaler un trou structurel comme une
+conséquence de l'absence serait un faux positif. L'héritage par le remplaçant est pris en
+compte sur un saut.
+
+### 2. Rétroéclairage du châssis
+
+Le panneau applicatif reçoit une **lumière tenue derrière lui**, jamais au-dessus : trois
+nappes portant la même géométrie de lobes mais des arrangements de teintes décalés, dont le
+barycentre se déplace lentement. Rien ne tourne, seuls les dosages varient — deux horloges
+indépendantes (dérive 19/23/29 s, fondu 7/11/13 s), toutes périodes premières entre elles pour
+qu'aucun motif ne se répète de façon perceptible.
+
+Le liseré de contour est construit en **anneau réel** (`padding` + soustraction de masques),
+pas en rectangle plein masqué par le panneau : la lumière ne peut donc **structurellement** pas
+déborder au centre, y compris pendant l'animation d'entrée où le panneau est encore translucide.
+
+Tout est en `opacity`/`transform` seuls — travail du compositeur, zéro *reflow*. Les couches
+décoratives sont `aria-hidden` et `pointer-events: none`, et le respect de
+`prefers-reduced-motion` neutralise **délais compris**.
+
+### 3. Le widget flottant rentre dans la fenêtre
+
+Les boutons GitHub et « café » se posaient à cheval sur la bordure du châssis — moitié dedans,
+moitié dehors. Leurs décalages passent au-dessus du *padding* du fond, ce qui les place
+franchement à l'intérieur du panneau (16 px de marge sur les deux axes).
+
+### Tests
+
+Frontend : **141 → 153** (22 fichiers), dont la couverture du nouveau parcours de déclaration
+d'absence et du pré-remplissage depuis une ligne de technicien.
+
 ## 2026-08-09 — 0.9.56 — Sauvegarde accessible en déploiement *pull-only* + fenêtre de doublon refermée
 
 Deux trous d'exploitation identifiés en revue de préparation à la production.

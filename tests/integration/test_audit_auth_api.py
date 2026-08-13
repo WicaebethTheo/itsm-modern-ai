@@ -23,12 +23,12 @@ def _seed_decision():
         return journal.record_decision(s, 100, outcome, glpi_link="http://glpi/100")
 
 
-def _settings(tmp_path, **kw) -> Settings:
+def _settings(db_url, **kw) -> Settings:
     kw.setdefault("dev_open_admin", True)  # défaut test : admin ouvert sans mot de passe
     kw.setdefault("session_https_only", False)  # TestClient = http → cookie non-Secure
     return Settings(
         _env_file=None,  # isole du .env ambiant
-        database_url=f"sqlite:///{tmp_path / 'a.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         **kw,
@@ -37,12 +37,12 @@ def _settings(tmp_path, **kw) -> Settings:
 
 # ── Auth NON configurée (pilote ouvert) ──────────────────────────────────────
 @pytest.fixture
-def open_client(tmp_path):
-    with TestClient(create_app(_settings(tmp_path))) as c:
+def open_client(db_url):
+    with TestClient(create_app(_settings(db_url))) as c:
         yield c
 
 
-def test_journal_open_when_no_admin_password(open_client):
+def test_journal_open_when_no_admin_account(open_client):
     did = _seed_decision()
     r = open_client.get("/api/decisions")
     assert r.status_code == 200 and r.json()[0]["ticket_id"] == 100
@@ -168,9 +168,16 @@ def test_exports_servis_en_flux_avec_piece_jointe(open_client, chemin, fichier, 
 
 
 # ── Auth configurée ───────────────────────────────────────────────────────────
+# Le compte se crée désormais PAR HTTP, à la première visite : il n'y a plus aucun
+# amorçage par variable d'environnement à injecter dans les `Settings`.
+EMAIL = "admin@exemple.fr"
+PASSWORD = "s3cret-pilote"
+
+
 @pytest.fixture
-def secured_client(tmp_path):
-    with TestClient(create_app(_settings(tmp_path, admin_password="s3cret-pilote"))) as c:
+def secured_client(db_url, creer_compte_admin):
+    with TestClient(create_app(_settings(db_url, dev_open_admin=False))) as c:
+        creer_compte_admin(c, email=EMAIL, password=PASSWORD)
         yield c
 
 
@@ -181,8 +188,10 @@ def test_protected_without_login_is_401(secured_client):
 
 
 def test_login_then_access(secured_client):
-    assert secured_client.post("/api/auth/login", json={"password": "wrong"}).status_code == 401
-    ok = secured_client.post("/api/auth/login", json={"password": "s3cret-pilote"})
+    assert secured_client.post(
+        "/api/auth/login", json={"email": EMAIL, "password": "wrong"}
+    ).status_code == 401
+    ok = secured_client.post("/api/auth/login", json={"email": EMAIL, "password": PASSWORD})
     assert ok.status_code == 200 and ok.json()["authenticated"] is True
     # session active → accès autorisé
     _seed_decision()
@@ -198,52 +207,58 @@ def test_auth_status_reports_configured(secured_client):
     assert body["auth_configured"] is True and body["authenticated"] is False
 
 
-def test_auth_status_reflects_dev_open_access(tmp_path):
+def test_auth_status_reflects_dev_open_access(db_url):
     # `authenticated` reflète les règles d'accès de require_auth (dev_open inclus) :
     # le frontend s'y fie seul — sinon boucle de redirection en fail-closed.
-    with TestClient(create_app(_settings(tmp_path))) as c:  # dev_open, non configuré
+    with TestClient(create_app(_settings(db_url))) as c:  # dev_open, non configuré
         body = c.get("/api/auth/status").json()
         assert body["auth_configured"] is False and body["authenticated"] is True
 
 
-def test_auth_status_fail_closed_not_authenticated(tmp_path):
-    with TestClient(create_app(_settings(tmp_path, dev_open_admin=False))) as c:
+def test_auth_status_fail_closed_not_authenticated(db_url):
+    with TestClient(create_app(_settings(db_url, dev_open_admin=False))) as c:
         body = c.get("/api/auth/status").json()
         assert body["auth_configured"] is False and body["authenticated"] is False
 
 
 # ── Rate-limiting du login (FR-24 durci) ─────────────────────────────────────
-def test_login_rate_limited_after_repeated_failures(tmp_path):
+def test_login_rate_limited_after_repeated_failures(db_url, creer_compte_admin):
     # Seuil bas pour déclencher vite ; fenêtre/blocage longs pour rester bloqué.
-    settings = _settings(tmp_path, admin_password="s3cret-pilote", login_max_attempts=3)
+    settings = _settings(db_url, dev_open_admin=False, login_max_attempts=3)
     with TestClient(create_app(settings)) as c:
+        creer_compte_admin(c, email=EMAIL, password=PASSWORD)
         # 3 échecs → le 3e franchit le seuil (toujours 401, mais arme le blocage).
         for _ in range(3):
-            assert c.post("/api/auth/login", json={"password": "nope"}).status_code == 401
+            assert c.post(
+                "/api/auth/login", json={"email": EMAIL, "password": "nope"}
+            ).status_code == 401
         # 4e tentative : bloquée même avec le bon mot de passe.
-        blocked = c.post("/api/auth/login", json={"password": "s3cret-pilote"})
+        blocked = c.post("/api/auth/login", json={"email": EMAIL, "password": PASSWORD})
         assert blocked.status_code == 429
         assert "Retry-After" in blocked.headers
         assert blocked.json()["detail"]["code"] == "too_many_attempts"
 
 
-def test_login_success_resets_counter(tmp_path):
-    settings = _settings(tmp_path, admin_password="s3cret-pilote", login_max_attempts=3)
+def test_login_success_resets_counter(db_url, creer_compte_admin):
+    settings = _settings(db_url, dev_open_admin=False, login_max_attempts=3)
     with TestClient(create_app(settings)) as c:
+        creer_compte_admin(c, email=EMAIL, password=PASSWORD)
+        rate = {"email": EMAIL, "password": "nope"}
+        bon = {"email": EMAIL, "password": PASSWORD}
         # 2 échecs (sous le seuil), puis un succès qui réinitialise le compteur.
-        c.post("/api/auth/login", json={"password": "nope"})
-        c.post("/api/auth/login", json={"password": "nope"})
-        assert c.post("/api/auth/login", json={"password": "s3cret-pilote"}).status_code == 200
+        c.post("/api/auth/login", json=rate)
+        c.post("/api/auth/login", json=rate)
+        assert c.post("/api/auth/login", json=bon).status_code == 200
         c.post("/api/auth/logout")
         # Le compteur est reparti de zéro : 2 nouveaux échecs ne bloquent pas.
-        c.post("/api/auth/login", json={"password": "nope"})
-        c.post("/api/auth/login", json={"password": "nope"})
-        assert c.post("/api/auth/login", json={"password": "s3cret-pilote"}).status_code == 200
+        c.post("/api/auth/login", json=rate)
+        c.post("/api/auth/login", json=rate)
+        assert c.post("/api/auth/login", json=bon).status_code == 200
 
 
 # ── Fail-closed : aucun mot de passe + dev_open_admin=False → refus (durcissement) ──
-def test_admin_fail_closed_when_no_password_and_not_dev_open(tmp_path):
-    settings = _settings(tmp_path, dev_open_admin=False)  # ni password ni ouverture explicite
+def test_admin_fail_closed_when_no_password_and_not_dev_open(db_url):
+    settings = _settings(db_url, dev_open_admin=False)  # ni password ni ouverture explicite
     with TestClient(create_app(settings)) as c:
         # Routes protégées : refus systématique (401), pas d'accès « ouvert ».
         assert c.get("/api/decisions").status_code == 401
@@ -252,7 +267,7 @@ def test_admin_fail_closed_when_no_password_and_not_dev_open(tmp_path):
 
 
 # ── Fail-safe déchiffrement : hash admin illisible (MASTER_KEY incohérente) ──────
-def test_login_does_not_500_when_admin_hash_unreadable(tmp_path):
+def test_login_does_not_500_when_admin_hash_unreadable(db_url):
     """Si le hash admin a été chiffré avec une autre MASTER_KEY (rotation/perte de clé),
     le login NE doit PAS crasher en 500 : il retombe en fail-closed 401 clair."""
     from itsm_modern_ai.adapters.secrets.encrypted import FernetSecretsBox
@@ -260,7 +275,7 @@ def test_login_does_not_500_when_admin_hash_unreadable(tmp_path):
     from itsm_modern_ai.persistence import db
     from itsm_modern_ai.services.runtime_config import RuntimeConfigService
 
-    settings = _settings(tmp_path, dev_open_admin=False)
+    settings = _settings(db_url, dev_open_admin=False)
     app = create_app(settings)
     with TestClient(app) as c:
         # Stocke un hash admin chiffré avec une clé DIFFÉRENTE de celle de l'app.
@@ -270,7 +285,7 @@ def test_login_does_not_500_when_admin_hash_unreadable(tmp_path):
                 security.HASH_KEY, "fake-argon2-hash"
             )
         # Login : le hash est illisible → 401 (fail-closed), jamais 500.
-        r = c.post("/api/auth/login", json={"password": "whatever"})
+        r = c.post("/api/auth/login", json={"email": "admin@exemple.fr", "password": "whatever"})
         assert r.status_code == 401
         # Les routes protégées restent refusées proprement (pas de 500).
         assert c.get("/api/decisions").status_code == 401

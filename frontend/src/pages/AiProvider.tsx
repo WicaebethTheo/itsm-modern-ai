@@ -160,7 +160,7 @@ export function AiProvider() {
               )}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium">
+                <span className="flex min-w-0 items-center gap-1.5 text-ui font-medium">
                   {live && (
                     <span title={t("En service", "In service")} className="flex items-center">
                       <Dot tone="green" pulse />
@@ -178,7 +178,7 @@ export function AiProvider() {
                 </span>
                 {on && <Tag tone="indigo">{t("Actif", "Active")}</Tag>}
               </div>
-              <div className="mt-1.5 text-[11px] text-muted-foreground">
+              <div className="mt-1.5 text-caption text-muted-foreground">
                 {t(PROVIDER_DESC[p].fr, PROVIDER_DESC[p].en)}
               </div>
             </button>
@@ -187,7 +187,7 @@ export function AiProvider() {
       </div>
 
       {NON_SOVEREIGN.includes(provider) && (
-        <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[12.5px] text-warning">
+        <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-body text-warning">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           {t(
             `${PROVIDER_LABELS[provider]} est hors UE (non-souverain) — à valider avec la DPO.`,
@@ -196,7 +196,7 @@ export function AiProvider() {
         </div>
       )}
       {provider === "ollama" && (
-        <p className="text-[12.5px] text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           {t(
             "Modèle local : aucune donnée ne sort de votre infrastructure, aucune clé requise.",
             "Local model: no data leaves your infrastructure, no key required.",
@@ -209,7 +209,7 @@ export function AiProvider() {
           title={t("Configuration", "Configuration")}
           subtitle={PROVIDER_LABELS[provider]}
         />
-        <CardContent className="flex flex-col gap-4 p-5">
+        <CardContent className="flex flex-col gap-4">
           <Field label={t("URL de base", "Base URL")}>
             <Input
               key={`${provider}-base`}
@@ -237,9 +237,17 @@ export function AiProvider() {
                 )
               }
             >
+              {/* `autoComplete="new-password"` et un `name` explicite : sans eux le
+                  navigateur propose d'enregistrer la clé API dans son gestionnaire de mots
+                  de passe (avec synchronisation cloud) — une sortie du coffre Fernet par une
+                  porte que le produit n'a jamais prévue. `"off"` ne convient pas : Chrome
+                  documente cette valeur comme IGNORÉE sur un champ `type="password"`. */}
               <Input
                 key={`${provider}-key`}
+                name={`${provider}-api-key`}
                 type="password"
+                autoComplete="new-password"
+                spellCheck={false}
                 placeholder={t("(inchangée)", "(unchanged)")}
                 onChange={(e) => set(f.secretKey as keyof ConfigUpdate, e.target.value)}
               />

@@ -1,3 +1,18 @@
+/* Geist, AUTO-HÉBERGÉE. Le stack `--font-sans` la déclarait depuis toujours sans que
+   personne ne l'ait jamais installée : le document ne portait AUCUNE `@font-face`, et
+   `"Geist Variable"` mesurait exactement comme une famille inventée. Toute la console
+   tournait donc sur la police par défaut du navigateur — le « fallback sans casse » du
+   commentaire ci-dessous, qui aura duré.
+
+   Le paquet embarque le fichier : rien n'est tiré d'un CDN, l'invariant de souveraineté
+   tient (une instance air-gap affiche la même chose qu'une autre). Cinq sous-ensembles
+   sont livrés, mais chacun porte son `unicode-range` : un navigateur en français ou en
+   anglais ne télécharge que le latin, soit 29 Ko. */
+@import "@fontsource-variable/geist";
+/* Idem pour la mono : `--font-mono` déclarait « Geist Mono Variable » sans que le paquet
+   soit installé — la MÊME police fantôme, restée en place quand la sans a été corrigée.
+   Elle sert aux identifiants de tickets, au prompt système et aux extraits de code. */
+@import "@fontsource-variable/geist-mono";
 @import "tailwindcss";
 
 /* Variante sombre activée par la classe `.dark` sur <html>. */
@@ -29,6 +44,26 @@
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
 
+  /* ÉCHELLE TYPOGRAPHIQUE — un rôle, une taille, un nom.
+     L'interface comptait treize valeurs pour cinq intentions, dont deux doublons stricts
+     (12px/xs et 18px/lg) : on ne pouvait plus dire, en lisant une classe, ce que la taille
+     signifiait. Ces jetons sont désormais les SEULES tailles de texte du code — plus aucune
+     valeur arbitraire `text-[…px]`.
+       caption 11    légende, méta, micro-titre en capitales
+       body    12,5  corps de texte, tableaux, bannières
+       ui      13    titre de panneau, libellés et contrôles de formulaire
+       title   15    titre de vue et nom du produit
+       metric  18    chiffre
+       hero    22    chiffre / titre d'accueil
+     Volontairement SANS hauteur de ligne associée : les tailles arbitraires n'en posaient
+     pas, et l'imposer ici bougerait le rythme vertical de toutes les pages d'un coup. */
+  --text-caption: 0.6875rem;
+  --text-body: 0.78125rem;
+  --text-ui: 0.8125rem;
+  --text-title: 0.9375rem;
+  --text-metric: 1.125rem;
+  --text-hero: 1.375rem;
+
   /* Police : Geist (auto-hébergé via @fontsource-variable) avec fallback système.
      Tant que le paquet n'est pas installé, le fallback s'applique sans casse. */
   --font-sans:
@@ -56,7 +91,11 @@
   --destructive: 0 72% 45%;
   --destructive-foreground: 0 0% 100%;
   --success: 152 55% 33%;
-  --warning: 38 92% 42%;
+  /* ~4,6:1 sur la carte blanche. L'ambre d'origine (38 92% 42%) tombait à ~3,2:1 alors
+     qu'il est rendu entre 11 et 12,5 px : sous le seuil AA pour du petit texte, et c'est
+     précisément la couleur des avertissements du moteur. Teinte conservée, luminosité
+     abaissée. La variante sombre, elle, est correcte et n'est pas touchée. */
+  --warning: 32 95% 32%;
   --border: 214 20% 88%;
   --input: 214 20% 84%;
   --ring: 239 84% 60%;
@@ -100,7 +139,11 @@
     color: hsl(var(--foreground));
     font-family: var(--font-sans);
     font-feature-settings: "ss01", "cv11";
-    -webkit-font-smoothing: antialiased;
+    /* PAS de `-webkit-font-smoothing: antialiased`. Cette ligne coupe le rendu SOUS-PIXEL :
+       sur un écran Retina elle affine le texte de façon flatteuse, mais sur un écran 1×
+       — la majorité des postes d'exploitation — elle jette les deux tiers de l'information
+       que l'écran sait afficher, et tout le texte paraît pâle et cotonneux. On laisse donc
+       le navigateur choisir : il sait, lui, sur quelle dalle il peint. */
     text-rendering: optimizeLegibility;
   }
   /* Focus visible cohérent (spec § 8). */
@@ -131,19 +174,34 @@
 
 /* === Châssis « embed » : la console flotte dans un conteneur centré === */
 
-/* Fond derrière le shell : jamais plat. Mesh indigo multi-stops (sobre, DSI) — un halo
-   principal en haut + deux accents froids hors-axe pour la profondeur, sur la teinte de base. */
+/* Fond derrière le shell : jamais plat. La teinte de base reste sur l'élément ; le mesh
+   indigo est porté par ::after (cf. plus bas) parce qu'un `background-image` ne s'anime
+   pas proprement — un calque dédié se pilote en opacity/transform, donc sur le compositeur. */
 .app-backdrop {
   position: relative;
-  isolation: isolate; /* contient le grain ::before sans déborder sur le reste */
+  isolation: isolate; /* contient les calques ::before/::after sans déborder sur le reste */
   background-color: hsl(var(--muted));
+}
+.dark .app-backdrop {
+  background-color: #060610;
+}
+
+/* Mesh indigo multi-stops (sobre, DSI) — un halo principal en haut + deux accents froids
+   hors-axe pour la profondeur. Calque séparé : c'est lui qui « s'allume » à l'arrivée. */
+.app-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  /* -2 : sous le grain (-1) et surtout sous le shell (0). Jamais au-dessus du contenu. */
+  z-index: -2;
+  pointer-events: none;
   background-image:
     radial-gradient(1100px 520px at 50% -8%, hsl(var(--primary) / 0.07), transparent 60%),
     radial-gradient(720px 620px at 102% -4%, hsl(252 90% 60% / 0.05), transparent 58%),
     radial-gradient(820px 720px at -6% 104%, hsl(217 91% 60% / 0.04), transparent 60%);
+  animation: backdrop-bloom 1100ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
-.dark .app-backdrop {
-  background-color: #060610;
+.dark .app-backdrop::after {
   background-image:
     radial-gradient(1100px 520px at 50% -8%, hsl(var(--primary) / 0.12), transparent 62%),
     radial-gradient(760px 640px at 102% -5%, hsl(252 90% 65% / 0.1), transparent 58%),
@@ -167,19 +225,393 @@
 .app-shell {
   position: relative;
   z-index: 0; /* au-dessus du grain ::before (z-index:-1) */
+  animation: shell-settle 900ms cubic-bezier(0.16, 1, 0.3, 1) 140ms backwards;
   box-shadow:
     0 10px 40px -14px rgb(0 0 0 / 0.22),
     0 2px 10px -6px rgb(0 0 0 / 0.14);
 }
 .dark .app-shell {
+  /* Ombre ALLÉGÉE (0.75 → 0.5, portée réduite) : depuis que le rétroéclairage est repassé
+     DERRIÈRE le panneau, cette ombre lui passe dessus et éteignait la lumière sur tout le
+     bas du cadre. On perd un peu de détachement, on gagne un halo d'intensité homogène sur
+     les quatre côtés — c'est le halo qui détache désormais le panneau du fond. */
   box-shadow:
-    0 24px 70px -24px rgb(0 0 0 / 0.75),
+    0 18px 50px -26px rgb(0 0 0 / 0.5),
     0 0 0 1px hsl(var(--border));
+}
+
+/* === Rétroéclairage du châssis : trois couches, TOUTES derrière le panneau ===
+   1. `.app-shell-frame::before` — la gaine, ombres externes qui épousent le contour ;
+   2. `.app-shell-aura`          — la nappe ondulante, confinée à une bande de 56 px ;
+   3. `.app-shell-glow`          — le filet, 2 px délicats posés sur l'arête.
+   Aucune n'est peinte après le shell : la lumière doit sembler venir de DERRIÈRE, pas se
+   poser dessus. Détail de chacune plus bas.
+
+   POURQUOI UN CONTENEUR EN PLUS (`.app-shell-frame`, ajouté dans Layout.tsx) :
+   `.app-shell` est `overflow-hidden` — c'est lui qui clippe la sidebar et le contenu
+   défilant. Le réflexe habituel (un `::before` du shell en `inset: -1px`, ou un halo qui
+   déborde vers l'extérieur) serait donc clippé net par ce même overflow : on ne verrait
+   rien. La lumière est pour cette raison un FRÈRE du shell, dans un cadre qui, lui, ne
+   clippe rien. Le cadre n'a ni taille ni padding propres : zéro décalage de mise en page.
+
+   POURQUOI UN VRAI ANNEAU, ET PAS UN RECTANGLE PLEIN RECOUVERT PAR LE SHELL :
+   la première version faisait exactement ça — un pavé lumineux posé DERRIÈRE un panneau
+   opaque, dont seul le débord restait visible. Ça ne tient qu'au repos : pendant son
+   entrée, `.app-shell` monte en opacité de 0 à 1 (cf. `shell-settle`), donc il est
+   TRANSLUCIDE pendant ~900 ms — et le pavé indigo se voyait au travers, en plein centre
+   de la console. Le centre ne doit rien avoir derrière lui : on découpe donc le calque
+   en anneau, par construction, et le résultat ne dépend plus d'aucune opacité ni d'aucun
+   ordre de peinture.
+
+   La découpe : `padding` = épaisseur de l'anneau, puis deux calques de masque dont on
+   soustrait l'intérieur (`mask-composite: exclude`). Les boîtes de masque respectent
+   `border-radius` — comme les fonds — donc les angles arrondis suivent tout seuls, y
+   compris le rayon INTÉRIEUR (rayon extérieur − padding = le `rounded-xl` du shell).
+   Fail-safe : le non-support de `mask-composite` ne dégrade pas en « pavé opaque » — le
+   `@supports` plus bas retire alors purement et simplement le calque (pas de lumière,
+   la console reste intacte). */
+.app-shell-frame {
+  position: relative; /* référentiel du calque lumineux */
+}
+.app-shell-glow {
+  position: absolute;
+  /* Le débord EST la largeur de l'anneau. Volontairement RAMENÉ à un filet de 2 px : à
+     4-5 px, le trait devenait le sujet et la console avait une bordure néon. La présence
+     lumineuse est désormais portée par la diffusion (gaine + nappe ondulante ci-dessous),
+     pas par l'épaisseur ni la saturation du trait. */
+  inset: -2px;
+  border-radius: calc(0.75rem + 2px); /* le `rounded-xl` du shell + le débord */
+  /* Épaisseur de l'anneau (box-sizing: border-box) : la boîte de contenu coïncide alors
+     EXACTEMENT avec le shell, et c'est elle qu'on soustrait juste en dessous. */
+  padding: 2px;
+  /* Découpe en anneau. Le masque borne aussi le rotor ::before (il s'applique à tout le
+     sous-arbre) : plus besoin d'`overflow: hidden`, qui clippait au demeurant à la boîte
+     de PADDING — donc précisément à l'intérieur, en mangeant l'anneau. */
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  /* Liseré RÉSIDUEL : l'état de repos, purement statique. C'est lui qui garantit un rendu
+     correct quand les animations sont coupées ou non supportées — jamais de bordure noire
+     ni de vide à la place de la lumière. */
+  background-image: linear-gradient(
+    135deg,
+    hsl(var(--primary) / 0.18),
+    hsl(var(--accent-purple) / 0.11) 50%,
+    hsl(var(--primary) / 0.15)
+  );
+  /* Mêmes keyframes que le shell, mêmes durée/délai : le contour se pose AVEC lui. Sans
+     ça, l'anneau flotterait seul dans le vide pendant que le panneau qu'il souligne est
+     encore en train d'apparaître. */
+  animation: shell-settle 900ms cubic-bezier(0.16, 1, 0.3, 1) 140ms backwards;
+}
+.dark .app-shell-glow {
+  /* 3 px en sombre parce que le shell y porte déjà un liseré OPAQUE de 1 px
+     (`box-shadow: 0 0 0 1px hsl(var(--border))` ci-dessus) qui mangerait le premier pixel
+     de lumière : 3 px de débord − 1 px de liseré = 2 px de lumière visible, comme en clair. */
+  inset: -3px;
+  border-radius: calc(0.75rem + 3px);
+  padding: 3px; /* l'anneau suit le débord, sinon la découpe ne coïnciderait plus */
+  background-image: linear-gradient(
+    135deg,
+    hsl(var(--primary) / 0.38),
+    hsl(var(--accent-purple) / 0.24) 50%,
+    hsl(var(--primary) / 0.3)
+  );
+}
+/* Sans découpe en anneau, le calque redeviendrait un rectangle plein derrière un panneau
+   qui est translucide pendant son entrée : la lumière baverait au centre de la console.
+   Plutôt que d'accepter cette dégradation, on retire le contour — l'effet est décoratif,
+   la console ne perd rien d'utile. */
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .app-shell-glow,
+  .app-shell-aura {
+    display: none;
+  }
+}
+
+/* === La nappe lumineuse : un rétroéclairage qui ondule, pas un néon qui tourne ===
+
+   CE QUI A CHANGÉ ET POURQUOI. La version précédente posait une comète nette qui faisait
+   UN tour lisible, plus un halo accroché APRÈS le shell. Résultat perçu : un calque ajouté
+   PAR-DESSUS la console, et une figure régulière — donc une bordure, pas de la lumière.
+   Ici, tout est derrière le panneau (rétroéclairage), et le motif est composé de lobes
+   larges et flous qui dérivent à des vitesses différentes : ça respire, ça ne défile pas.
+
+   LE MÉCANISME QUI INTERDIT AU CENTRE D'ÊTRE PEINT. Des lobes flous (`radial-gradient`)
+   peignent, eux, à l'intérieur de leur propre boîte : la garantie « une ombre externe ne
+   peint jamais dedans » ne s'applique plus. On reprend donc EXACTEMENT la soustraction de
+   l'anneau, mais sur une bande large : `inset: -56px` + `padding: 56px` (box-sizing:
+   border-box → la boîte de contenu coïncide au pixel près avec le shell), puis deux calques
+   de masque dont on soustrait cette boîte de contenu (`mask-composite: exclude`). Le masque
+   s'applique à TOUT le rendu de l'élément, pseudo-éléments compris : quoi qu'on peigne dans
+   ce sous-arbre, il ne peut apparaître que dans la bande de 56 px EXTÉRIEURE au shell.
+   La garantie ne dépend ni d'une opacité, ni d'un ordre de peinture — elle tient à 250 ms
+   comme à 2 s, que le panneau soit translucide ou non. Le `@supports` plus haut retire le
+   calque là où la soustraction n'existe pas, plutôt que de laisser un pavé flou.
+
+   DÉBORD : 56 px de bande, mais le `p-3 sm:p-5` du backdrop n'en laisse voir que 12 à 20 px
+   avant le bord de l'écran, où `.app-backdrop` (overflow-hidden) coupe. Aucune scrollbar :
+   le calque est en position absolue et le parent clippe. */
+.app-shell-aura {
+  position: absolute;
+  inset: -56px;
+  padding: 56px;
+  border-radius: calc(0.75rem + 56px);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  /* ÉTAT FINAL = état de repos. Le gonflement d'arrivée part de 0 et retombe ici : sans
+     animation du tout, la nappe est simplement là, à son intensité de croisière. */
+  opacity: 0.72;
+  /* LE passage unique de l'arrivée — devenu un gonflement de la nappe entière plutôt qu'une
+     comète, précisément parce qu'une figure qui défile se lit comme un objet et pas comme
+     de la lumière. Il monte pendant que le shell se pose, puis redescend.
+     ► POUR FIGER COMPLÈTEMENT LA CONSOLE (plus aucune animation permanente) : passer les
+       trois `animation` de `.app-shell-aura::before` / `::after` / `.app-shell-aura-sheet`
+       ci-dessous à `none`. Les calques restent alors à leur état de base, qui est un état
+       composé valide (les trois nappes à pleine opacité, teintes superposées).
+     ► POUR NE RALENTIR QUE LE MOUVEMENT DE COULEUR sans tout figer : allonger les seules
+       périodes `aura-tide-*` (7 / 11 / 13 s), en gardant des valeurs premières entre elles.
+     ► POUR REFAIRE PASSER LE GONFLEMENT EN BOUCLE : animation: aura-rise 24s ease-in-out
+       140ms infinite; (la courbe part de 0, ce qui donne un battement franc à chaque tour). */
+  animation: aura-rise 2600ms cubic-bezier(0.32, 0.72, 0.16, 1) 140ms backwards;
+}
+
+/* === Les trois nappes de lobes : c'est la COULEUR qui se déplace, pas un dégradé ===
+
+   LE DÉFAUT QU'ON CORRIGE ICI. Les lobes bougeaient déjà — en position (dérive) et en
+   intensité (respiration) — mais chacun gardait sa TEINTE : l'indigo restait indigo, au même
+   endroit relatif, éternellement. Sur de l'eau, ce n'est pas le motif qui voyage, c'est la
+   couleur : elle circule le long du bord et se recompose. Un halo dont on ne module que
+   l'opacité se lit donc, à juste titre, comme « statique ».
+
+   LE MÉCANISME. Les trois nappes portent la MÊME géométrie de lobes — quatre zones du
+   périmètre (nord-ouest, nord-est, sud-est, sud-ouest), à quelques pour cent près — mais un
+   ARRANGEMENT DE TEINTES DÉCALÉ d'un cran de l'une à l'autre :
+
+              nappe A        nappe B        nappe C
+     N-O      indigo    →    violet    →    bleu
+     N-E      violet    →    bleu      →    indigo
+     S-E      bleu      →    indigo    →    violet
+     S-O      violet    →    indigo    →    bleu     (décalage INVERSÉ, exprès)
+
+   En fondant les trois les unes dans les autres, la teinte perçue en un point donné est le
+   BARYCENTRE MOBILE de trois palettes. Le nord-ouest vire donc de l'indigo au violet pendant
+   que le sud-ouest fait le trajet inverse, et le sud-est passe par le bleu — sans que rien
+   ne tourne, ne défile, ni ne change de forme. Ce sont les DOSAGES qui se recomposent.
+
+   POURQUOI TROIS ET PAS DEUX. À deux nappes, on ne fait que doser un mélange entre deux
+   teintes : la couleur oscille sur un segment et revient sur ses pas, ce qui se relit vite
+   comme un battement. À trois, elle PARCOURT l'arc indigo → violet → bleu, et le chemin
+   d'aller n'est pas celui du retour. La troisième nappe est un enfant de `.app-shell-aura`
+   (un élément n'a que deux pseudo-éléments) — donc sous le même masque, mêmes garanties.
+
+   DEUX HORLOGES SÉPARÉES, ET C'EST LE POINT DE LA CADENCE :
+   - la DÉRIVE (`transform`, 19 / 23 / 29 s) déplace les lobes. C'est le courant : lent,
+     c'est ce qui empêche le motif de se figer sur la durée d'une session.
+   - le FONDU (`opacity`, 7 / 11 / 13 s) déplace la COULEUR. C'est le canal rapide, celui
+     qu'on perçoit en quatre secondes — l'ancienne « respiration » à 17/13 s ne bougeait
+     rien de visible sur ce laps de temps, d'où le reproche.
+   Six périodes toutes premières entre elles (7, 11, 13, 19, 23, 29) : le motif complet ne
+   se resynchronise qu'au bout de ~147 jours. Jamais, donc, à l'échelle d'une console.
+
+   POURQUOI ÇA NE CLIGNOTE PAS À 7 s. Les trois fondus sont déphasés par des `animation-delay`
+   NÉGATIFS (chaque nappe démarre au milieu de sa propre courbe). Quand l'une descend, une
+   autre monte : la somme des trois — donc la LUMINOSITÉ — reste à peu près plate, seul le
+   MÉLANGE bouge. On obtient un changement de teinte franc sans pulsation d'intensité, ce qui
+   est la différence entre « de l'eau » et « une notification qui clignote ».
+
+   Le flou ne vient PAS d'un `filter: blur()` (qui coûte un repeint par frame) mais de la
+   douceur des `radial-gradient` eux-mêmes : le contenu est rastérisé une fois, et seules
+   `transform` et `opacity` bougent ensuite — donc du travail de compositeur. */
+.app-shell-aura::before,
+.app-shell-aura::after,
+.app-shell-aura-sheet {
+  content: "";
+  position: absolute;
+  /* Déborde de 12 % : avec des dérives plafonnées à ~6,5 % et des échelles ≤ 1,07, aucun bord
+     de calque ne peut entrer dans la bande, même au maximum d'amplitude (le pire cas, échelle
+     ET translation cumulées, laisse encore le bord à ~8 % à l'extérieur).
+     Ce débord est aussi le prix mémoire de l'effet : chaque nappe est une texture de
+     (1 + 2 x 12) % du cadre, soit ~1,54 fois sa surface. Passer à 16 % coûterait 1,74 fois —
+     0,8 Mo de plus par nappe — sans rien apporter, puisque la marge est déjà suffisante. */
+  inset: -12%;
+  pointer-events: none;
+  /* `opacity` est désormais le canal principal (le fondu de teintes), pas seulement un
+     appoint : on l'annonce au compositeur au même titre que `transform`. */
+  will-change: transform, opacity;
+}
+
+/* Le bleu de l'arc. `--primary` (indigo) et `--accent-purple` (violet) sont des tokens
+   produit ; le troisième sommet du triangle de teintes n'en a pas — on le nomme ici, une
+   fois, plutôt que de répéter un HSL littéral vingt-quatre fois. Il reste dans l'arc de la
+   palette (bleu franc, jamais un cyan) : c'est le bleu du mesh du backdrop, tiré d'un cran
+   vers le bleu pour ÉCARTER les trois sommets. Cet écart est ce qui rend le déplacement de
+   teinte lisible — trois couleurs trop proches se moyennent en une seule et la moyenne, elle,
+   ne bouge pas.
+   Alphas VOLONTAIREMENT ÉGALISÉS entre les trois teintes : quand l'indigo pesait plus lourd
+   que les deux autres, le mélange retombait toujours sur de l'indigo quel que soit le dosage
+   — c'est précisément ce qui donnait l'impression d'une couleur fixe. */
+.app-shell-aura {
+  --aura-blue: 208 92% 56%;
+}
+.dark .app-shell-aura {
+  --aura-blue: 208 95% 64%;
+}
+
+/* --- Les huit ancrages, et l'ordre des teintes qui tourne d'un cran par nappe ---
+   HUIT lobes par nappe, et non quatre : sur un écran large, les MILIEUX de côté font
+   l'essentiel du périmètre visible. Avec des lobes uniquement dans les coins, la mesure
+   donnait un écart de teinte STRICTEMENT NUL au milieu du bandeau haut sur vingt secondes —
+   donc, à cet endroit précis, exactement le reproche d'origine. Chaque bord porte désormais
+   son propre lobe. Le surcoût est nul : les dégradés sont rastérisés UNE fois par nappe.
+
+     ancrage   nappe A   nappe B   nappe C
+     N-O       indigo    violet    bleu
+     N         violet    bleu      indigo
+     N-E       bleu      indigo    violet
+     E         indigo    violet    bleu
+     S-E       violet    indigo    bleu      <- décalage INVERSÉ
+     S         bleu      violet    indigo    <- décalage INVERSÉ
+     S-O       violet    bleu      indigo
+     O         bleu      indigo    violet    <- décalage INVERSÉ
+
+   Les trois inversions sont délibérées : si les huit ancrages tournaient tous dans le même
+   sens, le fondu se relirait comme une rotation d'ensemble — une figure, donc un objet posé
+   sur la console. Inversées, le nord-ouest vire de l'indigo au violet PENDANT que le sud-est
+   fait le trajet inverse, et l'oeil ne peut plus recomposer de sens de rotation.
+
+   Les ancrages ne coïncident pas exactement d'une nappe à l'autre (quelques pour cent
+   d'écart, volontaires) : superposés au pixel près, les trois calques se comporteraient comme
+   un seul dégradé dont on ne changerait que la couleur, ce qui se verrait comme un virage
+   uniforme. Décalés, les lobes se croisent et se mélangent par endroits. */
+
+/* --- Thème CLAIR : environ un tiers de l’intensité du sombre. Diffus, très peu opaque. --- */
+.app-shell-aura::before {
+  background-image:
+    radial-gradient(46% 36% at 12% 4%, hsl(var(--primary) / 0.15), transparent 70%),
+    radial-gradient(40% 30% at 50% 2%, hsl(var(--accent-purple) / 0.15), transparent 72%),
+    radial-gradient(46% 36% at 88% 4%, hsl(var(--aura-blue) / 0.15), transparent 70%),
+    radial-gradient(26% 42% at 98% 50%, hsl(var(--primary) / 0.15), transparent 72%),
+    radial-gradient(46% 36% at 88% 96%, hsl(var(--accent-purple) / 0.15), transparent 70%),
+    radial-gradient(40% 30% at 50% 98%, hsl(var(--aura-blue) / 0.15), transparent 72%),
+    radial-gradient(46% 36% at 12% 96%, hsl(var(--accent-purple) / 0.15), transparent 70%),
+    radial-gradient(26% 42% at 2% 50%, hsl(var(--aura-blue) / 0.15), transparent 72%);
+  transform: translate3d(-2.5%, 1.5%, 0) scale(1.02);
+  animation:
+    aura-drift-a 19s ease-in-out infinite,
+    aura-tide-a 7s ease-in-out infinite;
+}
+.app-shell-aura::after {
+  background-image:
+    radial-gradient(46% 36% at 14% 2%, hsl(var(--accent-purple) / 0.15), transparent 70%),
+    radial-gradient(40% 30% at 48% 4%, hsl(var(--aura-blue) / 0.15), transparent 72%),
+    radial-gradient(46% 36% at 86% 2%, hsl(var(--primary) / 0.15), transparent 70%),
+    radial-gradient(26% 42% at 96% 46%, hsl(var(--accent-purple) / 0.15), transparent 72%),
+    radial-gradient(46% 36% at 90% 98%, hsl(var(--primary) / 0.15), transparent 70%),
+    radial-gradient(40% 30% at 52% 96%, hsl(var(--accent-purple) / 0.15), transparent 72%),
+    radial-gradient(46% 36% at 10% 98%, hsl(var(--aura-blue) / 0.15), transparent 70%),
+    radial-gradient(26% 42% at 4% 54%, hsl(var(--primary) / 0.15), transparent 72%);
+  transform: translate3d(2%, -1.5%, 0) scale(1.03);
+  /* Délai NÉGATIF : la nappe démarre au creux de son fondu, pendant que A est au sommet du
+     sien. C'est ce déphasage qui maintient la somme plate (cf. en-tête de bloc). */
+  animation:
+    aura-drift-b 23s ease-in-out infinite,
+    aura-tide-b 11s ease-in-out -5.5s infinite;
+}
+.app-shell-aura-sheet {
+  background-image:
+    radial-gradient(46% 36% at 10% 2%, hsl(var(--aura-blue) / 0.15), transparent 70%),
+    radial-gradient(40% 30% at 52% 3%, hsl(var(--primary) / 0.15), transparent 72%),
+    radial-gradient(46% 36% at 90% 2%, hsl(var(--accent-purple) / 0.15), transparent 70%),
+    radial-gradient(26% 42% at 97% 54%, hsl(var(--aura-blue) / 0.15), transparent 72%),
+    radial-gradient(46% 36% at 86% 97%, hsl(var(--aura-blue) / 0.15), transparent 70%),
+    radial-gradient(40% 30% at 48% 97%, hsl(var(--primary) / 0.15), transparent 72%),
+    radial-gradient(46% 36% at 14% 97%, hsl(var(--primary) / 0.15), transparent 70%),
+    radial-gradient(26% 42% at 3% 46%, hsl(var(--accent-purple) / 0.15), transparent 72%);
+  transform: translate3d(-1.5%, -2%, 0) scale(1.025);
+  animation:
+    aura-drift-c 29s ease-in-out infinite,
+    aura-tide-c 13s ease-in-out -4.3s infinite;
+}
+
+/* --- Thème SOMBRE : mêmes lobes, mêmes places, alphas assumés (environ x 2,9). --- */
+.dark .app-shell-aura::before {
+  background-image:
+    radial-gradient(46% 36% at 12% 4%, hsl(var(--primary) / 0.44), transparent 70%),
+    radial-gradient(40% 30% at 50% 2%, hsl(var(--accent-purple) / 0.44), transparent 72%),
+    radial-gradient(46% 36% at 88% 4%, hsl(var(--aura-blue) / 0.44), transparent 70%),
+    radial-gradient(26% 42% at 98% 50%, hsl(var(--primary) / 0.44), transparent 72%),
+    radial-gradient(46% 36% at 88% 96%, hsl(var(--accent-purple) / 0.44), transparent 70%),
+    radial-gradient(40% 30% at 50% 98%, hsl(var(--aura-blue) / 0.44), transparent 72%),
+    radial-gradient(46% 36% at 12% 96%, hsl(var(--accent-purple) / 0.44), transparent 70%),
+    radial-gradient(26% 42% at 2% 50%, hsl(var(--aura-blue) / 0.44), transparent 72%);
+}
+.dark .app-shell-aura::after {
+  background-image:
+    radial-gradient(46% 36% at 14% 2%, hsl(var(--accent-purple) / 0.44), transparent 70%),
+    radial-gradient(40% 30% at 48% 4%, hsl(var(--aura-blue) / 0.44), transparent 72%),
+    radial-gradient(46% 36% at 86% 2%, hsl(var(--primary) / 0.44), transparent 70%),
+    radial-gradient(26% 42% at 96% 46%, hsl(var(--accent-purple) / 0.44), transparent 72%),
+    radial-gradient(46% 36% at 90% 98%, hsl(var(--primary) / 0.44), transparent 70%),
+    radial-gradient(40% 30% at 52% 96%, hsl(var(--accent-purple) / 0.44), transparent 72%),
+    radial-gradient(46% 36% at 10% 98%, hsl(var(--aura-blue) / 0.44), transparent 70%),
+    radial-gradient(26% 42% at 4% 54%, hsl(var(--primary) / 0.44), transparent 72%);
+}
+.dark .app-shell-aura-sheet {
+  background-image:
+    radial-gradient(46% 36% at 10% 2%, hsl(var(--aura-blue) / 0.44), transparent 70%),
+    radial-gradient(40% 30% at 52% 3%, hsl(var(--primary) / 0.44), transparent 72%),
+    radial-gradient(46% 36% at 90% 2%, hsl(var(--accent-purple) / 0.44), transparent 70%),
+    radial-gradient(26% 42% at 97% 54%, hsl(var(--aura-blue) / 0.44), transparent 72%),
+    radial-gradient(46% 36% at 86% 97%, hsl(var(--aura-blue) / 0.44), transparent 70%),
+    radial-gradient(40% 30% at 48% 97%, hsl(var(--primary) / 0.44), transparent 72%),
+    radial-gradient(46% 36% at 14% 97%, hsl(var(--primary) / 0.44), transparent 70%),
+    radial-gradient(26% 42% at 3% 46%, hsl(var(--accent-purple) / 0.44), transparent 72%);
+}
+
+/* La gaine : la seule couche qui épouse EXACTEMENT le contour arrondi du panneau, pour que
+   la lumière semble sourdre de dessous ses bords et non flotter à côté. Elle n'a aucun fond
+   et ne peint que des `box-shadow` EXTERNES — le CSS interdit à une ombre externe d'être
+   peinte dans la boîte de bordure qui la porte, et cette boîte est celle du shell. Deuxième
+   garantie, indépendante du masque : c'est aussi elle qui survit au `@supports`.
+   Portée par `.app-shell-frame::before`, donc peinte AVANT tous les frères — sous le shell,
+   comme le reste. Large et peu opaque : la présence vient du rayon, pas de l'alpha. */
+.app-shell-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 0.75rem; /* le `rounded-xl` du shell, au pixel près */
+  pointer-events: none;
+  box-shadow:
+    0 0 20px -8px hsl(var(--primary) / 0.26),
+    0 0 52px -6px hsl(var(--primary) / 0.15),
+    0 0 100px 6px hsl(var(--accent-purple) / 0.08);
+  animation: shell-settle 900ms cubic-bezier(0.16, 1, 0.3, 1) 140ms backwards;
+}
+.dark .app-shell-frame::before {
+  box-shadow:
+    0 0 24px -8px hsl(var(--primary) / 0.55),
+    0 0 60px -6px hsl(var(--primary) / 0.34),
+    0 0 110px 6px hsl(var(--accent-purple) / 0.2);
 }
 
 /* Zone de contenu : halo indigo TRÈS discret en haut pour que le pane ne soit pas plat.
    Porté par la colonne non-scrollante → reste pinné quand le contenu défile. */
 .app-content {
+  animation: content-reveal 800ms cubic-bezier(0.16, 1, 0.3, 1) 340ms backwards;
   background-image: radial-gradient(
     1200px 380px at 50% -12%,
     hsl(var(--primary) / 0.05),
@@ -192,6 +624,121 @@
     hsl(var(--primary) / 0.08),
     transparent 70%
   );
+}
+
+/* === Arrivée sur la console : le décor s'allume, puis le châssis se pose ===
+
+   Chronologie (courbe unique, longue et décélérée, sans rebond — on « pose », on n'entre
+   pas en scène) :
+     0 → 1100 ms   le mesh s'épanouit (les halos montent en intensité et s'écartent)
+     140 → 1040 ms le shell se pose (6 px + 1,5 % d'échelle, rien de plus)
+     340 → 1140 ms le contenu apparaît en dernier — la structure d'abord, l'info ensuite
+
+   DEUX GARDE-FOUS, tous deux structurels plutôt que conditionnels :
+
+   1) L'état par défaut EST l'état final. Chaque @keyframes ne déclare QUE son `from` :
+      le `to` implicite est le style de base déjà écrit plus haut. Avec
+      `animation-fill-mode: backwards`, l'état dégradé ne s'applique qu'AVANT le départ
+      (pendant le delay) et rien ne persiste après la fin. Animations coupées, ignorées,
+      ou impression papier : la console reste intégralement visible. Aucune règle ne pose
+      d'`opacity: 0` en état permanent.
+
+   2) Jouée UNE SEULE FOIS, à l'arrivée. `Layout` est l'élément de la route parente
+      (`RequireAuth`) : il reste monté d'une navigation à l'autre, seul l'`<Outlet/>` est
+      remplacé. Une animation CSS portée par le châssis ne rejoue donc pas quand on change
+      de page — aucun état React à porter pour ça.
+
+   Perf : uniquement opacity/transform (compositeur), aucun reflow, et les échelles vont
+   de 0,94/0,985 VERS 1 — on ne déborde jamais du cadre, donc pas de scrollbar parasite
+   (`.app-backdrop` est aussi utilisé par la page de connexion, elle sans `overflow-hidden`). */
+@keyframes backdrop-bloom {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+@keyframes shell-settle {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.985);
+  }
+}
+@keyframes content-reveal {
+  from {
+    opacity: 0;
+  }
+}
+
+/* La nappe lumineuse, dans la même horloge que le châssis :
+     140 → 1040 ms  la gaine et le filet se posent avec le shell (`shell-settle` partagé),
+     140 → ~1180 ms la nappe gonfle de 0 à son maximum,
+     ~1180 → 2740 ms elle redescend à son intensité de croisière (0.72),
+     en permanence    les trois nappes de lobes dérivent (lent) et se fondent (rapide).
+
+   `aura-rise` est le SEUL passage d'arrivée : il n'a ni figure ni direction, c'est une
+   montée puis une retombée d'intensité. Volontairement, parce qu'une figure qui défile se
+   lit comme un objet posé sur la console, pas comme de la lumière qui la baigne.
+
+   Les six keyframes ci-dessous n'ont NI `from` NI `to` : leurs deux extrémités valent donc
+   le style de base du calque. On y gagne d'un coup le fail-safe (l'état par défaut est
+   l'état final, et c'est un état composé valide) et une boucle sans la moindre saccade.
+   Périodes toutes premières entre elles (19 / 23 / 29 s de dérive, 7 / 11 / 13 s de fondu) :
+   l'ensemble ne se resynchronise qu'au bout d'environ 147 jours, donc jamais à l'échelle
+   d'une session — c'est ça, et rien d'autre, qui empêche l'œil de reconnaître un motif. */
+@keyframes aura-rise {
+  from {
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+@keyframes aura-drift-a {
+  50% {
+    transform: translate3d(5.5%, -3.5%, 0) scale(1.065);
+  }
+}
+@keyframes aura-drift-b {
+  50% {
+    transform: translate3d(-5%, 3%, 0) scale(1.055);
+  }
+}
+@keyframes aura-drift-c {
+  50% {
+    transform: translate3d(3%, 4.5%, 0) scale(1.07);
+  }
+}
+
+/* Le FONDU des trois nappes : le canal qui déplace la couleur, et le seul qui soit
+   perceptible en quelques secondes.
+
+   L'AMPLITUDE EST LE PARAMÈTRE CRITIQUE, et elle a été mesurée plutôt que devinée. La teinte
+   perçue en un point est la moyenne des trois nappes PONDÉRÉE par leurs opacités : à creux
+   peu profond (0,4), le rapport de poids entre la nappe dominante et les deux autres plafonne
+   vers 2,5:1 et la moyenne ne s'écarte jamais de plus d'une dizaine de degrés — mesuré, et
+   trop peu pour se voir. À 0,22, une palette domine vraiment son tour et l'écart double.
+   C'est la différence entre « ça a bougé, si on compare deux captures » et « ça bouge ».
+
+   Ce que ça ne fait PAS : pulser. Les trois fondus sont déphasés (délais négatifs) et de
+   périodes distinctes ; quand l'un descend, au moins un autre monte. C'est le MÉLANGE qui
+   bascule, pas la quantité de lumière.
+
+   Extrémités implicites = le style de base (opacité 1) : fail-safe conservé — animations
+   coupées, les trois nappes restent pleines, ce qui est un état composé valide. */
+@keyframes aura-tide-a {
+  50% {
+    opacity: 0.22;
+  }
+}
+@keyframes aura-tide-b {
+  50% {
+    opacity: 0.2;
+  }
+}
+@keyframes aura-tide-c {
+  50% {
+    opacity: 0.24;
+  }
 }
 
 /* === Atomes visuels portés de la maquette « operator preview » === */
@@ -214,7 +761,13 @@
   *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
+    /* Le delay compte autant que la durée : une animation en `fill-mode: backwards`
+       maintient son état de départ PENDANT le delay. Sans ce reset, l'arrivée sur la
+       console laisserait le shell et le contenu invisibles quelques centaines de ms
+       avant de claquer — exactement ce qu'on veut éviter en « reduced motion ». */
+    animation-delay: 0.001ms !important;
     transition-duration: 0.001ms !important;
+    transition-delay: 0.001ms !important;
     scroll-behavior: auto !important;
   }
 }
@@ -230,14 +783,18 @@
 .spark span {
   width: 3px;
   border-radius: 1px;
-  background: rgba(139, 141, 247, 0.55);
+  background: hsl(var(--primary) / 0.55);
 }
 
-/* Barres du graphe de tendance : plein = série principale, .dim = secondaire atténué. */
+/* Barres du graphe de tendance. Tokens OBLIGATOIRES : la version en dur (bleu marine
+   `#2a2c66 → #3d3f8a` pour `.dim`) était plus contrastée que la série principale sur la
+   carte blanche du thème clair — le « à trier » écrasait visuellement le « traité », soit
+   l'inverse de la hiérarchie voulue. `--primary` (traité) et `--warning` (à trier) sont
+   redéfinis par thème et reprennent au passage le couple utilisé partout ailleurs. */
 .bar {
   border-radius: 2px 2px 0 0;
-  background: linear-gradient(to top, #4f52e5, #8b8df7);
+  background: linear-gradient(to top, hsl(var(--primary)), hsl(var(--primary) / 0.7));
 }
 .bar.dim {
-  background: linear-gradient(to top, #2a2c66, #3d3f8a);
+  background: linear-gradient(to top, hsl(var(--warning) / 0.85), hsl(var(--warning) / 0.5));
 }

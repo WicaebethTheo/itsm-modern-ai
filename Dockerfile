@@ -12,8 +12,8 @@ COPY frontend/ ./
 RUN npm run build
 
 # ── Étape 2 : moteur Python + UI statique ─────────────────────────────────────
-# Python 3.14 : la suite complète (380 tests, extras `postgres` inclus) a été rejouée
-# sur 3.14.5 avant ce bump — aucune régression, aucune dépendance sans roue 3.14.
+# Python 3.14 : la suite complète a été rejouée sur 3.14.5 avant ce bump — aucune
+# régression, aucune dépendance sans roue 3.14.
 # `requires-python` reste à `>=3.13` : rien n'oblige à exclure 3.13 d'une install
 # depuis les sources ; c'est l'image LIVRÉE qui avance, pas le socle minimal supporté.
 FROM python:3.14-slim
@@ -40,8 +40,26 @@ WORKDIR /app
 # volontairement PAS épinglé côté apt (`gosu=x.y-z` n'est pas portable) : sa
 # version est déjà figée par le snapshot Debian du tag de l'image de base, et un
 # pin apt casserait le build à chaque bump de la distro sans rien reproduire de plus.
+#
+# `postgresql-client-17` est INDISPENSABLE, pas un confort : la voie de sauvegarde livrée
+# et documentée est `docker compose exec itsm python -m itsm_modern_ai.backup`, qui appelle
+# `pg_dump` / `pg_restore`. Sans eux dans l'image, un exploitant en déploiement pull-only
+# n'a AUCUN moyen de sauvegarder — exactement le trou que 0.9.56 avait bouché.
+#
+# ############################################################################
+# #  LA MAJEURE 17 DOIT RESTER ÉGALE À CELLE DU SERVICE `postgres` DES DEUX  #
+# #  COMPOSES (`postgres:17-alpine`). Contrat verrouillé par                 #
+# #  tests/unit/test_deployment_files.py.                                    #
+# ############################################################################
+# Ce n'est pas de la coquetterie : une archive `custom` produite par pg_dump 17 est
+# ILLISIBLE par un pg_restore 16 (« unsupported version (1.16) in file header »), et un
+# pg_restore 17 pointé sur un serveur 16 échoue sur `SET transaction_timeout`. Un client
+# désaligné produit donc des sauvegardes qu'on ne découvre irrécupérables qu'au moment de
+# restaurer. La majeure est PINNÉE (et non le méta-paquet `postgresql-client`, qui suit la
+# version par défaut de la distro) : le jour où Debian passera à 18, le build ÉCHOUERA
+# bruyamment — ce qu'on veut — au lieu d'embarquer silencieusement un client incompatible.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gosu \
+    && apt-get install -y --no-install-recommends gosu postgresql-client-17 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -r app --gid=10001 \
     && useradd -r -g app --uid=10001 --home-dir=/app --shell=/usr/sbin/nologin app \
@@ -51,15 +69,15 @@ RUN apt-get update \
 # Build REPRODUCTIBLE : on installe depuis uv.lock (versions épinglées + hashes),
 # pas une résolution libre. `uv sync --frozen` échoue si le lock est incohérent
 # avec pyproject (garde-fou CI). `--no-dev` exclut les deps de dev (pytest, ruff…).
-# `--extra postgres` embarque le driver psycopg : l'image supporte ainsi SQLite (défaut)
-# ET PostgreSQL (profile compose `postgres`) sans rebuild dédié.
+# Plus d'`--extra postgres` : psycopg est passé en dépendance PRINCIPALE (PostgreSQL est
+# la seule base supportée), un extra n'aurait plus rien d'optionnel.
 # Les deps SEULES d'abord (`--no-install-project` ne lit pas src/) : la couche la
 # plus lourde n'est invalidée que par un changement de lock, pas à chaque commit de
 # code. Le cache uv est un cache mount : il accélère les rebuilds sans jamais être
 # stocké dans les couches de l'image. hatchling a besoin du README dès l'install.
 COPY --chown=app:app pyproject.toml uv.lock README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-install-project --extra postgres
+    uv sync --frozen --no-dev --no-install-project
 
 # Image UNIQUE : tout `src/` est embarqué, y compris les features Supporter
 # (`itsm_modern_ai/features/`). Elles restent verrouillées tant qu'aucune licence

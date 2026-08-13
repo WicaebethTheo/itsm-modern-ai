@@ -54,11 +54,12 @@ src/itsm_modern_ai/
 ├── ports/         interfaces (Protocol) : ItsmPort, LlmPort, SecretsPort
 ├── adapters/
 │   ├── itsm/glpi/   client apirest.php + mapper (ITILFollowup 9.x/10.x)
+│   ├── itsm/glpi/v2/ API GLPI V2 OAuth2 (Beta) — même ItsmPort
 │   ├── llm/         Mistral EU · OpenAI · Ollama · Anthropic + mock offline
 │   └── secrets/     chiffrement Fernet
 ├── services/      référentiels (scan + périmètre), runtime_config, triage
 ├── scheduler/     poller APScheduler (idempotent)
-├── persistence/   SQLModel/SQLite, journal, idempotence, UtcDateTime
+├── persistence/   SQLModel/PostgreSQL (psycopg 3), journal, idempotence, UtcDateTime
 ├── config/        Settings (pydantic-settings) + credentials GLPI
 └── api/           FastAPI : routes REST, auth (Argon2), rate-limit, SPA static
 frontend/          SPA React 19 + Vite 6 + Tailwind v4 (i18n FR/EN, Biome)
@@ -70,8 +71,27 @@ docs/              install, dpo, spike, project-context, architecture, …
 
 Le moteur reste **headless** : la SPA React est servie en statique par le moteur (image Docker multi-stage `node:24 → python:3.14`), aucun serveur Node au runtime. Le contrat REST est l'API publique du moteur — CLI/Slack/batch peuvent s'y brancher demain.
 
+## Persistance et topologie de déploiement
+
+**PostgreSQL est la seule base supportée** : le driver `psycopg` est une dépendance principale,
+`Settings.database_url` vaut `postgresql+psycopg://…`, et le moteur ne démarre pas sans serveur
+joignable. La stack livrée compte donc **deux services** — le moteur et sa base
+`postgres:17-alpine` — sur un réseau privé, la base ne publiant **aucun port**.
+
+- **Deux volumes, deux rôles.** `itsm_data` (`/app/data`) porte la `master.key` et les
+  sauvegardes ; le PGDATA vit à part (`itsm_pgdata`, ou le bind `./data/postgres` depuis les
+  sources). Ils sont séparés parce que l'entrypoint du moteur fait un `chown` du volume
+  applicatif et que PostgreSQL refuse de démarrer si son PGDATA ne lui appartient pas.
+- **Ordre de démarrage.** Les composes posent `depends_on: condition: service_healthy` ; en
+  complément, l'entrypoint **attend la base de façon bornée** avant `alembic upgrade head` — ce
+  filet couvre `docker run`, Swarm/k8s et une base externe qui redémarre.
+- **Alembic est la source de vérité** du schéma ; les migrations s'appliquent au démarrage.
+- **Sauvegarde** = `pg_dump --format=custom` **plus** la `master.key`, l'archive étant relue en
+  deux temps (structure puis données recomptées). Détail : [`docs/postgresql.md`](postgresql.md).
+
 ## Voir aussi
 
 - [`docs/project-context.md`](project-context.md) — invariants non-négociables (à lire avant de coder).
 - [`docs/modes.md`](modes.md) — modes d'exécution par périmètre.
 - [`docs/api.md`](api.md) — référence des endpoints.
+- [`docs/postgresql.md`](postgresql.md) — la base : câblage, variables, majeure épinglée, base externe.

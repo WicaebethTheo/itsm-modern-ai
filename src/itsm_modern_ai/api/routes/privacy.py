@@ -8,6 +8,7 @@ l'auth locale (FR-24).
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -49,6 +50,31 @@ class MaskTestIn(BaseModel):
 class MaskTestOut(BaseModel):
     masked: str
     counts: dict[str, int]
+
+
+# Marqueur de masquage : `[NIR]`, `[SIRET]`, `[EMAIL]`… (majuscules, chiffres, underscore).
+_PLACEHOLDER_RE = re.compile(r"\[[A-Z0-9_]+\]")
+
+
+def _added_placeholders(before: str, after: str) -> dict[str, int]:
+    """Compteurs de la passe Supporter, déduits des marqueurs AJOUTÉS au texte.
+
+    La passe avancée (`features/pii_advanced.AdvancedPiiMasker.mask`) ne rend qu'un texte —
+    aucun compteur. Les seuls compteurs du cœur laissaient donc l'écran DPO annoncer
+    « Aucun remplacement, ce texte part tel quel au LLM » juste sous un bloc affichant
+    `[NIR]` : l'outil se contredisait lui-même sur la page destinée à la DPO.
+
+    On mesure ici l'EFFET RÉEL plutôt que de dupliquer les regex de l'overlay : ce qui a
+    été ajouté par la passe, marqueur par marqueur. Un marqueur déjà présent dans le texte
+    d'entrée compte dans `before`, donc son delta reste nul. La mesure vaut aussi pour un
+    plugin externe, tant que son marqueur suit la convention `[EN_MAJUSCULES]`.
+    """
+    counts: dict[str, int] = {}
+    for marker in set(_PLACEHOLDER_RE.findall(after)):
+        delta = after.count(marker) - before.count(marker)
+        if delta > 0:
+            counts[marker.strip("[]").lower()] = delta
+    return counts
 
 
 def _state(request: Request, cfg: RuntimeConfigService):
@@ -116,8 +142,13 @@ def test_mask(
     """Applique le masquage RÉEL (état courant + édition) à un texte d'exemple — outil DPO."""
     _, flags, masker = _state(request, cfg)
     result = masking.mask(payload.text, **flags)
-    out = masker.mask(result.text) if masker is not None else result.text
-    return MaskTestOut(masked=out, counts=result.counts)
+    out, counts = result.text, dict(result.counts)
+    if masker is not None:
+        avance = masker.mask(out)
+        for key, n in _added_placeholders(out, avance).items():
+            counts[key] = counts.get(key, 0) + n
+        out = avance
+    return MaskTestOut(masked=out, counts=counts)
 
 
 @router.get("/report.md")
@@ -143,10 +174,18 @@ def dpo_report(request: Request, cfg: RuntimeConfigService = Depends(get_config_
             status = "Masqué"
         elif c.scope == "roadmap":
             status = "À venir (non implémenté)"
-        elif c.scope == "supporter":
+        elif c.scope == "supporter" and not advanced:
+            # `and not advanced` : `scope` est STATIQUE, il dit de quelle édition relève un
+            # motif — jamais pourquoi il est inactif ici. Sans ce croisement, une instance
+            # sous licence VALIDE dont l'administrateur a délibérément décoché le masquage
+            # IBAN produisait un rapport disant « VERROUILLÉ (Supporter) » : le document
+            # remis à la DPO imputait à un défaut de licence une décision d'exploitation, et
+            # l'avertissement « transmis EN CLAIR » ci-dessous ne s'affichait pas non plus
+            # (il est conditionné à `advanced`). La DPO lisait donc « verrouillé » sans
+            # apprendre que la donnée sort en clair.
             status = "VERROUILLÉ (Supporter)"
         else:
-            status = "Désactivé"
+            status = "Désactivé (choix de l'administrateur) — transmis EN CLAIR"
         lines.append(f"| {c.label_fr} | `{c.example}` | {status} |")
     lines += [
         "",

@@ -1,12 +1,23 @@
-import { CheckCircle2, Search, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  CheckSquare,
+  Loader2,
+  Search,
+  SearchX,
+  Square,
+  Users,
+} from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Banner } from "@/components/Banner";
 import { EmptyState } from "@/components/EmptyState";
 import { SkillCoverageBanner } from "@/components/SkillCoverage";
-import { SyncButton } from "@/components/SyncButton";
+import { dernierScan, SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PanelHead } from "@/components/ui/panel";
+import { Select } from "@/components/ui/select";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -14,7 +25,7 @@ import { Toggle } from "@/components/ui/toggle";
 import { useResource } from "@/hooks/useResource";
 import { Api, type EligibilityItem, type RefItem, type RefKind, type SkillDomain } from "@/lib/api";
 import { useLang, useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
+import { cn, SELECTED_CONTROL, SELECTED_ROW, SUBSURFACE } from "@/lib/utils";
 
 const ALL = "__all__";
 
@@ -46,9 +57,16 @@ function initials(name: string): string {
 export function RefEligibilityEditor({
   kind,
   save,
+  rowExtra,
 }: {
   kind: RefKind;
   save: (items: EligibilityItem[]) => Promise<RefItem[]>;
+  /**
+   * Contenu additionnel en bout de ligne, rendu par l'appelant (ex. l'état d'absence d'un
+   * technicien). `eligible` vient du BROUILLON : ce qui est coché à l'écran, pas ce qui est
+   * enregistré. Les groupes n'en passent pas — un groupe ne part pas en congés.
+   */
+  rowExtra?: (item: RefItem, eligible: boolean) => ReactNode;
 }) {
   const t = useT();
   const { lang } = useLang();
@@ -90,14 +108,38 @@ export function RefEligibilityEditor({
           "Fallback targets. Tick eligible groups and describe them.",
         );
 
+  // Les `ext_id` que l'admin a RÉELLEMENT édités — la seule chose que la fusion ci-dessous
+  // doit protéger. Sans ce registre, la fusion ne reprenait JAMAIS le serveur pour une
+  // ligne existante : le brouillon était peuplé de TOUTES les lignes dès le premier
+  // chargement, donc `prev[r.ext_id]` était toujours défini et la branche serveur n'était
+  // atteinte que par un acteur nouvellement apparu dans GLPI. Un « Scanner GLPI » n'affichait
+  // donc jamais une fiche modifiée ailleurs, le compteur annonçait des modifications que
+  // personne n'avait faites, et « Enregistrer » les écrasait avec la valeur périmée.
+  // Vidé après un enregistrement réussi : le serveur redevient la référence.
+  const edites = useRef<Set<number>>(new Set());
+
+  // FUSION, jamais écrasement : « Scanner GLPI » appelle `res.reload()`, donc `res.data`
+  // change et cet effet se rejoue alors que l'admin est en pleine saisie. En repartant du
+  // serveur on jetait sans un mot des fiches entières (prose + compétences cochées). On ne
+  // reprend donc du serveur que les acteurs dont l'admin n'a rien touché ; un acteur
+  // disparu de GLPI sort de la liste, un acteur nouveau y entre avec ses valeurs serveur.
   useEffect(() => {
-    if (res.data) {
-      setDraft(
+    const items = res.data;
+    if (items) {
+      setDraft((prev) =>
         Object.fromEntries(
-          res.data.map((r) => [
-            r.ext_id,
-            { eligible: r.eligible, skills: r.skills, skill_tags: r.skill_tags ?? [] },
-          ]),
+          items.map((r) => {
+            const serveur = {
+              eligible: r.eligible,
+              skills: r.skills,
+              skill_tags: r.skill_tags ?? [],
+            };
+            // Seules les lignes RÉELLEMENT éditées résistent au serveur. Tester la seule
+            // présence dans le brouillon ne marchait pas : il est peuplé de toutes les
+            // lignes dès le premier chargement, donc plus aucune ne se rafraîchissait.
+            const protegee = edites.current.has(r.ext_id);
+            return [r.ext_id, protegee ? (prev[r.ext_id] ?? serveur) : serveur];
+          }),
         ),
       );
     }
@@ -122,6 +164,55 @@ export function RefEligibilityEditor({
 
   const eligibleCount = items.filter((r) => draft[r.ext_id]?.eligible ?? r.eligible).length;
 
+  // Ce qui est modifié À L'ÉCRAN et pas encore enregistré. Sans ce compteur, le bouton
+  // « Enregistrer » ne disait ni s'il y avait quelque chose à enregistrer, ni combien de
+  // fiches étaient en jeu — et il vivait sous soixante fiches dépliées, hors du champ.
+  // C'est aussi la LISTE envoyée au serveur : `set_eligibility` écrit par `ext_id`, une
+  // ligne inchangée n'a rien à y faire — l'envoyer quand même écrasait la version d'un
+  // autre onglet par la valeur qu'on avait lue avant lui.
+  const modifiees = useMemo(
+    () =>
+      items.filter((r) => {
+        const d = draft[r.ext_id];
+        if (!d) return false;
+        const tags = [...(r.skill_tags ?? [])].sort().join(",");
+        return (
+          d.eligible !== r.eligible ||
+          d.skills !== r.skills ||
+          [...d.skill_tags].sort().join(",") !== tags
+        );
+      }),
+    [items, draft],
+  );
+  const modifies = modifiees.length;
+
+  /**
+   * Cochage en masse — sur la liste FILTRÉE, jamais sur tout le référentiel.
+   *
+   * Le piège évident : chercher « réseau », cliquer « Tout sélectionner » et rendre
+   * éligibles les 200 techniciens de l'instance. Le bouton porte donc le nombre d'affichés,
+   * et n'agit que sur eux : les lignes masquées par le filtre gardent leur état.
+   */
+  function basculerAffiches() {
+    const tous = filtered.every((r) => draft[r.ext_id]?.eligible ?? r.eligible);
+    setDraft((d) => {
+      const next = { ...d };
+      for (const r of filtered) {
+        edites.current.add(r.ext_id);
+        const actuel = next[r.ext_id] ?? {
+          eligible: r.eligible,
+          skills: r.skills,
+          skill_tags: r.skill_tags ?? [],
+        };
+        next[r.ext_id] = { ...actuel, eligible: !tous };
+      }
+      return next;
+    });
+  }
+
+  const tousAffichesCoches =
+    filtered.length > 0 && filtered.every((r) => draft[r.ext_id]?.eligible ?? r.eligible);
+
   // Couverture par domaine telle qu'elle est À L'ÉCRAN (brouillon compris) : le bandeau
   // de diagnostic doit réagir à la case qu'on vient de cocher, pas à l'état enregistré.
   const liveCoverage = useMemo(() => {
@@ -145,6 +236,7 @@ export function RefEligibilityEditor({
   }, []);
 
   function toggleTag(id: number, key: string, coche: boolean) {
+    edites.current.add(id);
     setDraft((d) => {
       const actuel = d[id]?.skill_tags ?? [];
       return {
@@ -161,13 +253,40 @@ export function RefEligibilityEditor({
     id: number,
     p: Partial<{ eligible: boolean; skills: string; skill_tags: string[] }>,
   ) {
+    edites.current.add(id);
     setDraft((d) => ({ ...d, [id]: { ...d[id], ...p } }));
   }
+
+  // Annoncer « N modification(s) non enregistrée(s) » puis laisser un F5 les emporter sans
+  // un mot était une demi-promesse. Seul le RECHARGEMENT est gardé : bloquer la navigation
+  // interne exige un data router, et l'application monte un `<BrowserRouter>` déclaratif.
+  useEffect(() => {
+    if (modifies === 0) return;
+    const retenir = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", retenir);
+    return () => window.removeEventListener("beforeunload", retenir);
+  }, [modifies]);
 
   async function onSave() {
     setSaving(true);
     try {
-      await save(Object.entries(draft).map(([ext_id, v]) => ({ ext_id: Number(ext_id), ...v })));
+      // On n'envoie QUE ce qui a changé : `set_eligibility` écrit par `ext_id`, et
+      // réexpédier une ligne intacte écrasait la version d'un autre onglet par celle
+      // qu'on avait lue avant lui.
+      await save(
+        modifiees.map((r) => {
+          const d = draft[r.ext_id];
+          return {
+            ext_id: r.ext_id,
+            eligible: d.eligible,
+            skills: d.skills,
+            skill_tags: d.skill_tags,
+          };
+        }),
+      );
+      // Le serveur redevient la référence : la relecture doit pouvoir ramener ce qu'il a
+      // RÉELLEMENT enregistré, y compris une valeur qu'il a normalisée.
+      edites.current.clear();
       res.reload();
       toast.success(t("Enregistré.", "Saved."));
     } catch (e: unknown) {
@@ -179,25 +298,88 @@ export function RefEligibilityEditor({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="max-w-2xl text-[12px] text-muted-foreground">{desc}</p>
-        <SyncButton onSynced={res.reload} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-body text-muted-foreground">{desc}</p>
+        <SyncButton onSynced={res.reload} lastSync={dernierScan(items)} />
       </div>
 
-      {/* Tant qu'aucun acteur n'est éligible, la carte annoncerait « 14 domaines non
-          couverts » : c'est du bruit sur une instance qu'on vient de scanner, pas un
-          diagnostic. Elle n'apparaît qu'une fois la configuration commencée. */}
-      {eligibleCount > 0 && <SkillCoverageBanner kind={kind} live={liveCoverage} />}
+      {/* Une lecture en échec ne doit PAS ressembler à une instance jamais scannée : sans
+          ce bandeau, un /api/discovery en 500 affichait « Scannez GLPI pour lister… »,
+          l'admin rescannait, ça échouait encore, et rien ne disait pourquoi. */}
+      {res.error && (
+        <Banner kind="error">
+          <span className="flex items-start gap-1.5">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              <strong>
+                {t(
+                  "Impossible de lire les référentiels — vérifiez la connexion GLPI.",
+                  "Cannot read referentials — check the GLPI connection.",
+                )}
+              </strong>{" "}
+              {res.error}
+            </span>
+          </span>
+        </Banner>
+      )}
 
-      {items.length === 0 ? (
+      {/* Tant qu'aucun acteur n'est éligible, la carte de couverture annoncerait « 14
+          domaines non couverts » : du bruit sur une instance qu'on vient de scanner. Mais
+          se TAIRE dans ce cas était pire — c'est exactement l'état le plus grave : sans
+          acteur éligible, `whitelist.check` renvoie NO_ELIGIBLE_ASSIGNEE et 100 % des
+          tickets partent « à trier ». On remplace donc le silence par l'alerte. */}
+      {eligibleCount > 0 ? (
+        <SkillCoverageBanner kind={kind} live={liveCoverage} />
+      ) : (
+        items.length > 0 && (
+          <Banner kind="error">
+            <span className="flex items-start gap-1.5">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                <strong>
+                  {kind === "technician"
+                    ? t("Aucun technicien éligible", "No eligible technician")
+                    : t("Aucun groupe éligible", "No eligible group")}
+                </strong>{" "}
+                {t(
+                  "— le moteur n'a personne vers qui router : tous les tickets partiront « à trier ». Cochez au moins un acteur.",
+                  "— the engine has no one to route to: every ticket will end up “to sort”. Tick at least one actor.",
+                )}
+              </span>
+            </span>
+          </Banner>
+        )
+      )}
+
+      {res.loading && items.length === 0 ? (
+        <Card>
+          <p className="flex items-center justify-center gap-2 px-5 py-10 text-body text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t("Chargement des référentiels…", "Loading referentials…")}
+          </p>
+        </Card>
+      ) : items.length === 0 ? (
+        // Vide, chargement et erreur sont trois écrans DISTINCTS : en erreur, promettre
+        // qu'un scan suffira serait un mensonge, le bandeau ci-dessus a déjà parlé.
         <Card>
           <EmptyState
             icon={Users}
-            title={t("Aucun élément", "Nothing yet")}
-            description={t(
-              "Cliquez sur « Scanner GLPI » pour récupérer la liste depuis votre instance.",
-              "Click “Scan GLPI” to fetch the list from your instance.",
-            )}
+            title={
+              res.error
+                ? t("Liste indisponible", "List unavailable")
+                : t("Aucun élément", "Nothing yet")
+            }
+            description={
+              res.error
+                ? t(
+                    "La lecture des référentiels a échoué — corrigez la connexion GLPI, puis relancez un scan.",
+                    "Reading the referentials failed — fix the GLPI connection, then run a scan.",
+                  )
+                : t(
+                    "Cliquez sur « Scanner GLPI » pour récupérer la liste depuis votre instance.",
+                    "Click “Scan GLPI” to fetch the list from your instance.",
+                  )
+            }
           />
         </Card>
       ) : (
@@ -205,7 +387,10 @@ export function RefEligibilityEditor({
           <PanelHead
             title={title}
             subtitle={
-              <span className="inline-flex items-center gap-1.5">
+              // Compteur annoncé : cocher une case ne change rien d'autre à l'écran, et
+              // filtrer non plus — sans `aria-live`, l'effet de l'action reste invisible
+              // pour un lecteur d'écran.
+              <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5">
                 <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                 {t(
                   `${eligibleCount} éligible(s) · ${filtered.length}/${items.length} affiché(s)`,
@@ -213,23 +398,54 @@ export function RefEligibilityEditor({
                 )}
               </span>
             }
+            right={
+              filtered.length > 0 ? (
+                <Button variant="ghost" size="sm" onClick={basculerAffiches}>
+                  {tousAffichesCoches ? (
+                    <Square className="h-3.5 w-3.5" />
+                  ) : (
+                    <CheckSquare className="h-3.5 w-3.5" />
+                  )}
+                  {tousAffichesCoches
+                    ? t(
+                        `Décocher les ${filtered.length} affichés`,
+                        `Untick the ${filtered.length} shown`,
+                      )
+                    : t(
+                        `Cocher les ${filtered.length} affichés`,
+                        `Tick the ${filtered.length} shown`,
+                      )}
+                </Button>
+              ) : undefined
+            }
           />
           {/* Barre d'outils */}
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-border bg-muted/30 px-4 py-3">
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-2.5 border-b border-border px-5 py-3",
+              SUBSURFACE,
+            )}
+          >
             <div className="relative min-w-48 flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
+                aria-label={
+                  kind === "technician"
+                    ? t("Rechercher un technicien", "Search a technician")
+                    : t("Rechercher un groupe", "Search a group")
+                }
                 placeholder={t("Rechercher par nom ou ID…", "Search by name or ID…")}
                 className="pl-9"
                 onChange={(e) => setQuery(e.target.value)}
               />
             </div>
             {profiles.length > 0 && (
-              <select
+              <Select
+                aria-label={t("Filtrer par profil GLPI", "Filter by GLPI profile")}
                 value={profile}
                 onChange={(e) => setProfile(e.target.value)}
-                className="h-9 rounded-md border border-input bg-card px-3 text-[12.5px] transition-colors hover:border-muted-foreground/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                className="w-auto"
               >
                 <option value={ALL}>{t("Tous les profils", "All profiles")}</option>
                 {profiles.map((p) => (
@@ -237,9 +453,9 @@ export function RefEligibilityEditor({
                     {p}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
-            <label className="flex h-9 items-center gap-2 rounded-md border border-input bg-card px-3 text-[12.5px] text-muted-foreground">
+            <label className="flex h-9 items-center gap-2 rounded-md border border-input bg-card px-3 text-ui text-muted-foreground">
               <Toggle checked={eligibleOnly} onChange={setEligibleOnly} />
               {t("Éligibles seulement", "Eligible only")}
             </label>
@@ -256,9 +472,9 @@ export function RefEligibilityEditor({
                 <div
                   key={r.ext_id}
                   className={cn(
-                    "px-4 py-3 transition-colors",
+                    "px-5 py-3 transition-colors",
                     i < filtered.length - 1 && "border-b border-border",
-                    d.eligible ? "bg-primary/[0.04]" : "hover:bg-accent/40",
+                    d.eligible ? SELECTED_ROW : "hover:bg-accent/40",
                   )}
                 >
                   <div className="flex items-center gap-3">
@@ -272,7 +488,7 @@ export function RefEligibilityEditor({
                       <span
                         aria-hidden
                         className={cn(
-                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold transition-colors",
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-caption font-semibold transition-colors",
                           d.eligible
                             ? "bg-primary/15 text-accent-indigo"
                             : "bg-muted text-muted-foreground",
@@ -281,9 +497,9 @@ export function RefEligibilityEditor({
                         {initials(r.name)}
                       </span>
                       <span className="min-w-0">
-                        <span className="block truncate text-[13px] font-medium">
+                        <span className="block truncate text-ui font-medium">
                           {r.name}{" "}
-                          <span className="font-mono text-[11px] text-muted-foreground">
+                          <span className="font-mono text-caption text-muted-foreground">
                             #{r.ext_id}
                           </span>
                         </span>
@@ -296,14 +512,22 @@ export function RefEligibilityEditor({
                       </Tag>
                     )}
                     {r.profile && <Tag tone="muted">{r.profile}</Tag>}
+                    {rowExtra?.(r, d.eligible)}
                   </div>
                   {d.eligible && catalog.length > 0 && (
                     <div className="mt-3 pl-[44px]">
-                      <p className="mb-1.5 text-[11.5px] text-muted-foreground">
-                        {t(
-                          "Domaines pris en charge — cochez pour décrire ce technicien sans rien rédiger.",
-                          "Supported domains — tick to describe this technician without writing anything.",
-                        )}
+                      <p className="mb-1.5 text-caption text-muted-foreground">
+                        {/* Le même éditeur sert les techniciens ET les groupes : la phrase
+                            disait « ce technicien » sur /groups. */}
+                        {kind === "technician"
+                          ? t(
+                              "Domaines pris en charge — cochez pour décrire ce technicien sans rien rédiger.",
+                              "Supported domains — tick to describe this technician without writing anything.",
+                            )
+                          : t(
+                              "Domaines pris en charge — cochez pour décrire ce groupe sans rien rédiger.",
+                              "Supported domains — tick to describe this group without writing anything.",
+                            )}
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {catalog.map((dom) => {
@@ -316,9 +540,9 @@ export function RefEligibilityEditor({
                               aria-pressed={coche}
                               onClick={() => toggleTag(r.ext_id, dom.key, !coche)}
                               className={cn(
-                                "rounded-full border px-2.5 py-1 text-[11.5px] transition-colors",
+                                "rounded-full border px-2.5 py-1 text-caption transition-colors",
                                 coche
-                                  ? "border-primary/40 bg-primary/15 text-accent-indigo"
+                                  ? SELECTED_CONTROL
                                   : "border-border text-muted-foreground hover:bg-accent/60",
                               )}
                             >
@@ -334,9 +558,11 @@ export function RefEligibilityEditor({
                       <Textarea
                         className="min-h-16 bg-background/40"
                         value={d.skills}
+                        // Plus « disponibilités » : les congés ont leur outil dédié
+                        // (AbsencePlanner), les écrire ici ne serait lu par personne.
                         placeholder={t(
-                          "Précisions libres — exceptions, spécialités, disponibilités…",
-                          "Free-form notes — exceptions, specialties, availability…",
+                          "Précisions libres — exceptions, spécialités, exclusions…",
+                          "Free-form notes — exceptions, specialties, exclusions…",
                         )}
                         onChange={(e) => patch(r.ext_id, { skills: e.target.value })}
                       />
@@ -346,19 +572,49 @@ export function RefEligibilityEditor({
               );
             })}
             {filtered.length === 0 && (
-              <p className="px-4 py-8 text-center text-[12.5px] text-muted-foreground">
-                {t("Aucun résultat pour ce filtre.", "No result for this filter.")}
-              </p>
+              <EmptyState
+                dense
+                icon={SearchX}
+                title={t("Aucun résultat pour ce filtre.", "No result for this filter.")}
+              />
             )}
           </div>
         </Card>
       )}
+      {/* Barre d'enregistrement COLLANTE : le bouton vivait sous soixante fiches dépliées,
+          on cochait, on quittait la page, on perdait tout sans le moindre avertissement.
+          Elle porte aussi le compteur — la seule trace visible de ce qui n'est pas encore
+          parti au serveur. Même gabarit que celle d'EngineSettings. */}
       {items.length > 0 && (
-        <Button onClick={onSave} disabled={saving}>
-          {saving
-            ? t("Enregistrement…", "Saving…")
-            : t("Enregistrer la sélection", "Save selection")}
-        </Button>
+        <div
+          className={cn(
+            "sticky bottom-0 z-20 -mx-5 -mb-5 mt-2 border-t border-border bg-card/95 backdrop-blur",
+            "supports-[backdrop-filter]:bg-card/80 sm:-mx-6 sm:-mb-6",
+          )}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 sm:px-6">
+            <p
+              role="status"
+              aria-live="polite"
+              className={cn(
+                "text-body",
+                modifies > 0 ? "font-medium text-warning" : "text-muted-foreground",
+              )}
+            >
+              {modifies > 0
+                ? t(
+                    `${modifies} modification(s) non enregistrée(s)`,
+                    `${modifies} unsaved change(s)`,
+                  )
+                : t("Aucune modification en attente", "No pending change")}
+            </p>
+            <Button onClick={onSave} disabled={saving || modifies === 0}>
+              {saving
+                ? t("Enregistrement…", "Saving…")
+                : t("Enregistrer la sélection", "Save selection")}
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

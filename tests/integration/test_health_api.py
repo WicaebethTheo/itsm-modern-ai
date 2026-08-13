@@ -20,12 +20,12 @@ from itsm_modern_ai.config.settings import Settings
 PASSWORD = "s3cret-pilote"
 
 
-def _settings(tmp_path, **kw) -> Settings:
+def _settings(db_url, tmp_path, **kw) -> Settings:
     kw.setdefault("session_https_only", False)
     kw.setdefault("dev_open_admin", False)
     return Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'h.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         frontend_dist=str(tmp_path / "dist"),
@@ -60,28 +60,29 @@ def spy(monkeypatch) -> _SpyConnector:
 
 
 # ── (a) cache TTL sur le résultat COMPLET ─────────────────────────────────────
-def test_health_result_is_cached(tmp_path, spy):
+def test_health_result_is_cached(db_url, tmp_path, spy):
     """Marteler /health ne doit PAS marteler le GLPI du client."""
-    with TestClient(create_app(_settings(tmp_path, dev_open_admin=True))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path, dev_open_admin=True))) as c:
         for _ in range(10):
             assert c.get("/health").status_code == 200
     # 10 requêtes entrantes → 1 seul aller-retour sortant (TTL non expiré).
     assert spy.healthchecks == 1
 
 
-def test_health_cache_expires(tmp_path, spy, monkeypatch):
+def test_health_cache_expires(db_url, tmp_path, spy, monkeypatch):
     """Le cache reste une SONDE : passé le TTL, l'état est réinterrogé."""
     monkeypatch.setattr(health_routes, "HEALTH_CACHE_TTL_SECONDS", 0.0)
-    with TestClient(create_app(_settings(tmp_path, dev_open_admin=True))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path, dev_open_admin=True))) as c:
         c.get("/health")
         c.get("/health")
     assert spy.healthchecks == 2
 
 
 # ── (b) ?probe=true réservé aux sessions authentifiées ────────────────────────
-def test_probe_requires_authentication(tmp_path, spy):
+def test_probe_requires_authentication(db_url, tmp_path, spy, creer_compte_admin):
     """La sonde LLM coûte de l'argent : un anonyme ne doit pas pouvoir la déclencher."""
-    with TestClient(create_app(_settings(tmp_path, admin_password=PASSWORD))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path, dev_open_admin=False))) as c:
+        creer_compte_admin(c, password=PASSWORD)
         r = c.get("/health?probe=true")
         assert r.status_code == 401
         assert r.json()["detail"]["code"] == "unauthorized"
@@ -90,12 +91,14 @@ def test_probe_requires_authentication(tmp_path, spy):
         # /health nu reste public (installeur, sonde réseau) — non-régression.
         assert c.get("/health").status_code == 200
 
-        assert c.post("/api/auth/login", json={"password": PASSWORD}).status_code == 200
+        assert c.post(
+            "/api/auth/login", json={"email": "admin@exemple.fr", "password": PASSWORD}
+        ).status_code == 200
         assert c.get("/health?probe=true").status_code == 200
 
 
 # ── (c) /health/live : aucun appel sortant ────────────────────────────────────
-def test_health_live_makes_no_outbound_call(tmp_path, monkeypatch):
+def test_health_live_makes_no_outbound_call(db_url, tmp_path, monkeypatch):
     """Sonde de vivacité destinée au healthcheck Docker : process + base, rien d'autre."""
 
     def _boom(*_a, **_k):  # pragma: no cover - ne doit jamais être appelé
@@ -103,14 +106,14 @@ def test_health_live_makes_no_outbound_call(tmp_path, monkeypatch):
 
     monkeypatch.setattr(health_routes, "build_connector", _boom)
     monkeypatch.setattr(health_routes, "build_llm", _boom)
-    with TestClient(create_app(_settings(tmp_path))) as c:
+    with TestClient(create_app(_settings(db_url, tmp_path))) as c:
         r = c.get("/health/live")  # public, sans session
         assert r.status_code == 200
         assert r.json() == {"status": "ok", "database": True}
 
 
-def test_health_live_degrades_when_database_is_down(tmp_path, monkeypatch):
-    with TestClient(create_app(_settings(tmp_path))) as c:
+def test_health_live_degrades_when_database_is_down(db_url, tmp_path, monkeypatch):
+    with TestClient(create_app(_settings(db_url, tmp_path))) as c:
         from itsm_modern_ai.persistence import db
 
         monkeypatch.setattr(db, "session_scope", _raising_scope)
@@ -123,13 +126,13 @@ def _raising_scope():
 
 
 # ── (d) secrets illisibles → 503 explicite (et non 500 opaque) ────────────────
-def test_unreadable_secrets_return_503(tmp_path):
+def test_unreadable_secrets_return_503(db_url, tmp_path):
     """`master.key` incohérente : /health doit NOMMER la panne, pas rendre un 500 muet."""
     from itsm_modern_ai.adapters.secrets.encrypted import FernetSecretsBox
     from itsm_modern_ai.persistence import db
     from itsm_modern_ai.services.runtime_config import RuntimeConfigService
 
-    settings = _settings(tmp_path, dev_open_admin=True)
+    settings = _settings(db_url, tmp_path, dev_open_admin=True)
     with TestClient(create_app(settings)) as c:
         # Secrets GLPI chiffrés avec une AUTRE clé que celle de l'application.
         foreign = FernetSecretsBox(

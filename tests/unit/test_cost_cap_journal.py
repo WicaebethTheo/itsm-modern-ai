@@ -149,6 +149,31 @@ def test_decisions_csv_expose_mode_et_applied(temp_db):
     assert "subject" not in lignes[0]
 
 
+def test_decisions_csv_expose_le_repli(temp_db):
+    """Le CSV doit distinguer un « à trier » REPRIS par le repli d'un « à trier » orphelin.
+
+    C'est la distinction que `fallback_applied` existe pour rendre : la Décision est
+    refusée dans les deux cas (`accepted=False`, `applied=False`), mais dans l'un un
+    acteur a été assigné au Ticket. Visible dans la console et invisible dans l'artefact
+    d'audit, elle n'était pas auditable — alors que l'export sert précisément à isoler ce
+    qui a touché GLPI.
+    """
+    import csv as _csv
+
+    refus = TriageOutcome(accepted=False, reason=TriageReason.LOW_CONFIDENCE)
+    with db.session_scope() as s:
+        journal.record_decision(s, 1, refus, fallback_applied=True)  # repris par le repli
+        journal.record_decision(s, 2, refus)  # resté orphelin
+    with db.session_scope() as s:
+        lignes = list(_csv.DictReader(journal.decisions_csv(s).splitlines()))
+
+    par_ticket = {int(r["ticket_id"]): r for r in lignes}
+    assert par_ticket[1]["fallback_applied"] == "True"
+    assert par_ticket[2]["fallback_applied"] == "False"
+    # Colonne ajoutée EN FIN de ligne : un script d'audit déjà en place ne casse pas.
+    assert list(par_ticket[1])[-1] == "fallback_applied"
+
+
 def test_avg_confidence_and_daily_series(temp_db):
     from itsm_modern_ai.domain.models import Decision
 

@@ -10,7 +10,7 @@ l'environnement au runtime (exigence produit).
 
 from __future__ import annotations
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from ..config.credentials import (  # value objects réutilisés par glpi_credentials()
     GlpiCredentials,
@@ -108,6 +108,18 @@ AUDIT_VALUE_MAX_CHARS = 500
 # login ; incrémenter ce compteur invalide instantanément TOUS les cookies déjà émis.
 SESSION_VERSION_KEY = "session_version"
 
+# Identité du compte administrateur UNIQUE (créé à la première visite, cf. api/security.py).
+# Le produit n'a pas de multi-utilisateur : une table `users` pour une seule ligne serait un
+# schéma à maintenir, à migrer et à sauvegarder pour rien. L'email et le nom affiché vivent
+# donc ici, à côté du hash (`admin_password_hash`, lui chiffré car secret).
+#
+# ⚠️ Clés RÉSERVÉES, délibérément hors `PLAIN_KEYS` : sans quoi l'adresse partirait dans la
+# réponse de `/api/config` et — pire — deviendrait écrivable par n'importe quel POST
+# /api/config. L'email n'est pas un secret, mais il ne doit JAMAIS fuiter avant
+# authentification : c'est la moitié des identifiants, et la seule que le moteur connaisse.
+ADMIN_EMAIL_KEY = "admin_email"
+ADMIN_DISPLAY_NAME_KEY = "admin_display_name"
+
 
 class RuntimeConfigService:
     def __init__(
@@ -125,14 +137,33 @@ class RuntimeConfigService:
         # `api/deps.config_service_from_request` ; reste "system" pour le scheduler/CLI.
         # Paramètre nommé avec défaut : aucun appelant existant n'est cassé.
         self._actor = actor or AUDIT_ACTOR_SYSTEM
+        # Cache de lecture, cf. `_rows`. `None` = pas encore chargé / invalidé.
+        self._cache: dict[str, RuntimeConfig] | None = None
 
     @property
     def settings(self) -> Settings:
         return self._settings
 
     # ── lecture ───────────────────────────────────────────────────────────────
+    def _rows(self) -> dict[str, RuntimeConfig]:
+        """Toutes les clés, lues EN UNE FOIS, pour la durée de vie de ce service.
+
+        `session.get()` par clé semble gratuit — c'est une lecture d'`identity map`. Elle
+        ne l'est pas : chaque `commit()` expire la map, et `GET /api/config` lit 62 clés
+        d'affilée. Mesuré : 62 SELECT et 17,6 ms par appel, contre 0,37 ms pour un SELECT
+        global. La console demandait cette route deux fois par écran, et visiter les quatre
+        écrans du moteur revenait à 310 requêtes SQL pour une configuration qui n'a pas bougé.
+
+        La durée de vie du cache est celle du service, c'est-à-dire d'UNE requête HTTP
+        (dépendance FastAPI) ou d'un cycle de poll : il ne peut pas rancir. Toute écriture
+        l'invalide — y compris l'audit, qui relit la valeur d'avant juste avant d'écrire.
+        """
+        if self._cache is None:
+            self._cache = {r.key: r for r in self._session.exec(select(RuntimeConfig)).all()}
+        return self._cache
+
     def _row(self, key: str) -> RuntimeConfig | None:
-        return self._session.get(RuntimeConfig, key)
+        return self._rows().get(key)
 
     def get_secret(self, key: str) -> str | None:
         """Valeur en clair d'un secret (base uniquement). None si non configuré."""
@@ -281,6 +312,9 @@ class RuntimeConfigService:
             row.is_secret = is_secret
         self._session.add(row)
         self._session.commit()
+        # Le commit expire les objets de la session : garder le cache tel quel ferait
+        # relire chaque attribut ligne par ligne, soit exactement ce qu'on vient d'éviter.
+        self._cache = None
 
     # ── journal d'audit ─────────────────────────────────────────────────────────
     def record_action(
@@ -354,6 +388,31 @@ class RuntimeConfigService:
         new = self.session_version() + 1
         self._upsert(SESSION_VERSION_KEY, str(new), is_secret=False)
         return new
+
+    # ── compte administrateur (identité non secrète) ────────────────────────────
+    def admin_email(self) -> str | None:
+        """Adresse de connexion de l'unique compte admin (forme canonique), ou None."""
+        row = self._row(ADMIN_EMAIL_KEY)
+        return row.value or None if row is not None else None
+
+    def admin_display_name(self) -> str | None:
+        row = self._row(ADMIN_DISPLAY_NAME_KEY)
+        return row.value or None if row is not None else None
+
+    def set_admin_identity(
+        self, email: str, display_name: str | None = None, *, by: str | None = None
+    ) -> None:
+        """Écrit l'identité du compte admin. Audité (imputabilité), jamais chiffré.
+
+        Écrit via `_upsert` et non `set` : les clés sont RÉSERVÉES (hors `PLAIN_KEYS`), donc
+        `set` les refuserait — et c'est exactement ce qu'on veut, puisque `/api/config` ne
+        doit ni les lire ni les écrire.
+        """
+        old = self.admin_email() or ""
+        self._upsert(ADMIN_EMAIL_KEY, email, is_secret=False)
+        if display_name is not None:
+            self._upsert(ADMIN_DISPLAY_NAME_KEY, display_name, is_secret=False)
+        self._audit("admin.identity", ADMIN_EMAIL_KEY, old, email, by)
 
     # ── vues typées ──────────────────────────────────────────────────────────────
     def glpi_credentials(self) -> GlpiCredentials:

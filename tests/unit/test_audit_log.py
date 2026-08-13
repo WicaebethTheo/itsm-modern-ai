@@ -8,6 +8,8 @@ RGPD effaçait la seule table qui aurait pu en témoigner.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from cryptography.fernet import Fernet
 from sqlmodel import Session, select
@@ -20,18 +22,13 @@ from itsm_modern_ai.services.runtime_config import RuntimeConfigService
 
 
 @pytest.fixture
-def cfg(tmp_path) -> RuntimeConfigService:
-    settings = Settings(
-        _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'audit.db'}",
-        master_key=Fernet.generate_key().decode(),
-    )
-    db._engine = None
-    db.init_engine(settings.database_url)
-    db.create_all()
+def cfg(temp_db, tmp_path) -> Iterator[RuntimeConfigService]:
+    settings = Settings(_env_file=None, master_key=Fernet.generate_key().decode())
     box = FernetSecretsBox(master_key=settings.master_key, key_file=tmp_path / "master.key")
-    yield RuntimeConfigService(Session(db.get_engine()), box, settings, actor="10.0.0.7")
-    db._engine = None
+    # Session en `with` : laissée ouverte, elle garderait une connexion « idle in
+    # transaction » (verrou sur les tables) et le `DROP SCHEMA` de `temp_db` bloquerait.
+    with Session(db.get_engine()) as session:
+        yield RuntimeConfigService(session, box, settings, actor="10.0.0.7")
 
 
 def _rows(cfg: RuntimeConfigService) -> list[AuditLog]:

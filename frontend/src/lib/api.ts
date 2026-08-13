@@ -8,6 +8,41 @@
 import { demo } from "./demo";
 import { tr } from "./i18n";
 
+/**
+ * Messages de validation GÉNÉRIQUES de Pydantic v2 : ils décrivent la contrainte, jamais ce
+ * que l'exploitant doit faire, et ils arrivent en anglais dans une console française (« Input
+ * should be less than or equal to 5 »). Les afficher tels quels n'est pas plus actionnable
+ * qu'« API 422 » — on les laisse donc tomber au profit du libellé traduit par status, en ne
+ * gardant QUE les messages écrits par nos validateurs (anti-SSRF, cohérence de config).
+ */
+const VALIDATION_GENERIQUE = [
+  /^Input should /i,
+  /^Field required$/i,
+  /^Value is not a valid /i,
+  /^String should /i,
+  /^Ensure this value /i,
+  /^Extra inputs are not permitted$/i,
+  /^Unable to parse /i,
+  /^Assertion failed/i,
+];
+
+/** Au-delà, la cause utile est noyée : on borne au lieu de déverser tout le rapport 422. */
+const MAX_DETAILS = 3;
+
+/**
+ * Nom du champ mis en cause par une erreur 422 FastAPI : `loc` vaut `["body", "glpi_base_url"]`.
+ * Sans lui, « Field required » ne dit pas QUEL champ manque — inactionnable.
+ */
+function champFautif(item: Record<string, unknown>): string | null {
+  const loc = item.loc;
+  if (!Array.isArray(loc)) return null;
+  // On saute le conteneur (`body`, `query`, `path`) : c'est du vocabulaire HTTP, pas un champ.
+  const parts = loc.filter(
+    (p): p is string => typeof p === "string" && !["body", "query", "path", "header"].includes(p),
+  );
+  return parts.length > 0 ? parts.join(".") : null;
+}
+
 /** Extrait `payload.detail.message` (format d'erreur du backend) sans présumer de la forme. */
 function detailMessage(payload: unknown): string | null {
   if (payload && typeof payload === "object" && "detail" in payload) {
@@ -19,6 +54,27 @@ function detailMessage(payload: unknown): string | null {
     // Défensif : le style FastAPI par défaut est `{"detail": "…"}` (string). Notre
     // backend n'en émet pas aujourd'hui, mais un futur endpoint pourrait.
     if (typeof detail === "string" && detail) return detail;
+    // 422 : FastAPI sérialise les erreurs de validation en TABLEAU. C'est là que
+    // ressortent les seuls diagnostics actionnables de l'enregistrement — les messages
+    // anti-SSRF des validateurs d'URL (`api/routes/config.py`). Sans ce cas, ils se
+    // perdaient et l'exploitant lisait « API 422 » à la place de la cause.
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return null;
+          const item = entry as Record<string, unknown>;
+          if (typeof item.msg !== "string" || !item.msg) return null;
+          // Pydantic v2 préfixe les ValueError levées par un validateur ; le préfixe
+          // est du bruit pour l'exploitant, le message utile est derrière.
+          const msg = item.msg.replace(/^Value error, /, "").trim();
+          if (!msg || VALIDATION_GENERIQUE.some((r) => r.test(msg))) return null;
+          const champ = champFautif(item);
+          return champ ? `${champ} : ${msg}` : msg;
+        })
+        .filter((m): m is string => !!m)
+        .slice(0, MAX_DETAILS);
+      if (messages.length > 0) return messages.join(" · ");
+    }
   }
   return null;
 }
@@ -49,9 +105,29 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public payload: unknown,
+    /** Secondes à attendre (en-tête `Retry-After`) — renseigné sur les 429 anti-brute-force. */
+    public retryAfter?: number,
   ) {
     super(errorMessage(status, payload));
   }
+}
+
+/**
+ * Code machine de l'erreur (`detail.code`), quand le backend en pose un.
+ * Les pages d'auth s'en servent pour distinguer « email invalide » de « mot de passe
+ * trop court » sur un même 422 — le message, lui, reste destiné à l'humain.
+ */
+export function errorCode(e: unknown): string | null {
+  if (!(e instanceof ApiError)) return null;
+  const p = e.payload;
+  if (p && typeof p === "object" && "detail" in p) {
+    const detail = (p as { detail?: unknown }).detail;
+    if (detail && typeof detail === "object" && "code" in detail) {
+      const c = (detail as { code?: unknown }).code;
+      if (typeof c === "string" && c) return c;
+    }
+  }
+  return null;
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -79,7 +155,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     if (res.status === 401 && !path.startsWith("/api/auth/") && !DEMO) {
       navigation.toLogin();
     }
-    throw new ApiError(res.status, data);
+    // `Retry-After` (429 anti-brute-force) : le corps ne porte QUE le message, le délai
+    // vit dans l'en-tête. Sans le remonter ici, l'UI ne peut ni décompter ni rouvrir le
+    // formulaire au bon moment — elle inventerait un délai, ou ferait attendre à vide.
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    throw new ApiError(
+      res.status,
+      data,
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+    );
   }
   return data as T;
 }
@@ -101,6 +185,25 @@ export const navigation = {
   },
 };
 
+/**
+ * Deuxième ceinture anti-boucle, sur le même principe que `navigation.toLogin` :
+ * `/setup` renvoie vers `/login` quand le moteur répond 409 « un compte existe déjà »,
+ * or `/login` renvoie vers `/setup` quand le statut dit `setup_required`. Si les deux
+ * réponses se contredisent — statut en cache, réplique en retard, second onglet qui a
+ * créé le compte —, les deux pages se renvoient la balle indéfiniment.
+ *
+ * Le 409 fait FOI : il vient de l'écriture elle-même, pas d'une lecture. On le mémorise
+ * donc pour l'onglet en cours, et `/login` cesse de proposer l'installation. La marque ne
+ * survit pas à la fermeture de l'onglet (sessionStorage) : une instance réellement vierge
+ * retrouve son écran d'installation à la visite suivante.
+ */
+const SETUP_SETTLED_KEY = "itsm.setup-settled";
+
+export const setupSettled = {
+  mark: () => sessionStorage.setItem(SETUP_SETTLED_KEY, "1"),
+  get: () => sessionStorage.getItem(SETUP_SETTLED_KEY) === "1",
+};
+
 export const api = {
   get: <T>(p: string) => request<T>("GET", p),
   post: <T>(p: string, b?: unknown) => request<T>("POST", p, b),
@@ -110,7 +213,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.56";
+export const APP_VERSION = "0.9.80";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -130,10 +233,33 @@ export type RefKind = "category" | "entity" | "technician" | "group";
 
 export type GlpiApiVersion = "legacy" | "v2";
 
+/** Identité de l'unique compte administrateur (réponse de `GET /api/auth/me`). */
+export interface AdminIdentity {
+  email: string;
+  display_name: string | null;
+}
+
 export interface AuthStatus {
   authenticated: boolean;
   auth_configured: boolean;
+  /**
+   * Aucun compte administrateur n'existe encore → l'installation n'est pas terminée et
+   * l'UI doit envoyer sur `/setup`. Optionnel : un moteur antérieur à la page
+   * d'installation ne renvoie pas ce champ, et `undefined` (faux) est le bon défaut —
+   * on ne propose jamais de créer un compte sur une instance qui n'en sait rien.
+   */
+  setup_required?: boolean;
 }
+
+/** Création du compte administrateur (première installation). */
+export interface SetupRequest {
+  email: string;
+  password: string;
+  display_name?: string;
+}
+
+/** Longueur minimale imposée par le moteur (`MIN_ADMIN_CHARS`, api/security.py). */
+export const MIN_PASSWORD_CHARS = 8;
 
 export interface Health {
   status: "ok" | "degraded";
@@ -195,6 +321,7 @@ export interface EngineStatus {
  * cycle. Tous les champs sont nullables : un moteur qui n'a jamais tourné n'a rien à dire.
  */
 export interface PollCycle {
+  has_run: boolean | null; // le moteur a-t-il déjà bouclé au moins une fois ?
   run_at: string | null; // ISO 8601
   fetched: number | null;
   processed: number | null;
@@ -208,6 +335,7 @@ export interface PollCycle {
 // moteur : plutôt que de casser la page au moindre renommage, on lit le premier alias
 // présent. Le 1er de chaque liste est le nom des clés runtime (`poll_last_*`).
 const POLL_CYCLE_ALIASES: Record<keyof PollCycle, string[]> = {
+  has_run: ["poll_last_has_run", "has_run", "ran"],
   run_at: ["poll_last_run_at", "run_at", "ran_at", "last_run_at", "started_at", "at", "timestamp"],
   fetched: ["poll_last_fetched", "fetched", "tickets_fetched", "seen"],
   processed: ["poll_last_processed", "processed", "triaged"],
@@ -232,6 +360,34 @@ function asNumber(v: unknown): number | null {
 
 function asText(v: unknown): string | null {
   return typeof v === "string" && v.trim() !== "" ? v : null;
+}
+
+/**
+ * Écritures d'un booléen sérialisé en chaîne, partagées par `asBoolean` et `asBool` : la
+ * config runtime stocke `"1"`/`"0"`, les réponses JSON `"true"`/`"false"`, et les formulaires
+ * historiques `"yes"`/`"on"`. Une seule liste, sinon les deux lecteurs divergent.
+ */
+const BOOLEENS_VRAIS = ["1", "true", "yes", "on", "vrai"];
+const BOOLEENS_FAUX = ["0", "false", "no", "off", "faux"];
+
+/**
+ * Booléen tolérant : un moteur plus ancien peut rendre le drapeau en texte JSON.
+ *
+ * MÊMES écritures qu'`asBool` (même fichier, même produit) : le premier alias de `has_run`
+ * est une CLÉ RUNTIME, et la convention de sérialisation de la config runtime est `"1"`/`"0"`
+ * — n'accepter que `"true"`/`"false"` ici aurait lu le drapeau comme ABSENT le jour où le
+ * moteur passe par cette voie, et la page Statut serait retombée sur la pastille verte du
+ * symptôme n°1. Différence assumée avec `asBool` : trois états (`null` = « rien à affirmer »)
+ * au lieu de deux, parce qu'ici l'absence d'information n'est pas « faux ».
+ */
+function asBoolean(v: unknown): boolean | null {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (BOOLEENS_VRAIS.includes(s)) return true;
+    if (BOOLEENS_FAUX.includes(s)) return false;
+  }
+  return null;
 }
 
 /**
@@ -274,7 +430,14 @@ export function readPollCycle(status: EngineStatus | null | undefined): PollCycl
     }
     return null;
   };
+  // Verdict EXPLICITE du moteur, à lire avant tout : `LastPoll.has_run` (routes/status.py)
+  // est un booléen non nul, donc il survit à `response_model_exclude_none=True`. Les
+  // compteurs, eux, valent 0 — et non `null` — quand aucun cycle n'a tourné : s'en remettre
+  // à eux classait « jamais exécuté » en « a tourné » (0 !== null), et la page affichait une
+  // pastille verte sur un moteur qui n'avait jamais bouclé. C'est le symptôme n°1.
+  const hasRun = asBoolean(find(POLL_CYCLE_ALIASES.has_run));
   const cycle: PollCycle = {
+    has_run: hasRun,
     run_at: asText(find(POLL_CYCLE_ALIASES.run_at)),
     fetched: asNumber(find(POLL_CYCLE_ALIASES.fetched)),
     processed: asNumber(find(POLL_CYCLE_ALIASES.processed)),
@@ -283,7 +446,12 @@ export function readPollCycle(status: EngineStatus | null | undefined): PollCycl
     errors: asNumber(find(POLL_CYCLE_ALIASES.errors)),
     error_message: asText(find(POLL_CYCLE_ALIASES.error_message)),
   };
-  if (Object.values(cycle).some((v) => v !== null)) return { kind: "ran", cycle };
+  if (hasRun === false) return { kind: "never" };
+  if (hasRun === true) return { kind: "ran", cycle };
+  // Moteur qui n'annonce pas `has_run` (clés à plat d'une version antérieure) : on retombe
+  // sur les compteurs, en excluant `has_run` lui-même du test — sinon il se répondrait.
+  const { has_run: _hasRun, ...counters } = cycle;
+  if (Object.values(counters).some((v) => v !== null)) return { kind: "ran", cycle };
   if (containerSeen) return { kind: "never" };
   // `/api/status` est sérialisé avec `response_model_exclude_none=True` : le moteur OMET
   // `last_poll` au lieu de l'écrire à `null`. « Aucun cycle exécuté » arriverait donc sur
@@ -436,7 +604,7 @@ export const GLPI_OAUTH_SCOPES = [
 
 /** Vrai si une valeur de config stockée en chaîne représente un booléen vrai. */
 export function asBool(v: string | null | undefined): boolean {
-  return v != null && ["1", "true", "yes", "on", "vrai"].includes(v.trim().toLowerCase());
+  return v != null && BOOLEENS_VRAIS.includes(v.trim().toLowerCase());
 }
 
 export interface DecisionEntry {
@@ -458,6 +626,14 @@ export interface DecisionEntry {
   glpi_link: string;
   annotation: string;
   mode?: string; // mode d'exécution résolu (suggestion | semi_auto | full_auto)
+  /**
+   * Un acteur de repli a été assigné MALGRÉ le refus (colonne distincte de `applied`,
+   * cf. persistence/tables.py). Sans ce champ, un « à trier » repris par le repli et un
+   * « à trier » resté orphelin sont indiscernables — or c'est exactement la distinction
+   * qui dit à l'exploitant où il doit mettre la main. Optionnel : un moteur antérieur
+   * ne le renvoie pas, et `undefined` se lit comme « on ne sait pas », pas comme « non ».
+   */
+  fallback_applied?: boolean;
   applied?: boolean; // la Décision a-t-elle muté les champs du Ticket GLPI
 }
 
@@ -477,6 +653,13 @@ export interface RefItem {
   /** Cible de repli (entités) : acteur assigné quand le garde-fou refuse une Décision. */
   fallback_group_id?: number | null;
   fallback_technician_id?: number | null;
+  /**
+   * Horodatage du dernier scan GLPI ayant touché cette ligne (ISO 8601 UTC). Sert à dire
+   * la FRAÎCHEUR du cache : sans lui, un technicien parti il y a trois mois reste dans la
+   * liste sans que rien ne signale que le référentiel date. Optionnel : un moteur
+   * antérieur ne le renvoie pas, et l'UI n'affirme alors rien.
+   */
+  updated_at?: string | null;
 }
 
 export interface ModeItem {
@@ -624,6 +807,13 @@ export interface SandboxResult {
   group_name?: string | null; // nom GLPI du groupe routé
   confidence: number | null;
   draft: string | null;
+  // Coût réel de l'essai : la sandbox est déjà comptée dans le plafond (routes/sandbox.py)
+  // mais ne disait pas ce qu'elle venait de dépenser — deux chiffres décisifs avant
+  // d'autoriser le moteur sur un flux réel. Optionnels : moteur antérieur = absents.
+  model?: string | null;
+  cost_eur?: number | null;
+  prompt_tokens?: number | null;
+  completion_tokens?: number | null;
 }
 
 // ── Licence Supporter (open-core) ────────────────────────────────────────────
@@ -639,6 +829,12 @@ export interface LicenseFeature {
   installed: boolean; // code présent dans l'image (Supporter)
   entitled: boolean; // autorisé par la licence
   active: boolean; // installed && entitled (= réellement débloqué)
+  /**
+   * Module annoncé mais sans surface d'usage. Une licence l'« autorise » déjà, donc sans
+   * ce drapeau l'UI affichait « Débloqué » en vert pour quelque chose qui ne fait encore
+   * rien — le client paie et voit une promesse peinte en réussite.
+   */
+  coming_soon?: boolean;
 }
 
 export interface LicenseView {
@@ -727,9 +923,29 @@ export const Api = {
   // En mode démo : AUCUN appel réseau. Un visiteur qui confond la démo publique avec sa
   // propre instance enverrait sinon un vrai mot de passe admin sur le réseau (le serveur
   // statique de la démo ne doit jamais le voir). On renvoie un statut authentifié simulé.
-  login: (password: string) =>
-    DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/login", { password }),
+  login: (email: string, password: string) =>
+    DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/login", { email, password }),
+  // Même garde qu'au login, et elle compte DOUBLE ici : l'écran d'installation est celui
+  // où l'on choisit un mot de passe qu'on réutilisera. Un visiteur de la démo publique qui
+  // le croirait « sa » console enverrait ce secret tout neuf à un serveur statique.
+  setup: (body: SetupRequest) =>
+    DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/setup", body),
   logout: () => (DEMO ? ok(demo.authStatus) : api.post<AuthStatus>("/api/auth/logout")),
+  /**
+   * Identité du compte connecté. Route SÉPARÉE et authentifiée, à ne jamais fusionner
+   * dans `/api/auth/status` : celle-ci est publique, et y faire figurer l'adresse
+   * offrirait à un anonyme la moitié du couple à deviner (cf. routes/auth.py).
+   */
+  me: () => (DEMO ? ok(demo.me) : api.get<AdminIdentity>("/api/auth/me")),
+  /**
+   * Change le mot de passe de l'unique administrateur. Le moteur incrémente la génération
+   * de session : TOUTES les sessions tombent, y compris la nôtre — l'appelant doit donc
+   * renvoyer vers `/login` après un succès.
+   */
+  changePassword: (current_password: string, new_password: string) =>
+    DEMO
+      ? ok({ ok: true })
+      : api.post<{ ok: boolean }>("/api/auth/password", { current_password, new_password }),
 
   // `probe` déclenche une VRAIE requête sortante vers le fournisseur LLM (facturée, et
   // réservée aux sessions authentifiées côté moteur) : jamais au chargement d'une page,
@@ -807,7 +1023,10 @@ export const Api = {
   saveModes: (items: ModeItem[]) =>
     DEMO ? ok([] as RefItem[]) : api.put<RefItem[]>("/api/modes", items),
 
-  decisions: () => (DEMO ? ok(demo.decisions) : api.get<DecisionEntry[]>("/api/decisions")),
+  decisions: (limit?: number) =>
+    DEMO
+      ? ok(demo.decisions)
+      : api.get<DecisionEntry[]>(`/api/decisions${limit ? `?limit=${limit}` : ""}`),
   annotate: (id: number, annotation: string) =>
     DEMO
       ? ok({ ...demo.decisions[0], id, annotation })
@@ -863,6 +1082,13 @@ export const Api = {
           group_name: null,
           confidence: 0.9,
           draft: "Bonjour, nous avons bien reçu votre demande et la prenons en charge.",
+          // Le moteur renvoie TOUJOURS ce qu'un essai vient de coûter (routes/sandbox.py) :
+          // sans ces trois champs, la démo masquait le bloc de coût de la Sandbox — soit
+          // exactement l'écran qu'un exploitant regarde avant d'autoriser un flux réel.
+          model: "mistral-large-latest",
+          cost_eur: 0.0021,
+          prompt_tokens: 812,
+          completion_tokens: 143,
         } satisfies SandboxResult)
       : api.post<SandboxResult>("/api/sandbox", { title, content }),
 };

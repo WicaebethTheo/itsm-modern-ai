@@ -12,6 +12,7 @@ vi.mock("@/lib/api", async (orig) => {
     Api: {
       ...actual.Api,
       discovery: vi.fn(),
+      syncGlpi: vi.fn(),
       saveTechnicians: vi.fn(),
       skillCatalog: vi.fn(),
       skillCoverage: vi.fn(),
@@ -54,19 +55,28 @@ describe("Technicians (éditeur d'éligibilité)", () => {
     expect(screen.getByText("Nadia Bouaziz")).toBeInTheDocument();
   });
 
-  it("enregistre l'éligibilité (saveTechnicians + confirmation)", async () => {
+  it("n'enregistre que ce qui a changé — bouton inerte tant que rien ne l'est", async () => {
+    // Le bouton est DÉSACTIVÉ à l'arrivée : un enregistrement sans modification n'a pas de
+    // sens, et un bouton toujours actif ne dit RIEN de ce qui reste à enregistrer. C'est le
+    // compteur qui porte l'information, dans une barre collante qu'on ne peut plus rater.
     vi.mocked(Api.discovery).mockResolvedValue(TECHS);
     renderWithToast(<Technicians />);
     await screen.findByText("Sylvain Martin");
-    await userEvent.click(screen.getByRole("button", { name: "Enregistrer la sélection" }));
+
+    const bouton = screen.getByRole("button", { name: "Enregistrer la sélection" });
+    expect(bouton).toBeDisabled();
+    expect(screen.getByText("Aucune modification en attente")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: /Nadia Bouaziz/ }));
+    expect(screen.getByText("1 modification(s) non enregistrée(s)")).toBeInTheDocument();
+    await userEvent.click(bouton);
 
     await waitFor(() => expect(Api.saveTechnicians).toHaveBeenCalledTimes(1));
-    expect(Api.saveTechnicians).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        { ext_id: 11, eligible: true, skills: "AD, comptes", skill_tags: [] },
-        { ext_id: 12, eligible: false, skills: "", skill_tags: [] },
-      ]),
-    );
+    // SEULE la fiche modifiée part : `set_eligibility` écrit par `ext_id`, renvoyer une
+    // ligne inchangée écrasait la version d'un autre onglet par celle qu'on avait lue avant.
+    expect(Api.saveTechnicians).toHaveBeenCalledWith([
+      { ext_id: 12, eligible: true, skills: "", skill_tags: [] },
+    ]);
     expect(await screen.findByText("Enregistré.")).toBeInTheDocument();
   });
 
@@ -74,6 +84,168 @@ describe("Technicians (éditeur d'éligibilité)", () => {
     vi.mocked(Api.discovery).mockResolvedValue([]);
     renderWithToast(<Technicians />);
     expect(await screen.findByText("Aucun élément")).toBeInTheDocument();
+  });
+
+  it("ne fait pas passer une lecture en ÉCHEC pour une instance jamais scannée", async () => {
+    // Le bug d'origine : /api/discovery en 500 affichait « cliquez sur Scanner GLPI »,
+    // l'admin scannait, ça échouait encore, et rien ne nommait jamais la cause.
+    vi.mocked(Api.discovery).mockRejectedValue(new Error("HTTP 500"));
+    renderWithToast(<Technicians />);
+    expect(await screen.findByText(/Impossible de lire les référentiels/)).toBeInTheDocument();
+    expect(screen.getByText("Liste indisponible")).toBeInTheDocument();
+    expect(screen.queryByText("Aucun élément")).not.toBeInTheDocument();
+  });
+
+  it("alerte quand PERSONNE n'est éligible — l'état le plus grave de la page", async () => {
+    // Sans acteur éligible, `whitelist.check` renvoie NO_ELIGIBLE_ASSIGNEE : 100 % des
+    // tickets partent « à trier ». Le diagnostic se taisait exactement dans ce cas-là.
+    vi.mocked(Api.discovery).mockResolvedValue([ref({ ext_id: 11, name: "Alice" })]);
+    renderWithToast(<Technicians />);
+    expect(await screen.findByText("Aucun technicien éligible")).toBeInTheDocument();
+  });
+
+  it("le cochage en masse ne porte QUE sur les lignes affichées", async () => {
+    // Le piège : filtrer « Sylvain », cliquer le bouton, et rendre éligible toute
+    // l'instance. Le libellé porte le nombre d'affichés, et l'action s'y limite.
+    vi.mocked(Api.discovery).mockResolvedValue([
+      ...TECHS,
+      ref({ ext_id: 13, name: "Karim Haddad", eligible: false }),
+    ]);
+    renderWithToast(<Technicians />);
+    await screen.findByText("Karim Haddad");
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Rechercher un technicien" }),
+      "Nadia",
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: /Cocher les 1 affichés/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer la sélection" }));
+
+    await waitFor(() => expect(Api.saveTechnicians).toHaveBeenCalledTimes(1));
+    const envoyes = vi.mocked(Api.saveTechnicians).mock.calls[0][0];
+    expect(envoyes.find((x) => x.ext_id === 12)?.eligible).toBe(true);
+    // Karim, masqué par le filtre, n'a pas bougé : il ne part même pas au serveur.
+    expect(envoyes.map((x) => x.ext_id)).toEqual([12]);
+  });
+});
+
+/**
+ * La fusion du brouillon promettait « on ne reprend du serveur que les acteurs dont l'admin
+ * n'a rien touché » — mais elle ne savait pas ce qui avait été touché : le brouillon était
+ * peuplé de TOUTES les lignes dès le premier chargement, donc la branche serveur n'était
+ * atteinte que par un acteur nouvellement apparu dans GLPI.
+ */
+describe("Fusion du brouillon avec le serveur", () => {
+  const SYNCED = { ok: true, detail: "Référentiels synchronisés.", counts: { technician: 2 } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(Api.skillCatalog).mockResolvedValue([]);
+    vi.mocked(Api.skillCoverage).mockResolvedValue([]);
+    vi.mocked(Api.absences).mockResolvedValue([]);
+    vi.mocked(Api.saveTechnicians).mockResolvedValue([]);
+  });
+
+  it("un scan RAMÈNE la valeur serveur d'une fiche que l'admin n'a pas touchée", async () => {
+    // Une fiche modifiée dans un autre onglet restait invisible ici, le compteur imputait
+    // l'écart à l'admin, et « Enregistrer » réécrasait le serveur avec la valeur périmée.
+    let scanne = false;
+    const APRES: RefItem[] = [
+      ref({ ext_id: 11, name: "Sylvain Martin", eligible: true, skills: "AD, comptes, VPN" }),
+      ref({ ext_id: 12, name: "Nadia Bouaziz", eligible: false }),
+    ];
+    vi.mocked(Api.discovery).mockImplementation(() => Promise.resolve(scanne ? APRES : TECHS));
+    vi.mocked(Api.syncGlpi).mockImplementation(() => {
+      scanne = true;
+      return Promise.resolve(SYNCED);
+    });
+
+    renderWithToast(<Technicians />);
+    expect(await screen.findByDisplayValue("AD, comptes")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Scanner GLPI" }));
+
+    expect(await screen.findByDisplayValue("AD, comptes, VPN")).toBeInTheDocument();
+    // Et rien n'est présenté comme une modification non enregistrée de l'admin.
+    expect(screen.getByText("Aucune modification en attente")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enregistrer la sélection" })).toBeDisabled();
+  });
+
+  it("mais ce même scan ne jette PAS la saisie en cours", async () => {
+    // L'inverse est tout aussi grave : c'est pour ça que la fusion existe.
+    let scanne = false;
+    const APRES: RefItem[] = [
+      ref({ ext_id: 11, name: "Sylvain Martin", eligible: true, skills: "AD, comptes" }),
+      ref({ ext_id: 12, name: "Nadia Bouaziz", eligible: true }),
+    ];
+    vi.mocked(Api.discovery).mockImplementation(() => Promise.resolve(scanne ? APRES : TECHS));
+    vi.mocked(Api.syncGlpi).mockImplementation(() => {
+      scanne = true;
+      return Promise.resolve(SYNCED);
+    });
+
+    renderWithToast(<Technicians />);
+    const zone = await screen.findByDisplayValue("AD, comptes");
+    await userEvent.type(zone, " et VPN");
+
+    await userEvent.click(screen.getByRole("button", { name: "Scanner GLPI" }));
+
+    // La fiche touchée garde la saisie ; la fiche non touchée prend le serveur.
+    expect(await screen.findByRole("checkbox", { name: /Nadia Bouaziz/ })).toBeChecked();
+    expect(screen.getByDisplayValue("AD, comptes et VPN")).toBeInTheDocument();
+    expect(screen.getByText("1 modification(s) non enregistrée(s)")).toBeInTheDocument();
+  });
+});
+
+describe("Congés vus depuis la ligne du technicien", () => {
+  const absence = {
+    id: 1,
+    technician_ext_id: 11,
+    start_date: "2026-08-01",
+    end_date: "2026-08-22",
+    replacement_ext_id: 12,
+    note: "",
+    technician_name: "Sylvain Martin",
+    replacement_name: "Nadia Bouaziz",
+    active: true,
+  };
+
+  beforeEach(() => {
+    vi.mocked(Api.skillCatalog).mockResolvedValue([]);
+    vi.mocked(Api.skillCoverage).mockResolvedValue([]);
+    vi.mocked(Api.saveTechnicians).mockResolvedValue([]);
+    vi.mocked(Api.discovery).mockResolvedValue(TECHS);
+  });
+
+  it("porte l'état d'absence sur la ligne de la personne concernée", async () => {
+    // Une absence est un attribut d'une PERSONNE : elle se lit sur sa ligne, pas dans une
+    // table qu'il faudrait aller chercher plus bas.
+    vi.mocked(Api.absences).mockResolvedValue([absence]);
+    renderWithToast(<Technicians />);
+    expect(await screen.findByText(/Absent jusqu'au 22 août/)).toBeInTheDocument();
+    expect(screen.getByText(/remplacé par Nadia Bouaziz/)).toBeInTheDocument();
+  });
+
+  it("n'offre le bouton congés qu'aux techniciens éligibles", async () => {
+    vi.mocked(Api.absences).mockResolvedValue([]);
+    renderWithToast(<Technicians />);
+    expect(
+      await screen.findByRole("button", { name: "Déclarer une absence pour Sylvain Martin" }),
+    ).toBeInTheDocument();
+    // Nadia n'est pas éligible : elle n'est pas dans le pool, il n'y a rien à en retirer.
+    expect(
+      screen.queryByRole("button", { name: "Déclarer une absence pour Nadia Bouaziz" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("le bouton de la ligne ouvre la planification déjà remplie à ce nom", async () => {
+    vi.mocked(Api.absences).mockResolvedValue([]);
+    renderWithToast(<Technicians />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Déclarer une absence pour Sylvain Martin" }),
+    );
+    const select = await screen.findByRole("combobox", { name: "Technicien absent" });
+    expect((select as HTMLSelectElement).value).toBe("11");
   });
 });
 
@@ -94,6 +266,11 @@ describe("Domaines de compétence cochables", () => {
   ];
 
   beforeEach(() => {
+    // `clearAllMocks` indispensable ici : sans lui, l'HISTORIQUE d'appels des blocs
+    // précédents fuit, et `toHaveBeenCalledTimes(1)` compte les enregistrements des autres
+    // tests. Le bloc n'en avait pas et ne passait que parce que aucun test amont
+    // n'appelait `saveTechnicians` avec succès.
+    vi.clearAllMocks();
     vi.mocked(Api.skillCatalog).mockResolvedValue(CATALOGUE);
     vi.mocked(Api.skillCoverage).mockResolvedValue([]);
     vi.mocked(Api.absences).mockResolvedValue([]);

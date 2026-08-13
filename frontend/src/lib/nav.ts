@@ -1,14 +1,66 @@
 // Registre de navigation — source unique pour la sidebar ET le titre de la topbar.
-// Bilingue (fr/en). Icônes uniquement sur « Opération » (fidèle à la maquette).
-// Les chemins `to` sont stables (liés au routeur).
+// Bilingue (fr/en). Les chemins `to` sont stables (liés au routeur).
+//
+// TOUTE entrée porte une icône. Elles ne décorent pas : la sidebar compte quinze lignes de
+// texte de longueur voisine, et l'œil qui revient sur la console cherche une FORME, pas un
+// mot. Quatre lignes sur quinze en portaient — les quatre premières —, ce qui donnait à la
+// section « Opération » un relief que les deux autres n'avaient pas, alors qu'aucune des
+// trois n'est plus importante que les autres. Icônes de `lucide-react`, déjà embarquées
+// (aucun appel sortant, aucune fonte d'icônes distante) et déjà utilisées par `Setup.tsx`.
+//
+// L'ORDRE des sections répond à quatre questions distinctes, et c'est tout le classement :
+//   Opération     — qu'est-ce que le moteur A FAIT ? (écrans de lecture, aucun réglage)
+//   Moteur        — COMMENT se comporte-t-il ? (les garde-fous, dans l'ordre du pipeline)
+//   Configuration — à QUOI a-t-il accès ? (raccordements, référentiels, conformité)
+//   Avancé        — outils qu'on n'ouvre pas toutes les semaines
+//
+// Deux entrées ont changé de section :
+//   · « Connexion GLPI » quittait mal « Opération » : on y saisit une URL, un jeton et on
+//     teste — c'est un écran de RÉGLAGE. L'état de la connexion, lui, est déjà porté par le
+//     chip de la topbar et par la page Statut, qui sont, eux, des écrans de lecture.
+//   · « Coûts & quotas » rejoint « Opération » : la page le dit elle-même en pied d'écran,
+//     « le plafond et les tarifs se règlent dans Moteur, cette page est en lecture seule ».
+//     Elle observe une dépense ; elle ne configure rien.
+//
+// POURQUOI « Moteur » est une SECTION et non plus une entrée : c'était une page de dix-sept
+// contrôles répartis en sept cartes et quatre thèmes sans rapport — les bornes de sécurité du
+// triage y voisinaient avec la fenêtre d'analyse d'un graphique — le tout derrière un unique
+// « Enregistrer » qui réécrivait les dix-sept réglages d'un coup, donc écrasait ce qu'un
+// second onglet venait de changer. Découpée, chaque page n'enregistre plus que ses propres
+// clés (`ConfigUpdate` est un patch côté serveur), et l'écran qui peut ARMER une écriture
+// GLPI est enfin seul sur le sien.
+//
+// Les entrées suivent l'ordre du pipeline de `triage.py` : ce qui filtre (Garde-fous), ce qui
+// autorise à écrire (Modes), ce qui alimente (Ingestion), ce qu'on dit au modèle (Prompt).
 
-export type IconName = "grid" | "clock" | "log" | "list";
+import {
+  Activity,
+  EyeOff,
+  FlaskConical,
+  Heart,
+  LayoutDashboard,
+  type LucideIcon,
+  MessageSquareText,
+  Plug,
+  ScrollText,
+  ShieldCheck,
+  Sparkles,
+  Terminal,
+  Timer,
+  ToggleRight,
+  UserCog,
+  UserRound,
+  Users,
+  Wallet,
+  Workflow,
+  Zap,
+} from "lucide-react";
 
 export interface NavItem {
   to: string;
   fr: string;
   en: string;
-  icon?: IconName;
+  icon: LucideIcon;
   end?: boolean;
 }
 
@@ -23,44 +75,88 @@ export const NAV: NavSection[] = [
     fr: "Opération",
     en: "Operation",
     items: [
-      { to: "/", fr: "Tableau de bord", en: "Dashboard", icon: "grid", end: true },
-      { to: "/status", fr: "Statut", en: "Status", icon: "clock" },
-      { to: "/journal", fr: "Journaux", en: "Logs", icon: "log" },
-      { to: "/glpi", fr: "Connexion GLPI", en: "GLPI connection", icon: "list" },
+      { to: "/", fr: "Tableau de bord", en: "Dashboard", icon: LayoutDashboard, end: true },
+      { to: "/status", fr: "Statut", en: "Status", icon: Activity },
+      { to: "/journal", fr: "Journaux", en: "Logs", icon: ScrollText },
+      { to: "/cost", fr: "Coûts & quotas", en: "Cost & quotas", icon: Wallet },
+    ],
+  },
+  {
+    fr: "Moteur",
+    en: "Engine",
+    items: [
+      { to: "/engine/guardrails", fr: "Garde-fous", en: "Guardrails", icon: ShieldCheck },
+      // PAS un second bouclier : `ShieldCheck` et `ShieldHalf` partagent EXACTEMENT le même
+      // tracé extérieur dans lucide (`key: "oel41y"`), seul un ornement intérieur de quelques
+      // pixels les sépare — indiscernables à 16 px, et ces deux entrées sont voisines. Un
+      // interrupteur dit d'ailleurs mieux la question posée ici : quelle autonomie accorde-t-on.
+      { to: "/engine/modes", fr: "Modes d'exécution", en: "Execution modes", icon: ToggleRight },
+      { to: "/engine/ingestion", fr: "Ingestion", en: "Ingestion", icon: Timer },
+      {
+        to: "/engine/prompt",
+        fr: "Prompt & réponse",
+        en: "Prompt & reply",
+        icon: MessageSquareText,
+      },
     ],
   },
   {
     fr: "Configuration",
     en: "Configuration",
     items: [
-      { to: "/scope", fr: "Règles métier", en: "Business rules" },
-      { to: "/technicians", fr: "Techniciens", en: "Technicians" },
-      { to: "/groups", fr: "Groupes", en: "Groups" },
-      { to: "/ai-provider", fr: "Fournisseur IA", en: "AI provider" },
-      { to: "/engine", fr: "Moteur", en: "Engine" },
-      { to: "/privacy", fr: "Confidentialité (DPO)", en: "Privacy (DPO)" },
-      { to: "/cost", fr: "Coûts & quotas", en: "Cost & quotas" },
+      { to: "/glpi", fr: "Connexion GLPI", en: "GLPI connection", icon: Plug },
+      { to: "/ai-provider", fr: "Fournisseur IA", en: "AI provider", icon: Sparkles },
+      { to: "/scope", fr: "Règles métier", en: "Business rules", icon: Workflow },
+      { to: "/technicians", fr: "Techniciens", en: "Technicians", icon: UserRound },
+      { to: "/groups", fr: "Groupes", en: "Groups", icon: Users },
+      // `EyeOff` et non un bouclier de plus : depuis que cette page PORTE les bascules de
+      // masquage, son geste propre est de cacher une donnée avant qu'elle ne sorte.
+      { to: "/privacy", fr: "Confidentialité (DPO)", en: "Privacy (DPO)", icon: EyeOff },
+      { to: "/automations", fr: "Automations", en: "Automations", icon: Zap },
     ],
   },
   {
     fr: "Avancé",
     en: "Advanced",
     items: [
-      { to: "/sandbox", fr: "Bac à sable", en: "Sandbox" },
-      { to: "/store", fr: "Supporter", en: "Supporter" },
-      { to: "/automations", fr: "Automations", en: "Automations" },
-      { to: "/debug", fr: "Développement", en: "Development" },
+      { to: "/sandbox", fr: "Bac à sable", en: "Sandbox", icon: FlaskConical },
+      { to: "/store", fr: "Supporter", en: "Supporter", icon: Heart },
+      { to: "/debug", fr: "Développement", en: "Development", icon: Terminal },
     ],
   },
 ];
 
-const ALL = NAV.flatMap((s) => s.items);
+/**
+ * Pages atteignables SANS entrée de sidebar (elles ont leur propre porte d'accès) mais qui
+ * doivent quand même donner un titre à la topbar.
+ *
+ * `/account` s'ouvre depuis le menu de compte, en haut à droite : la republier dans la
+ * sidebar ajouterait une ligne de navigation permanente pour un écran qu'on visite deux
+ * fois par an. Elle reste néanmoins une page à part entière — d'où sa présence ici.
+ */
+export const OFF_SIDEBAR: NavItem[] = [
+  { to: "/account", fr: "Compte & sécurité", en: "Account & security", icon: UserCog },
+];
 
-/** Retrouve l'entrée de nav correspondant à un pathname (pour le titre de la topbar). */
+const ALL = [...NAV.flatMap((s) => s.items), ...OFF_SIDEBAR];
+
+/**
+ * Retrouve l'entrée de nav correspondant à un pathname (pour le titre de la topbar).
+ *
+ * La correspondance est faite PAR SEGMENT. `startsWith` nu résolvait `/scoped` sur
+ * « Règles métier » (`/scope`) et `/storex` sur « Supporter » : inoffensif tant qu'aucune
+ * route de ce nom n'existe, mais c'est le genre de piège qui se referme au premier ajout.
+ *
+ * Le repli sur un ENFANT sert à `/engine`, qui n'est plus une page mais une section : la
+ * redirection est instantanée, mais pendant cette image la topbar affichait « ITSM Modern
+ * AI » — un titre faux, que lit un lecteur d'écran, sur le chemin même que la doc et les
+ * signets citent.
+ */
 export function navByPath(pathname: string): NavItem | undefined {
   if (pathname === "/" || pathname === "") return ALL.find((i) => i.to === "/");
-  // Plus long préfixe d'abord pour éviter que "/" matche tout.
-  return ALL.filter((i) => i.to !== "/")
-    .sort((a, b) => b.to.length - a.to.length)
-    .find((i) => pathname.startsWith(i.to));
+  const candidats = ALL.filter((i) => i.to !== "/").sort((a, b) => b.to.length - a.to.length);
+  return (
+    candidats.find((i) => pathname === i.to || pathname.startsWith(`${i.to}/`)) ??
+    candidats.find((i) => i.to.startsWith(`${pathname}/`))
+  );
 }

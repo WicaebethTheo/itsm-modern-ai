@@ -57,6 +57,11 @@ class FeatureSpec:
     label_en: str
     description_fr: str
     description_en: str
+    # Module ANNONCÉ mais sans surface d'usage : une licence l'« autorise » déjà (il est
+    # dans le catalogue signable), donc l'UI le peignait « Débloqué » en vert dès l'achat.
+    # Ce drapeau existe pour qu'elle affiche « Prévu » à la place — la promesse reste une
+    # promesse tant qu'elle n'a rien à piloter.
+    coming_soon: bool = False
 
 
 FEATURE_CATALOG: tuple[FeatureSpec, ...] = (
@@ -87,6 +92,7 @@ FEATURE_CATALOG: tuple[FeatureSpec, ...] = (
             "COMING SOON. Fine-grained multi-entity management: per-entity triage "
             "policies and thresholds, hierarchical inheritance, per-entity dashboards."
         ),
+        coming_soon=True,
     ),
     FeatureSpec(
         key=FEATURE_SCHEDULED_EXPORTS,
@@ -100,6 +106,7 @@ FEATURE_CATALOG: tuple[FeatureSpec, ...] = (
             "COMING SOON. Scheduled CSV exports (cron), enriched DPO reports and "
             "automated delivery. Manual CSV export stays in Community."
         ),
+        coming_soon=True,
     ),
 )
 

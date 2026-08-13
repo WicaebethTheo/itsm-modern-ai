@@ -13,7 +13,12 @@ from pydantic import BaseModel, Field, field_validator
 
 from ...domain import prompting
 from ...domain.url_safety import UrlSafetyError, validate_base_url
-from ...services.runtime_config import PLAIN_KEYS, SECRET_KEYS, RuntimeConfigService
+from ...services.runtime_config import (
+    CLEARED_SENTINEL,
+    PLAIN_KEYS,
+    SECRET_KEYS,
+    RuntimeConfigService,
+)
 from ..deps import get_config_service
 
 router = APIRouter(prefix="/api", tags=["config"])
@@ -211,8 +216,29 @@ def update_config(
             value = data[key]
             cfg.set(key, str(value).lower() if isinstance(value, bool) else str(value))
     for key in _SECRETS:
-        if key in data:
-            cfg.set_secret(key, data[key])
+        if key not in data:
+            continue
+        valeur = data[key]
+        # Une chaîne VIDE signifie « inchangé », pas « efface ».
+        #
+        # C'est ce que la console promet depuis toujours — le placeholder d'un champ de
+        # secret déjà renseigné affiche « (inchangé) » — et c'est l'inverse de ce que faisait
+        # cette route : `exclude_none=True` n'exclut pas `""`, et `set_secret("")` écrivait
+        # une ligne vide que `is_secret_set` relit comme « aucun secret ». Un admin qui tapait
+        # trois caractères dans « User token », se ravisait, effaçait puis enregistrait
+        # perdait le jeton GLPI — sans un mot, le placeholder continuant d'afficher
+        # « (inchangé) », et le polling tombait au cycle suivant.
+        #
+        # Le correctif est ICI et non dans le formulaire : cette route est documentée comme
+        # une API (le README en donne l'équivalent `curl`). Un script qui repousse une
+        # configuration partielle effacerait sinon les secrets qu'il ne renseigne pas.
+        if valeur == "":
+            continue
+        # …et l'effacement reste possible, mais DEMANDÉ. Même sentinelle que `license_key`,
+        # qui distingue depuis toujours « licence retirée volontairement » de « aucune
+        # licence » : sans elle, on troquerait une perte silencieuse contre un secret qu'on
+        # ne peut plus retirer — changer d'OpenAI pour Ollama, qui n'a pas de clé.
+        cfg.set_secret(key, "" if valeur == CLEARED_SENTINEL else valeur)
 
     # Re-planification à chaud de l'intervalle de polling.
     if "polling_interval_seconds" in data:

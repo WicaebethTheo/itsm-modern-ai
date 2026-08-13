@@ -127,7 +127,7 @@ function ToastItem({ entry, onClose }: { entry: ToastEntry; onClose: () => void 
     <div
       role={entry.kind === "error" ? "alert" : "status"}
       className={cn(
-        "pointer-events-auto flex items-start gap-2.5 rounded-md border px-3 py-2 text-[12.5px] shadow-lg backdrop-blur-sm transition-all duration-150",
+        "pointer-events-auto flex items-start gap-2.5 rounded-md border px-3 py-2 text-body shadow-lg backdrop-blur-sm transition-all duration-150",
         s.wrap,
         visible ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0",
       )}

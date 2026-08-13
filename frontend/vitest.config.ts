@@ -14,6 +14,12 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     css: false,
     include: ["src/**/*.test.{ts,tsx}"],
+    // Le défaut (5 s) suffit à `vitest run` mais PAS à `test:coverage` : l'instrumentation
+    // V8 multiplie le coût des tests qui peignent beaucoup de DOM, et la porte de la CI est
+    // justement celle qui mesure. On voyait donc des échecs intermittents dont la cause
+    // était la charge de la machine, jamais une assertion fausse — le pire genre de rouge,
+    // celui qu'on prend l'habitude de relancer. Un délai franc plutôt qu'un test affaibli.
+    testTimeout: 20_000,
     coverage: {
       provider: "v8",
       // `include` EXPLICITE, et c'est le point le plus important de ce bloc. Par défaut,
@@ -30,11 +36,13 @@ export default defineConfig({
         "src/vite-env.d.ts",
       ],
       reporter: ["text-summary", "text"],
-      // Seuils = CLIQUET posé sous la mesure réelle (69,0 % / 60,2 % / 69,7 % à la mise en
-      // place), pas objectif. Ils empêchent l'érosion ; ils ne prétendent pas que la
-      // couverture soit suffisante — `Dashboard.tsx` et `Debug.tsx` restent non testés,
-      // c'est assumé (affichage en lecture seule, et outil désactivé par défaut en prod).
-      thresholds: { statements: 65, branches: 56, lines: 65 },
+      // Seuils = CLIQUET posé sous la mesure réelle, pas objectif : ils empêchent l'érosion,
+      // ils ne prétendent pas que la couverture soit suffisante. Remontés de 65/56/65 à
+      // 85/78/86 après la revue par écran (mesure : 88,3 % / 81,2 % / 89,1 %) — laisser le
+      // cliquet vingt points sous la mesure aurait autorisé à défaire tout ce qui vient
+      // d'être écrit sans qu'aucune porte ne bronche. `Dashboard.tsx` et `Debug.tsx`, seules
+      // pages jamais testées jusqu'ici, ont désormais leur fichier de test.
+      thresholds: { statements: 85, branches: 78, lines: 86 },
     },
   },
 });

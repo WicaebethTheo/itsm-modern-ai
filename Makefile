@@ -1,5 +1,7 @@
 .PHONY: install update backup lint test fmt run migrate set-admin-password ui ui-dev ui-lint ui-test ui-e2e spike spike-mock glpi-diagnose
 
+# `.[dev]` suffit : psycopg est désormais une dépendance PRINCIPALE (PostgreSQL est la
+# seule base supportée), plus un extra `postgres` à ajouter ici.
 install:
 	uv venv --python 3.14
 	uv pip install -e ".[dev]"
@@ -8,17 +10,19 @@ install:
 update:
 	./install.sh --update
 
-# ── Sauvegarde SQLite COHÉRENTE, à chaud ─────────────────────────────────────
+# ── Sauvegarde PostgreSQL COHÉRENTE, à chaud ─────────────────────────────────
 # La logique vit dans le PAQUET (`src/itsm_modern_ai/backup.py`), pas ici : elle doit être
 # disponible pour l'exploitant en déploiement *pull-only* (Portainer, `docker run`, one-liner),
 # qui n'a ni ce Makefile ni les sources. Cette cible n'est qu'un raccourci de développement.
 #
 #   En production :  docker compose exec itsm python -m itsm_modern_ai.backup
 #
-# Rappel du POURQUOI (détaillé dans le module) : `cp data/itsm.db` est une sauvegarde MUETTE
-# en mode WAL — les écritures récentes vivent dans le `-wal`, et la copie paraît réussir
-# jusqu'au jour de la restauration. Le module fait `VACUUM INTO` puis VÉRIFIE la copie
-# (integrity_check + comptage réel des tables et des lignes), et échoue bruyamment.
+# Rappel du POURQUOI (détaillé dans le module) : `cp -a data/postgres` d'un serveur EN
+# MARCHE produit un cluster incohérent, qui paraît sauvegardé jusqu'au jour de la
+# restauration. Le module fait `pg_dump --format=custom` puis VÉRIFIE l'archive
+# (`pg_restore --list` pour la structure, relecture intégrale des données pour le contenu),
+# et échoue bruyamment. Nécessite `pg_dump` (paquet postgresql-client) — présent dans
+# l'image livrée, à installer sur un poste de dev.
 backup:
 	$(if $(wildcard .venv/bin/python),.venv/bin/python,python3) -m itsm_modern_ai.backup --dest backups
 
@@ -39,10 +43,17 @@ run:
 migrate:
 	uv run alembic upgrade head
 
-# Définit / change le mot de passe admin (hash Argon2 chiffré ; jamais en clair).
+# RÉCUPÉRATION d'un mot de passe admin oublié (hash Argon2 chiffré ; jamais en clair).
+# En usage normal le compte se crée DANS L'INTERFACE, à la première visite : cette cible
+# ne sert qu'à reprendre la main sur une instance dont on a perdu le mot de passe.
 # `make migrate` au préalable si la base n'existe pas encore.
+#
+# `--force` remplace le mot de passe d'un compte EXISTANT et conserve son adresse. Sur une
+# base sans compte, la CLI exige une adresse (sans elle, aucune connexion ne pourrait
+# aboutir : le login compare le couple email + mot de passe) :
+#   make set-admin-password EMAIL=admin@exemple.fr
 set-admin-password:
-	uv run python -m itsm_modern_ai.admin_setup --force
+	uv run python -m itsm_modern_ai.admin_setup --force $(if $(EMAIL),--email $(EMAIL))
 
 # UI (SPA React) : build de production -> frontend/dist (servi par le moteur)
 ui:

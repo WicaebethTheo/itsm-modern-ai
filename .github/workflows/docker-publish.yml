@@ -53,11 +53,60 @@ jobs:
   # par tous les deploiements (Portainer, docker run, one-liner curl|bash).
   test:
     runs-on: ubuntu-latest
+    # PostgreSQL est la SEULE base supportee : sans serveur, la suite entiere echoue des la
+    # premiere fixture. Meme majeure que l'image livree (cf. docker-compose.yml), pour que
+    # la CI exerce ce que l'exploitant fait tourner. Port 55432 = defaut de tests/conftest.py.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: itsm
+          POSTGRES_PASSWORD: itsm
+          POSTGRES_DB: itsm
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U itsm -d itsm"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://itsm:itsm@localhost:55432/itsm
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
+      # `pg_dump` sert aux tests de sauvegarde (tests/unit/test_backup.py), qui dumpent une
+      # vraie base. Le client doit etre au moins aussi recent que le serveur, sinon pg_dump
+      # refuse de le dumper — d'ou la majeure explicite plutot que le client de la distro
+      # (ubuntu-latest livre du 16), et d'ou le depot PGDG.
+      # ⚠️ BLOQUANT, plus de `continue-on-error`. Il rendait cette etape decorative : si le
+      # paquet manquait, les tests de sauvegarde s'ignoraient et la CI restait verte sans
+      # avoir verifie une seule fois le contrat le plus cher a rater. Un garde-fou qui peut
+      # s'auto-neutraliser n'en est pas un — et `tests/unit/test_backup.py` refuse desormais
+      # de s'ignorer quand la variable CI est presente.
+      - name: Client PostgreSQL 17 (aligne sur l'image livree)
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc]" \
+            "https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+          # PGDG installe ses binaires dans /usr/lib/postgresql/17/bin ; `/usr/bin/pg_dump`
+          # reste celui de la 16 PREINSTALLEE sur le runner. Sans cette ligne, l'etape
+          # « reussissait » en laissant un client 16 : mesure faite sur la PR #9, les huit
+          # tests de sauvegarde tombaient en erreur APRES 100 s de suite, sur une cause que
+          # cette etape etait censee ecarter.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          export PATH="/usr/lib/postgresql/17/bin:$PATH"
+          pg_dump --version
+          # ON VERIFIE. Installer n'est pas aligner : sans ce controle, l'etape affirme un
+          # alignement qu'elle n'a jamais constate, et delegue la decouverte de l'echec a la
+          # suite de tests — deux minutes plus tard, avec un message qui accuse le code.
+          majeure="$(pg_dump --version | grep -oE '[0-9]+' | head -1)"
+          test "$majeure" = "17" || { echo "pg_dump $majeure au lieu de 17 — client desaligne"; exit 1; }
       # setup-uv plutot que `pip install uv` : version geree par l'action + cache uv
       # automatique (cle sur uv.lock). Coherent avec ci.yml.
       # Version EXACTE obligatoire (`@v9.0.0`, pas `@v9`) : cette action ne publie
@@ -129,14 +178,45 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Ce que le build seul ne prouve pas : migrations Alembic OK, uvicorn repond,
-      # amorcage admin au boot effectif (contrat du deploiement pull-only — sans lui,
-      # la console demarre verrouillee). Si ca casse, rien n'est publie.
-      - name: Smoke test (boot + /health + /api/status + amorcage admin)
+      # Ce que le build seul ne prouve pas : migrations Alembic OK, uvicorn repond, et
+      # surtout le PARCOURS DE PREMIERE VISITE — creation du compte administrateur depuis
+      # l'interface. C'est le contrat du deploiement pull-only : sans lui, l'exploitant
+      # deploie une console dans laquelle il ne peut pas entrer. Si ca casse, rien n'est
+      # publie.
+      #
+      # On EXERCE le parcours au lieu de chercher un message dans les logs, comme le
+      # faisait la version precedente (`grep "compte admin amorce"`). Un grep de log ne
+      # prouve que l'existence de la ligne : il restait vert avec une base en lecture
+      # seule, un hash illisible, ou un /api/auth/login casse. Ici on exige, dans l'ordre :
+      #   1. POST /api/auth/setup  -> 200 (compte cree, session ouverte)
+      #   2. POST /api/auth/setup  -> 409 (fail-closed : l'instance n'est plus revendicable)
+      #   3. POST /api/auth/login  -> 200 avec les identifiants crees (le hash est relisible)
+      #   4. GET  /api/auth/status -> setup_required=false
+      # Un seul de ces quatre points qui bouge, et l'image ne part pas.
+      #
+      # L'image ne boote plus SANS BASE : on lui en fournit une, sur un reseau dedie et a
+      # la majeure exacte de celle des composes.
+      - name: Smoke test (boot + parcours de creation du compte admin + sauvegarde)
         run: |
           set -euo pipefail
-          docker run -d --name itsm-smoke \
-            -e ITSM_ADMIN_PASSWORD=smoke-ci-password \
+          nettoyer() { docker rm -f itsm-smoke itsm-smoke-pg >/dev/null 2>&1 || true
+                       docker network rm itsm-smoke-net >/dev/null 2>&1 || true; }
+          trap nettoyer EXIT
+
+          docker network create itsm-smoke-net
+          docker run -d --name itsm-smoke-pg --network itsm-smoke-net \
+            -e POSTGRES_USER=itsm -e POSTGRES_PASSWORD=itsm -e POSTGRES_DB=itsm \
+            --health-cmd "pg_isready -U itsm -d itsm" --health-interval 3s --health-retries 20 \
+            postgres:17-alpine
+          for _ in $(seq 1 40); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' itsm-smoke-pg)" = healthy ] && break
+            sleep 2
+          done
+
+          # AUCUN mot de passe passe par l'environnement : le moteur n'en lit plus, et
+          # c'est justement ce que le parcours ci-dessous verifie.
+          docker run -d --name itsm-smoke --network itsm-smoke-net \
+            -e DATABASE_URL=postgresql+psycopg://itsm:itsm@itsm-smoke-pg:5432/itsm \
             -p 8000:8000 itsm-smoke:ci
           # Attente max ~90 s (45 x 2 s) : migrations + demarrage uvicorn.
           ok=""
@@ -152,16 +232,66 @@ jobs:
           docker logs itsm-smoke || true
           if [ -z "$ok" ]; then
             echo "::error::smoke test KO : /health ou /api/status injoignable apres ~90 s"
-            docker rm -f itsm-smoke
             exit 1
           fi
-          # L'amorcage admin doit avoir eu lieu (ou etre idempotent-skippe).
-          if ! docker logs itsm-smoke 2>&1 | grep -Eq "compte admin amorcé|admin déjà configuré"; then
-            echo "::error::smoke test KO : aucun amorcage admin dans les logs"
-            docker rm -f itsm-smoke
+          # ── Parcours de PREMIERE VISITE, exerce pour de vrai ────────────────────
+          # `code_http <methode> <chemin> [corps]` : n'imprime que le statut. `-o /dev/null`
+          # et pas `-f` : on VEUT lire les 4xx, ce sont eux qui portent le contrat.
+          jar="$(mktemp -d)/cookies.txt"
+          code_http() {
+            local methode="$1" chemin="$2" corps="${3:-}"
+            if [ -n "$corps" ]; then
+              curl -s -o /dev/null -w '%{http_code}' -X "$methode" \
+                -H 'Content-Type: application/json' -c "$jar" -b "$jar" \
+                --data "$corps" "http://localhost:8000$chemin"
+            else
+              curl -s -o /dev/null -w '%{http_code}' -X "$methode" \
+                -c "$jar" -b "$jar" "http://localhost:8000$chemin"
+            fi
+          }
+          identifiants='{"email":"smoke@example.test","password":"smoke-ci-password"}'
+
+          # 0. Avant toute creation : l'instance s'annonce revendicable. C'est le seul
+          #    garde-fou restant (aucun jeton d'amorcage), il doit etre servi.
+          etat="$(curl -fsS http://localhost:8000/api/auth/status)"
+          echo "GET /api/auth/status (avant) -> $etat"
+          case "$etat" in
+            *'"setup_required":true'*) ;;
+            *) echo "::error::smoke test KO : setup_required n'est pas vrai sur une instance neuve"; exit 1 ;;
+          esac
+
+          # 1. Creation du compte : 200 attendu.
+          cree="$(code_http POST /api/auth/setup "$identifiants")"
+          echo "POST /api/auth/setup (1er appel) -> $cree"
+          [ "$cree" = 200 ] || { echo "::error::smoke test KO : creation du compte admin refusee (HTTP $cree)"; exit 1; }
+
+          # 2. Rejeu : 409. C'est le fail-closed — sans lui, n'importe qui pourrait
+          #    ecraser le compte d'une instance en service.
+          rejeu="$(code_http POST /api/auth/setup '{"email":"pirate@example.test","password":"autre-mot-de-passe"}')"
+          echo "POST /api/auth/setup (rejeu) -> $rejeu"
+          [ "$rejeu" = 409 ] || { echo "::error::smoke test KO : un 2e /api/auth/setup n'a pas ete refuse (HTTP $rejeu, attendu 409)"; exit 1; }
+
+          # 3. Connexion avec les identifiants CREES : 200. C'est ce qui prouve que le hash
+          #    a bien ete ecrit, chiffre puis relu — le trou qu'un grep de log laissait.
+          rm -f "$jar"
+          connexion="$(code_http POST /api/auth/login "$identifiants")"
+          echo "POST /api/auth/login -> $connexion"
+          [ "$connexion" = 200 ] || { echo "::error::smoke test KO : connexion impossible avec le compte cree (HTTP $connexion)"; exit 1; }
+
+          # 4. … et l'instance ne se declare plus revendicable.
+          apres="$(curl -fsS -b "$jar" http://localhost:8000/api/auth/status)"
+          echo "GET /api/auth/status (apres) -> $apres"
+          case "$apres" in
+            *'"setup_required":false'*) ;;
+            *) echo "::error::smoke test KO : setup_required n'est pas repasse a faux apres creation"; exit 1 ;;
+          esac
+          # La sauvegarde est le contrat le plus facile a casser sans s'en apercevoir :
+          # elle depend de `pg_dump`/`pg_restore` PRESENTS DANS L'IMAGE. On la lance donc
+          # pour de vrai — c'est aussi la seule verification du chemin pull-only.
+          if ! docker exec itsm-smoke python -m itsm_modern_ai.backup; then
+            echo "::error::smoke test KO : la sauvegarde livree dans l'image a echoue"
             exit 1
           fi
-          docker rm -f itsm-smoke
 
       # Publication : uniquement si test + smoke sont passes. Le cache gha rempli
       # par le smoke rend la part amd64 quasi instantanee.

@@ -1,6 +1,8 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.7/schema.json",
-  "files": { "includes": ["**", "!**/dist", "!**/node_modules"] },
+  "files": {
+    "includes": ["**", "!**/dist", "!**/node_modules", "!**/test-results", "!**/playwright-report"]
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",

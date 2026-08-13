@@ -22,13 +22,22 @@
 
 ## Authentification (Argon2 + session signée)
 
+Un **seul** compte administrateur, créé **à la première visite** — pas d'amorçage par variable d'environnement.
+
 | Endpoint | Méthode | Description |
 |---|---|---|
-| `/api/auth/login` | `POST` | Connexion (mot de passe → cookie de session). |
+| `/api/auth/setup` | `POST` | **Création du compte unique** (`email`, `password`, `display_name` optionnel) puis ouverture de session. **Public** — par construction, aucun identifiant n'existe pour l'atteindre — mais **fail-closed** : `409` (`already_configured`) dès qu'un compte existe, `422` sur email invalide ou mot de passe < 8 caractères. |
+| `/api/auth/login` | `POST` | Connexion (`email` + `password` → cookie de session). |
 | `/api/auth/logout` | `POST` | Déconnexion. |
-| `/api/auth/status` | `GET` | État de la session (authentifié ? auth configurée ?). |
+| `/api/auth/status` | `GET` | État de la session : `authenticated`, `auth_configured`, **`setup_required`** (vrai tant qu'aucun compte n'existe → l'UI envoie sur l'écran de création). |
+| `/api/auth/me` | `GET` | Identité du compte connecté (`email`, `display_name`). **Authentifiée** — route séparée précisément pour que `/api/auth/status`, qui est publique, n'ait jamais à porter l'adresse. |
+| `/api/auth/password` | `POST` | Change le mot de passe (`current_password`, `new_password`). **Authentifiée**, revérifie le mot de passe courant, et compte ses échecs sur le **même limiteur que le login** — sinon la route offrirait un oracle de vérification non compté. Succès = toutes les sessions tombent, y compris l'appelante (la génération de session est incrémentée) : l'UI renvoie sur `/login`. |
 
-Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `X-Forwarded-For` si `TRUST_PROXY_HEADERS=true`.
+⚠️ **L'adresse du compte n'apparaît dans aucune réponse NON authentifiée.** `/api/auth/status` est public : diffuser l'identifiant à un anonyme lui offrirait la moitié du couple à deviner. De même, un login raté renvoie le **même** code et le **même** message que l'email soit inconnu ou le mot de passe faux — et le hash est payé dans tous les cas, pour que le chronomètre ne dise pas ce que le message tait.
+
+Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `X-Forwarded-For` si `TRUST_PROXY_HEADERS=true`. **`/api/auth/setup` est compté par le même limiteur** que le login : sans cela, la création offrirait un point de martèlement non compté, et un moyen de sonder gratuitement si l'instance est encore revendicable.
+
+> **Fenêtre de revendication (risque assumé)** : tant qu'aucun compte n'existe, `POST /api/auth/setup` est ouvert à quiconque atteint le port. Ni jeton d'amorçage ni fenêtre temporelle — choix délibéré, annoncé par un `WARNING` à chaque démarrage. **N'exposez pas le port avant d'avoir créé le compte** (cf. [`SECURITY.md`](../SECURITY.md) et [`docs/install.md`](install.md)).
 
 ## Configuration
 
@@ -45,7 +54,7 @@ Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `
 
 | Endpoint | Méthode | Description |
 |---|---|---|
-| `/api/discovery/{kind}` | `GET` | Liste tout le cache pour `kind ∈ {category, entity, technician, group}`. |
+| `/api/discovery/{kind}` | `GET` | Liste tout le cache pour `kind ∈ {category, entity, technician, group}`. Chaque entrée porte `updated_at` : l'horodatage du dernier scan **qui a vu cette entrée** (`services/referentials.sync` l'écrit ligne par ligne, uniquement sur les objets rapportés par GLPI). Un objet disparu de GLPI est conservé mais **n'est pas rajeuni** : il garde la date du dernier scan qui l'a vu. La console, elle, n'exploite aujourd'hui que le **maximum** de ces dates (`dernierScan`, `components/SyncButton.tsx`) pour dater la dernière synchro et signaler un cache de plus de 30 jours — elle ne signale pas encore les entrées individuellement en retard. |
 | `/api/scope` | `GET` | Périmètre actuel (catégories autorisées + entités). |
 | `/api/scope` | `PUT` | Met à jour le périmètre. |
 | `/api/modes` | `PUT` | Mode d'exécution par entité (`suggestion`/`semi_auto`/`full_auto`), 2ᵉ seuil semi-auto, et **cible de repli** (`fallback_group_id` / `fallback_technician_id`, groupe prioritaire). Une cible non éligible est refusée (`400 fallback_not_eligible`) plutôt qu'acceptée sans effet. |
@@ -60,8 +69,8 @@ Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `
 
 | Endpoint | Méthode | Description |
 |---|---|---|
-| `/api/sandbox` | `POST` | Test à blanc d'un texte de ticket (aucune écriture GLPI). |
-| `/api/decisions` | `GET` | Journal de décision paginé (`limit`, `offset`). |
+| `/api/sandbox` | `POST` | Test à blanc d'un texte de ticket (`title` + `content`, aucune écriture GLPI). La réponse porte la Décision LLM **même refusée** (avec son motif) ainsi que `model`, `cost_eur`, `prompt_tokens`, `completion_tokens` — l'essai est facturé et décompté du plafond, il doit donc dire ce qu'il a coûté. |
+| `/api/decisions` | `GET` | Journal de décision (`limit`, défaut 500, borné à 10 000 — **pas d'`offset`** : la liste est rendue du plus récent au plus ancien). Chaque entrée porte `fallback_applied`, qui distingue un « à trier » repris par la cible de repli d'un « à trier » resté sans destinataire. |
 | `/api/decisions/{id}/annotation` | `PATCH` | Annotation libre a posteriori. |
 | `/api/export/decisions.csv` | `GET` | Export CSV DPO du Journal. |
 | `/api/export/llm-calls.csv` | `GET` | Export CSV des appels LLM (masqués). |

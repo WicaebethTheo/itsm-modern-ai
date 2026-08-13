@@ -9,7 +9,11 @@ Flux (repris du pattern validé en alpha, réécrit pour la prod) :
 
 from __future__ import annotations
 
-from sqlmodel import Session, select
+from collections.abc import Iterable
+from datetime import UTC, datetime
+
+from sqlalchemy import func
+from sqlmodel import Session, col, select
 
 from ..domain import skills as domain_skills
 from ..domain.models import Referentials
@@ -32,12 +36,49 @@ def _row(session: Session, kind: str, ext_id: int) -> ReferentialCache | None:
     ).first()
 
 
+def _rows_par_cle(session: Session, kinds: Iterable[str]) -> dict[tuple[str, int], ReferentialCache]:
+    """Toutes les lignes des types demandés, en UNE requête, indexées par `(kind, ext_id)`.
+
+    Appeler `_row()` dans une boucle coûtait un SELECT par objet — et, pire, déclenchait un
+    *autoflush* à chaque tour, ce qui empêchait SQLAlchemy de regrouper les INSERT/UPDATE.
+    Mesuré sur un GLPI de taille moyenne (830 objets) : 1 660 requêtes et 455 ms pour un
+    scan, contre 5,8 ms pour un unique SELECT global. La preuve que le regroupement est
+    possible était déjà dans ce fichier : `set_scope` ne lit rien dans sa boucle et met à
+    jour 450 lignes en 4 requêtes.
+    """
+    lignes = session.exec(select(ReferentialCache).where(col(ReferentialCache.kind).in_(list(kinds))))
+    return {(r.kind, r.ext_id): r for r in lignes.all()}
+
+
+def cache_size(session: Session) -> int:
+    """Nombre d'objets actuellement en cache, tous types confondus.
+
+    Sert à qualifier un scan qui ne rapporte RIEN : sur une base vierge c'est banal, sur
+    un cache déjà peuplé c'est GLPI qui désavoue tout le périmètre connu (cf. la route).
+    """
+    return int(session.exec(select(func.count()).select_from(ReferentialCache)).one())
+
+
 def sync(session: Session, referentials: Referentials) -> dict[str, int]:
     """Met à jour le cache depuis un scan GLPI, en PRÉSERVANT les sélections existantes.
 
     Renvoie le nombre d'entrées par type. Les objets disparus de GLPI sont conservés
     (l'admin peut nettoyer manuellement) ; seuls les noms sont rafraîchis.
+
+    `updated_at` est posé ICI, ligne par ligne, et UNIQUEMENT sur les objets que le scan a
+    RÉELLEMENT vus. Deux raisons, dans cet ordre :
+
+    1. **un objet disparu de GLPI ne doit pas être rajeuni.** Il est conservé en base, donc
+       toujours proposé à l'admin ; lui coller la date du scan qui ne l'a PAS vu certifie
+       « vu à l'instant » exactement l'objet que l'horodatage existe pour dénoncer — le
+       technicien parti depuis trois mois. Un `UPDATE` global (sans `WHERE`) faisait
+       précisément ça et vidait le champ de son seul contenu utile ;
+    2. **un scan sans changement doit quand même rajeunir les lignes vues.** L'écriture est
+       inconditionnelle sur la branche « vu » : sinon, sur une instance scannée chaque
+       semaine mais dont GLPI ne bouge pas, aucune ligne ne serait modifiée et la console
+       crierait « référentiels anciens » sur des référentiels frais.
     """
+    vu_le = datetime.now(UTC)
     mapping = {
         KIND_CATEGORY: referentials.categories,
         KIND_ENTITY: referentials.entities,
@@ -46,16 +87,24 @@ def sync(session: Session, referentials: Referentials) -> dict[str, int]:
     }
     profiles = referentials.technician_profiles
     counts: dict[str, int] = {}
+    # Cache des lignes existantes, lu UNE fois : cf. `_rows_par_cle`. Sémantique inchangée —
+    # chaque objet garde son propre `updated_at`, et seuls les objets VUS sont rajeunis.
+    connues = _rows_par_cle(session, mapping.keys())
     for kind, items in mapping.items():
         for ext_id, name in items.items():
             profile = profiles.get(ext_id, "") if kind == KIND_TECHNICIAN else ""
-            row = _row(session, kind, ext_id)
+            row = connues.get((kind, ext_id))
             if row is None:
-                session.add(ReferentialCache(kind=kind, ext_id=ext_id, name=name, profile=profile))
+                session.add(
+                    ReferentialCache(
+                        kind=kind, ext_id=ext_id, name=name, profile=profile, updated_at=vu_le
+                    )
+                )
             else:
                 row.name = name
                 if kind == KIND_TECHNICIAN:
                     row.profile = profile
+                row.updated_at = vu_le
                 session.add(row)
         counts[kind] = len(items)
     session.commit()
@@ -77,8 +126,9 @@ def set_eligibility(session: Session, kind: str, items: list[dict]) -> None:
     le champ ne doit pas effacer des cases cochées côté serveur. Les clés inconnues sont
     filtrées par `skills.normalize` (catalogue versionné avec le code).
     """
+    connues = _rows_par_cle(session, (kind,))
     for it in items:
-        row = _row(session, kind, int(it["ext_id"]))
+        row = connues.get((kind, int(it["ext_id"])))
         if row is None:
             continue
         row.eligible = bool(it.get("eligible", False))
@@ -107,8 +157,9 @@ def set_modes(session: Session, items: list[dict]) -> None:
     `mode` vide/None → l'entité retombe sur le défaut global. Un mode invalide est ignoré.
     """
     valid = {m.value for m in ExecutionMode}
+    connues = _rows_par_cle(session, (KIND_ENTITY,))
     for it in items:
-        row = _row(session, KIND_ENTITY, int(it["ext_id"]))
+        row = connues.get((KIND_ENTITY, int(it["ext_id"])))
         if row is None:
             continue
         m = it.get("mode")

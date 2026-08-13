@@ -8,14 +8,17 @@ from fastapi.testclient import TestClient
 
 from itsm_modern_ai.api.app import create_app
 from itsm_modern_ai.config.settings import Settings
+from itsm_modern_ai.domain import licensing
+
+from ..unit.test_licensing import TEST_PUBLIC_KEY_HEX, VALID
 
 
-def _settings(tmp_path, **kw) -> Settings:
+def _settings(db_url, **kw) -> Settings:
     kw.setdefault("dev_open_admin", True)
     kw.setdefault("session_https_only", False)
     return Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 'pc.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
         **kw,
@@ -23,8 +26,8 @@ def _settings(tmp_path, **kw) -> Settings:
 
 
 @pytest.fixture
-def client(tmp_path):
-    with TestClient(create_app(_settings(tmp_path))) as c:
+def client(db_url):
+    with TestClient(create_app(_settings(db_url))) as c:
         yield c
 
 
@@ -54,11 +57,101 @@ def test_test_mask_community_masks_email_not_iban(client):
     assert "[IBAN]" not in out
 
 
+@pytest.fixture
+def supporter_client(db_url, monkeypatch):
+    """Client avec une licence Supporter VALIDE collée (paire de test, pas celle de prod)."""
+    monkeypatch.setattr(licensing, "PUBLISHER_PUBLIC_KEY_HEX", TEST_PUBLIC_KEY_HEX)
+    with TestClient(create_app(_settings(db_url))) as c:
+        assert c.post("/api/license", json={"key": VALID}).json()["valid"] is True
+        yield c
+
+
+# NIR de test : 13 chiffres + clé = 97 - (numéro mod 97) — le même que tests/unit/test_features.
+_NIR_VALID = "1 85 12 75 116 001 74"
+
+
+def test_test_mask_counts_supporter_pass(supporter_client):
+    """Un texte masqué UNIQUEMENT par la passe Supporter doit renvoyer des compteurs.
+
+    Sans ça, l'écran DPO affichait « Aucun remplacement — ce texte part tel quel au LLM »
+    juste sous le bloc qui montre `[NIR]` : sur la page destinée à la DPO, l'outil se
+    contredisait lui-même. Les compteurs du cœur ne couvrent pas NIR/SIRET.
+    """
+    r = supporter_client.post("/api/privacy/test-mask", json={"text": f"NIR {_NIR_VALID}"})
+    assert r.status_code == 200
+    body = r.json()
+    assert "[NIR]" in body["masked"] and _NIR_VALID not in body["masked"]
+    assert body["counts"].get("nir") == 1
+    # Le contrat de l'écran : un remplacement visible ⇒ au moins un compteur non nul.
+    assert any(n > 0 for n in body["counts"].values())
+
+
+def test_test_mask_counts_core_and_supporter_together(supporter_client):
+    """Les deux passes s'additionnent dans le même dictionnaire, sans s'écraser.
+
+    NB : le SIREN est ici à 9 chiffres. Un SIRET à 14 chiffres valide Luhn, donc le
+    masquage CARTE du cœur l'attrape AVANT la passe Supporter (comportement du produit,
+    pas de l'endpoint) — il ressortirait en `card`, ce qui rendrait le test trompeur.
+    """
+    body = supporter_client.post(
+        "/api/privacy/test-mask",
+        json={"text": f"Mail alice@acme.com, NIR {_NIR_VALID}, SIREN 123456782"},
+    ).json()
+    counts = body["counts"]
+    assert counts["email"] == 1
+    assert counts.get("nir") == 1
+    assert counts.get("siret") == 1
+
+
+def test_test_mask_without_pii_reports_nothing(supporter_client):
+    """Aucun marqueur ajouté ⇒ aucun compteur : le repère « part tel quel » reste vrai."""
+    body = supporter_client.post(
+        "/api/privacy/test-mask", json={"text": "Le poste ne demarre plus depuis ce matin."}
+    ).json()
+    assert body["masked"] == "Le poste ne demarre plus depuis ce matin."
+    assert all(n == 0 for n in body["counts"].values())
+
+
+def test_test_mask_placeholder_already_in_input_is_not_counted(supporter_client):
+    """Un `[NIR]` déjà présent dans le texte d'entrée n'est pas un remplacement."""
+    body = supporter_client.post("/api/privacy/test-mask", json={"text": "vu un [NIR] ici"}).json()
+    assert body["counts"].get("nir", 0) == 0
+
+
 def test_dpo_report_downloads(client):
     r = client.get("/api/privacy/report.md")
     assert r.status_code == 200
     assert "attachment" in r.headers.get("content-disposition", "")
     assert "Rapport DPO" in r.text and "Adresses e-mail" in r.text
+
+
+def test_le_rapport_dpo_dit_VERROUILLE_seulement_quand_la_licence_manque(client):
+    """Sans licence, un motif Supporter est bien verrouillé — et le rapport le dit."""
+    texte = client.get("/api/privacy/report.md").text
+    ligne = next(x for x in texte.splitlines() if x.startswith("| IBAN"))
+    assert "VERROUILLÉ (Supporter)" in ligne
+
+
+def test_le_rapport_dpo_n_impute_pas_a_la_licence_un_choix_de_l_administrateur(supporter_client):
+    """Le document remis à la DPO doit nommer la BONNE cause.
+
+    `scope` est statique : il dit de quelle édition relève un motif, jamais pourquoi il est
+    inactif ICI. Sans croisement avec la licence réellement active, une instance sous licence
+    VALIDE dont l'administrateur a délibérément décoché le masquage IBAN produisait un
+    rapport affichant « VERROUILLÉ (Supporter) » — un défaut de licence imputé à une décision
+    d'exploitation. Et l'avertissement « transmis EN CLAIR » du bas de page ne s'affichait pas
+    davantage : il est conditionné à l'édition. La DPO lisait donc « verrouillé » sans jamais
+    apprendre que la donnée sort en clair.
+    """
+    assert supporter_client.post("/api/config", json={"mask_iban": False}).status_code == 200
+
+    texte = supporter_client.get("/api/privacy/report.md").text
+    ligne = next(x for x in texte.splitlines() if x.startswith("| IBAN"))
+    assert "VERROUILLÉ" not in ligne, "la licence est valide : ce n'est pas elle qui bloque"
+    assert "choix de l'administrateur" in ligne
+    # Et la conséquence est nommée sur la ligne elle-même, puisque le bandeau d'édition
+    # Community — le seul autre endroit qui la disait — ne s'affiche pas ici.
+    assert "EN CLAIR" in ligne
 
 
 def test_cost_view(client):

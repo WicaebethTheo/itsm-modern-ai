@@ -11,20 +11,21 @@ from itsm_modern_ai.config.settings import Settings
 from itsm_modern_ai.domain.models import Referentials
 
 
-def _settings(tmp_path, **kw) -> Settings:
+def _settings(db_url, **kw) -> Settings:
+    # admin sans mot de passe (test) — fail-closed désactivé, sauf surcharge explicite
+    kw.setdefault("dev_open_admin", True)
     return Settings(
         _env_file=None,
-        database_url=f"sqlite:///{tmp_path / 't.db'}",
+        database_url=db_url,
         master_key=Fernet.generate_key().decode(),
         polling_enabled=False,
-        dev_open_admin=True,  # admin sans mot de passe (test) — fail-closed désactivé
         **kw,
     )
 
 
 @pytest.fixture
-def client(tmp_path):
-    with TestClient(create_app(_settings(tmp_path))) as c:
+def client(db_url):
+    with TestClient(create_app(_settings(db_url))) as c:
         yield c
 
 
@@ -87,6 +88,170 @@ def test_sync_requires_glpi_configured(client):
     assert client.post("/api/glpi/sync").status_code == 409
 
 
+def _brancher_scan(monkeypatch, refs: Referentials):
+    """Branche un connecteur GLPI factice qui rapporte EXACTEMENT `refs`."""
+    from itsm_modern_ai.api.routes import referentials as route
+
+    class _Connector:
+        async def get_referentials(self):
+            return refs
+
+    monkeypatch.setattr(route, "build_connector", lambda *a, **k: _Connector())
+
+
+def _vieillir_le_cache(jours: int = 90):
+    """Ramène TOUT le cache `jours` en arrière et rend l'horodatage posé."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import update as sa_update
+
+    from itsm_modern_ai.persistence import db
+    from itsm_modern_ai.persistence.tables import ReferentialCache
+
+    vieux = datetime.now(UTC) - timedelta(days=jours)
+    with db.session_scope() as s:
+        s.execute(sa_update(ReferentialCache).values(updated_at=vieux))
+        s.commit()
+    return vieux
+
+
+def _horodatages(client, kind: str) -> dict[int, str]:
+    """`{ext_id: updated_at}` tel que la console le lit."""
+    return {r["ext_id"]: r["updated_at"] for r in client.get(f"/api/discovery/{kind}").json()}
+
+
+def test_discovery_expose_la_fraicheur_du_cache(client, monkeypatch):
+    """`updated_at` doit dater du DERNIER SCAN, pas de la création de la ligne.
+
+    Sans cette distinction, un cache jamais rescanné depuis l'installation s'afficherait
+    aussi frais qu'un cache scanné le matin même — et la console cesserait de pouvoir
+    signaler qu'un technicien parti il y a trois mois est encore proposé au routage.
+    Le test compare donc l'horodatage AVANT et APRÈS un scan : la seule non-nullité
+    passerait à l'identique avec l'horodatage par défaut de la colonne.
+    """
+    from datetime import datetime
+
+    _seed_cache()
+    vieux = _vieillir_le_cache()  # les lignes existent, mais leur date est ancienne
+    avant = _horodatages(client, "technician")
+    assert all(datetime.fromisoformat(v) == vieux for v in avant.values())
+
+    _brancher_scan(
+        monkeypatch,
+        Referentials(
+            categories={1: "Compte", 2: "RH"},
+            technicians={11: "Sylvain", 12: "Nadia"},
+            groups={5: "Support N2"},
+            entities={0: "Racine"},
+        ),
+    )
+    assert client.post("/api/glpi/sync").json()["ok"] is True
+
+    apres = _horodatages(client, "technician")
+    assert all(
+        datetime.fromisoformat(apres[e]) > datetime.fromisoformat(avant[e]) for e in avant
+    ), "la console affiche la date de naissance des lignes, pas celle du dernier scan"
+
+
+def test_un_scan_rafraichit_l_horodatage_meme_sans_changement(client, monkeypatch):
+    """Un scan qui ne change RIEN doit quand même rajeunir le cache.
+
+    C'est le cas courant : GLPI ne bouge pas d'une semaine sur l'autre. Si seul un vrai
+    changement horodatait, la console crierait « référentiels anciens » sur des
+    référentiels scannés le matin même.
+
+    La prémisse est EXERCÉE, pas seulement énoncée : on vérifie qu'aucune donnée de la
+    ligne ne bouge (même nom, même profil) et qu'une simple relecture ne rajeunit rien —
+    sinon le test passerait par accident, la colonne n'ayant aucun `onupdate`.
+    """
+    from datetime import datetime
+
+    _seed_cache()
+    vieux = _vieillir_le_cache()
+    noms_avant = {r["ext_id"]: r["name"] for r in client.get("/api/discovery/technician").json()}
+
+    # Prémisse 1 : sans scan, rien ne bouge tout seul (pas d'`onupdate` sur la colonne).
+    assert all(datetime.fromisoformat(v) == vieux for v in _horodatages(client, "technician").values())
+
+    _brancher_scan(
+        monkeypatch,
+        Referentials(
+            categories={1: "Compte", 2: "RH"},
+            technicians={11: "Sylvain", 12: "Nadia"},  # contenu IDENTIQUE au scan précédent
+            groups={5: "Support N2"},
+            entities={0: "Racine"},
+        ),
+    )
+    body = client.post("/api/glpi/sync").json()
+    assert body["ok"] is True and body["counts"]["technician"] == 2
+
+    apres = client.get("/api/discovery/technician").json()
+    # Prémisse 2 : le scan n'a modifié AUCUNE donnée de la ligne.
+    assert {r["ext_id"]: r["name"] for r in apres} == noms_avant
+    assert all(datetime.fromisoformat(r["updated_at"]) > vieux for r in apres)
+
+
+def test_un_objet_disparu_de_glpi_n_est_pas_rajeuni(client, monkeypatch):
+    """Le défaut que l'horodatage existe pour rendre visible : le technicien PARTI.
+
+    `sync` conserve délibérément les objets que GLPI ne renvoie plus. Les horodater
+    quand même reviendrait à certifier « vu au dernier scan » un acteur que ce scan n'a
+    justement pas vu — c'est-à-dire exactement le cas que la date est censée dénoncer.
+    """
+    from datetime import datetime
+
+    _seed_cache()
+    vieux = _vieillir_le_cache()
+
+    _brancher_scan(
+        monkeypatch,
+        Referentials(
+            categories={1: "Compte", 2: "RH"},
+            technicians={11: "Sylvain"},  # 12 (Nadia) a quitté GLPI
+            groups={5: "Support N2"},
+            entities={0: "Racine"},
+        ),
+    )
+    assert client.post("/api/glpi/sync").json()["ok"] is True
+
+    stamps = _horodatages(client, "technician")
+    assert datetime.fromisoformat(stamps[11]) > vieux, "le technicien vu au scan n'a pas ete horodate"
+    assert datetime.fromisoformat(stamps[12]) == vieux, (
+        "un technicien absent du scan a recu la date du scan qui ne l'a pas vu"
+    )
+
+
+def test_un_scan_sans_aucun_objet_sur_un_cache_peuple_est_une_anomalie(client, monkeypatch):
+    """Compte technique déchu, mauvaise entité active, profil restreint : GLPI répond 200
+    avec des listes VIDES. Annoncer « Référentiels synchronisés. » et rajeunir tout le
+    cache donnerait un scan vert sur un périmètre que GLPI vient de désavouer.
+    """
+    from datetime import datetime
+
+    _seed_cache()
+    vieux = _vieillir_le_cache()
+
+    _brancher_scan(monkeypatch, Referentials())  # GLPI ne rapporte plus rien
+    body = client.post("/api/glpi/sync").json()
+
+    assert body["ok"] is False, "un scan vide sur un cache peuplé a été annoncé comme un succès"
+    assert "droits" in body["detail"].lower()
+    # Le cache est conservé TEL QUEL : ni supprimé, ni rajeuni.
+    assert all(datetime.fromisoformat(v) == vieux for v in _horodatages(client, "technician").values())
+    assert len(client.get("/api/discovery/technician").json()) == 2
+
+
+def test_un_scan_vide_sur_un_cache_vide_reste_un_succes(client, monkeypatch):
+    """Instance neuve dont GLPI est réellement vide : pas de fausse alerte de droits.
+
+    L'anomalie, c'est la DISPARITION de tout un périmètre déjà connu — pas l'absence
+    d'objets sur une base qui n'en a jamais eu.
+    """
+    _brancher_scan(monkeypatch, Referentials())
+    body = client.post("/api/glpi/sync").json()
+    assert body["ok"] is True and body["counts"]["technician"] == 0
+
+
 def test_metrics_endpoint(client):
     body = client.get("/api/metrics").json()
     assert body["total"] == 0 and body["cost_cap_eur_per_day"] == 5.0
@@ -97,18 +262,17 @@ def test_operational_metrics_unavailable_without_glpi(client):
     assert body["available"] is False and body["metrics"] is None
 
 
-def test_root_reports_ui_not_built_when_no_dist(tmp_path):
-    settings = _settings(tmp_path, frontend_dist=str(tmp_path / "nodist"))
+def test_root_reports_ui_not_built_when_no_dist(db_url, tmp_path):
+    settings = _settings(db_url, frontend_dist=str(tmp_path / "nodist"))
     with TestClient(create_app(settings)) as c:
         r = c.get("/")
         assert r.status_code == 200 and r.json()["code"] == "ui_not_built"
 
 
-def test_referentials_protected_when_auth_configured(tmp_path):
-    # ≥ MIN_ADMIN_CHARS : l'amorçage paresseux applique désormais la même politique de
-    # longueur que `admin_setup` — un "pw" de 2 caractères laisserait l'admin NON configuré.
-    settings = _settings(tmp_path, admin_password="pw-assez-long")
+def test_referentials_protected_when_auth_configured(db_url, creer_compte_admin):
+    settings = _settings(db_url, dev_open_admin=False)
     with TestClient(create_app(settings)) as c:
+        creer_compte_admin(c)  # compte créé à la première visite, puis déconnexion
         assert c.get("/api/discovery/technician").status_code == 401
         assert c.get("/api/metrics").status_code == 401
 
