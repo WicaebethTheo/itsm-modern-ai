@@ -23,7 +23,7 @@ Ce Suivi vaut dans les **trois** modes, `suggestion` compris : il n'applique rie
 
 ### Cible de repli (par entité)
 
-Réglée sur la page **Périmètre**, à côté du mode. Quand le garde-fou refuse une Décision, le Ticket est **assigné** à cette cible — et **rien d'autre** :
+Réglée sur la page **Règles métier**, à côté du mode. Quand le garde-fou refuse une Décision, le Ticket est **assigné** à cette cible — et **rien d'autre** :
 
 - **Router, jamais classer.** Aucune catégorie, aucune priorité n'est posée. Une confiance sous le seuil est basse sur l'**ensemble** de la Décision : une mauvaise catégorie est pire qu'aucune, elle serait crue par les stats, les règles GLPI et le technicien.
 - **Groupe d'abord.** Les groupes sont listés en tête, et gagnent si les deux sont renseignés : un groupe encaisse une absence sans configuration, là où un technicien nommé comme filet de toute l'instance est un point de défaillance unique.

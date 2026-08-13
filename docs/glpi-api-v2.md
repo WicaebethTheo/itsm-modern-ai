@@ -210,13 +210,19 @@ vise la sous-propriété en **dot-notation** (`status.id`), pas `status` à plat
 | `GLPI_API_VERSION=legacy` *(défaut)* | connecteur `apirest.php` (V1) — inchangé |
 | `GLPI_API_VERSION=v2` | connecteur **OAuth2 high-level (Beta)** |
 
-Réglages V2 (poussés via l'UI/`POST /api/config`) :
-- **`GLPI_V2_BASE_URL`** — URL de base V2 dédiée (`…/api.php/v2.3`), distincte de `GLPI_BASE_URL`
-  (legacy `apirest.php`) ; les deux coexistent.
-- **`GLPI_OAUTH_SCOPE`** — scopes demandés, séparés par un espace (défaut `api user` ; `api`
-  couvre tickets/référentiels, `user` requis pour l'aperçu du compte `User/Me`).
-- `GLPI_OAUTH_CLIENT_ID`, `GLPI_OAUTH_USERNAME` — non-secrets (visibles dans l'UI).
-- `GLPI_OAUTH_CLIENT_SECRET`, `GLPI_OAUTH_PASSWORD` — **secrets chiffrés** Fernet, write-only.
+Réglages V2 (poussés via l'UI/`POST /api/config`). Dans la console, tout se saisit sur
+**Configuration › Connexion GLPI**, après avoir basculé le champ *Version de l'API GLPI* sur V2 :
+
+- **`GLPI_V2_BASE_URL`** — champ *URL de base (api.php/v2.3)* : URL de base V2 dédiée,
+  distincte de `GLPI_BASE_URL` (champ *URL de base (apirest.php)*, legacy) ; les deux coexistent.
+- **`GLPI_OAUTH_SCOPE`** — champ *Scopes OAuth* (cases à cocher) : scopes demandés, séparés par
+  un espace dans la configuration (défaut `api user` ; `api` couvre tickets/référentiels, `user`
+  requis pour l'aperçu du compte `User/Me`).
+- `GLPI_OAUTH_CLIENT_ID`, `GLPI_OAUTH_USERNAME` — champs *Client ID* et *Identifiant (username)* :
+  non-secrets, donc réaffichés tels quels dans l'UI.
+- `GLPI_OAUTH_CLIENT_SECRET`, `GLPI_OAUTH_PASSWORD` — champs *Client secret* et *Mot de passe* :
+  **secrets chiffrés** Fernet, write-only — l'UI ne les réaffiche jamais, elle signale
+  seulement « Déjà configuré — laisser vide pour conserver ».
 
 ---
 

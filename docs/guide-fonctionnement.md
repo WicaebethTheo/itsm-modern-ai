@@ -187,7 +187,8 @@ sequenceDiagram
 - Le compte admin est créé **dans le navigateur** et stocké en **hash Argon2** (lui-même chiffré). Aucun mot de passe ne transite par `.env`, l'environnement du conteneur ou l'historique du shell.
 - **Fail-closed** : tant qu'aucun compte n'existe, les endpoints admin répondent **401** (jamais ouverts) ; une fois créé, `POST /api/auth/setup` répond **409** et ne peut plus écraser le compte en place. Cette route publique est comptée par le **même rate-limit que le login**.
 - **La fenêtre entre les deux notes du schéma est le risque assumé** : elle doit être la plus courte possible, et le port ne doit pas être public pendant ce temps.
-- **Mot de passe oublié** : aucun email de réinitialisation (aucun SMTP, par souveraineté). Seul chemin — `docker compose exec itsm python -m itsm_modern_ai.admin_setup --force`, ou `./install.sh --reset-password` depuis les sources. L'accès shell à l'hôte est donc le facteur d'authentification de dernier recours.
+- **Changer son mot de passe, connecté** : page **Compte & sécurité**, ouverte depuis le menu de compte en haut à droite (elle n'est pas dans le menu latéral) — carte « Changer le mot de passe », qui redemande le mot de passe actuel et referme **toutes** les sessions. L'adresse et le nom affiché, eux, restent du ressort de la CLI (`admin_setup --email … --email-only`).
+- **Mot de passe oublié** : aucun email de réinitialisation (aucun SMTP, par souveraineté). Plus de session, donc plus d'accès à la page ci-dessus : seul chemin — `docker compose exec itsm python -m itsm_modern_ai.admin_setup --force`, ou `./install.sh --reset-password` depuis les sources. L'accès shell à l'hôte est donc le facteur d'authentification de dernier recours.
 - `install.sh` pose `chmod 600` sur `.env`.
 
 ### Configuration depuis la console (étape humaine, une fois)
@@ -197,9 +198,9 @@ flowchart LR
     A{"Un compte admin<br/>existe-t-il ?"}
     A -- non, 1re visite --> N["👤 Créer le compte<br/>email + mot de passe<br/>(session ouverte aussitôt)"]
     A -- oui --> L["🔑 Connexion<br/>email + mot de passe"]
-    N --> G["1️⃣ Page GLPI<br/>URL + App/User-Token<br/>(ou OAuth2 V2)"]
+    N --> G["1️⃣ Connexion GLPI<br/>URL + App/User-Token<br/>(ou OAuth2 V2)"]
     L --> G
-    G --> P["2️⃣ Page Fournisseur<br/>Mistral / OpenAI / Anthropic / Ollama"]
+    G --> P["2️⃣ Fournisseur IA<br/>Mistral / OpenAI / Anthropic / Ollama"]
     P --> E["3️⃣ Moteur › Garde-fous<br/>seuil de confiance · plafond de coût"]
     E --> M["4️⃣ Mode = suggestion<br/>(défaut sûr)"]
     M --> R["▶️ 1er cycle :<br/>lire le Journal des décisions"]
@@ -228,18 +229,28 @@ flowchart LR
 ## 4. Fonctions Supporter : verrouillé vs actif
 
 Le code des fonctions Supporter est **livré dans l'image unique** (toujours `installed`).
-Une fonction est **active** uniquement si **la licence l'autorise** (`entitled`). Sans
-licence valide, elle reste verrouillée même si le code est présent —
-`active = installed ∧ entitled`.
+Une fonction est **active** si la licence l'autorise (`entitled`) **et** si elle n'est pas
+annoncée comme « à venir » (`coming_soon`) — soit
+`active = installed ∧ entitled ∧ ¬coming_soon` (`api/routes/license.py`).
+
+Ce troisième terme n'est pas un détail de code : deux des trois fonctions du catalogue,
+**Multi-entités avancé** et **Exports planifiés / DPO+**, sont marquées `coming_soon` dans
+`domain/licensing.py`. Une licence qui les couvre ne les fait donc **rien** faire de plus ;
+elles s'affichent « Prévu » sur la page Supporter, jamais « Débloqué ». Seule
+**Masquage PII avancé** est réellement activable aujourd'hui. L'invariant `coming_soon`
+⇒ jamais `active` est verrouillé par un test.
 
 ```mermaid
 flowchart TD
     F["Fonction Supporter<br/>(ex. masquage IBAN/secrets)"] --> I{"Code livré ?<br/>(image unique)"}
     I -- oui --> E{"Licence valide<br/>et l'autorise ?"}
     E -- non --> LOCK["🔒 Verrouillée<br/>(« devenez Supporter »)"]
-    E -- oui --> ON["🟢 Active"]
+    E -- oui --> C{"Fonction « à venir » ?<br/>(coming_soon)"}
+    C -- oui --> SOON["🕒 Prévu<br/>(pas encore implémentée,<br/>licence sans effet)"]
+    C -- non --> ON["🟢 Active"]
 
     style LOCK fill:#fecaca,stroke:#b91c1c
+    style SOON fill:#e5e7eb,stroke:#4b5563
     style ON fill:#bbf7d0,stroke:#15803d
 ```
 
