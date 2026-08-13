@@ -38,6 +38,9 @@ const tech = (
 
 const TECHS = [tech(11, "Adrien"), tech(12, "Nadia"), tech(13, "Non éligible", false)];
 
+/** Date UTC du jour — celle que le composant calcule, pour reproduire le décalage moteur. */
+const JOUR_UTC = new Date().toISOString().slice(0, 10);
+
 const absence = (over: Partial<AbsenceView> = {}): AbsenceView => ({
   id: 1,
   technician_ext_id: 11,
@@ -194,6 +197,29 @@ describe("Résumé de disponibilité", () => {
     expect(screen.getByText(/prochaine : Nadia/)).toBeInTheDocument();
   });
 
+  it("absence d'un seul jour, pas encore active côté moteur : elle reste ANNONCÉE", async () => {
+    // Le décalage réel : `active` est tranché par le serveur dans le fuseau du MOTEUR,
+    // `aujourdhui()` est une date UTC. Sur tout déploiement à offset négatif, la date UTC
+    // passe au jour suivant plusieurs heures avant celle du moteur — une absence qui
+    // commence « aujourd'hui » n'est alors NI active NI « commence après aujourd'hui ».
+    // Elle disparaissait des deux compteurs : invisible du seul écran de planification.
+    vi.mocked(Api.absences).mockResolvedValue([
+      absence({ start_date: JOUR_UTC, end_date: JOUR_UTC, active: false }),
+    ]);
+    renderWithToast(<AbsencePlanner />);
+    expect(await screen.findByText(/Toute l'équipe est disponible/)).toBeInTheDocument();
+    expect(screen.getByText(/1 absence\(s\) à venir/)).toBeInTheDocument();
+  });
+
+  it("absence TERMINÉE : elle ne repeuple pas « à venir »", async () => {
+    vi.mocked(Api.absences).mockResolvedValue([
+      absence({ start_date: "2020-01-05", end_date: "2020-01-09", active: false }),
+    ]);
+    renderWithToast(<AbsencePlanner />);
+    await screen.findByText(/Toute l'équipe est disponible/);
+    expect(screen.queryByText(/absence\(s\) à venir/)).not.toBeInTheDocument();
+  });
+
   it("nomme le domaine qui tombe parce que la seule personne qui le tient est absente", async () => {
     // LE risque métier : Adrien est seul sur « Réseau », il part, personne ne le remplace →
     // tout ticket réseau partira « à trier ». C'est ce croisement qui donne son sens à l'écran.
@@ -285,6 +311,19 @@ describe("AbsenceRowStatus (état porté par la ligne du technicien)", () => {
       />,
     );
     expect(screen.getByText(/sans remplaçant/)).toBeInTheDocument();
+  });
+
+  it("étiquette une absence du jour que le moteur n'a pas encore activée", async () => {
+    // Même décalage UTC / fuseau moteur que ci-dessus : la ligne du technicien ne portait
+    // AUCUNE étiquette, alors qu'une absence le concernant commençait le jour même.
+    renderWithToast(
+      <AbsenceRowStatus
+        tech={TECHS[0]}
+        absences={[absence({ start_date: JOUR_UTC, end_date: JOUR_UTC, active: false })]}
+        onDeclare={() => {}}
+      />,
+    );
+    expect(screen.getByText(/Absent à partir du/)).toBeInTheDocument();
   });
 
   it("propose de déclarer une absence pour CETTE personne", async () => {

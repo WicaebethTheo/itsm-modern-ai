@@ -129,9 +129,12 @@ export function Sandbox() {
       const r = await Api.sandbox(text, title);
       setElapsedMs(performance.now() - started);
       setResult(r);
-      // Ce qui est RÉELLEMENT parti chez le fournisseur : même masqueur, même gating
-      // de licence que le moteur. On n'affiche QUE la sortie du masqueur — jamais le
-      // brut re-rendu, sinon l'écran censé prouver le masquage exposerait la PII.
+      // Le TEXTE DU TICKET tel qu'il part : même recomposition titre + contenu, même
+      // masqueur et mêmes drapeaux de licence que le moteur. C'est un SECOND passage du
+      // masqueur, et le prompt émis contient en plus le prompt système, le catalogue de
+      // catégories et les fiches techniciens — d'où le titre du bloc, qui ne promet que
+      // ça. On n'affiche QUE la sortie du masqueur — jamais le brut re-rendu, sinon
+      // l'écran censé prouver le masquage exposerait la PII.
       try {
         setMasked((await Api.testMask(`${title}\n${text}`.trim())).masked);
       } catch (e: unknown) {
@@ -147,6 +150,11 @@ export function Sandbox() {
 
   const stage = result ? reasonStage(result.reason) : null;
   const stageName = stage ? t(STAGE[stage].fr, STAGE[stage].en) : null;
+  // Deux motifs pour lesquels le backend n'a AUCUNE Décision à remonter (`outcome.decision`
+  // vaut None, cf. routes/sandbox.py) : l'appel a échoué, ou la réponse était inexploitable.
+  // Annoncer « la proposition du LLM » puis cinq lignes de « — » fait passer une panne du
+  // fournisseur pour un routage vide, et envoie chercher un réglage là où il n'y en a pas.
+  const noProposal = result?.reason === "llm_error" || result?.reason === "invalid_output";
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -226,7 +234,9 @@ export function Sandbox() {
               result.accepted ? (
                 <Tag tone="green">{t("passe les garde-fous", "passes the guardrails")}</Tag>
               ) : (
-                <Tag tone="amber">{t("à trier", "to triage")}</Tag>
+                // Rouge = le moteur est EMPÊCHÉ (rien n'est revenu du fournisseur) ;
+                // ambre = un garde-fou a joué comme prévu. Même code qu'au Journal.
+                <Tag tone={noProposal ? "red" : "amber"}>{t("à trier", "to triage")}</Tag>
               )
             ) : undefined
           }
@@ -239,79 +249,100 @@ export function Sandbox() {
               <>
                 {/* Verdict AVANT le détail : sans lui, un routage refusé se lit exactement
                     comme un routage qui aura lieu — et l'admin croit à une écriture GLPI. */}
-                <Banner kind={result.accepted ? "success" : "warning"}>
+                <Banner kind={result.accepted ? "success" : noProposal ? "error" : "warning"}>
                   <strong className="font-semibold">
                     {result.accepted
                       ? t(
                           "Le moteur laisserait passer cette décision.",
                           "The engine would let this decision through.",
                         )
-                      : t(
-                          "Le moteur BLOQUE cette décision — le ticket partirait « à trier ».",
-                          "The engine BLOCKS this decision — the ticket would go to “to triage”.",
-                        )}
+                      : noProposal
+                        ? t(
+                            "Aucune proposition n'a été produite — le ticket partirait « à trier ».",
+                            "No proposal was produced — the ticket would go to “to triage”.",
+                          )
+                        : t(
+                            "Le moteur BLOQUE cette décision — le ticket partirait « à trier ».",
+                            "The engine BLOCKS this decision — the ticket would go to “to triage”.",
+                          )}
                   </strong>{" "}
                   <span className="text-foreground/80">
-                    {t(
-                      "Ce qui suit est la proposition du LLM, conservée pour explication. Rien ne serait écrit dans GLPI.",
-                      "What follows is the LLM's proposal, kept for explanation. Nothing would be written to GLPI.",
-                    )}
+                    {noProposal
+                      ? result.reason === "llm_error"
+                        ? t(
+                            "L'appel au fournisseur IA a échoué (réseau, clé, quota ou délai dépassé) : rien n'est revenu, il n'y a donc ni routage ni confiance à afficher. Rien ne serait écrit dans GLPI.",
+                            "The call to the AI provider failed (network, key, quota or timeout): nothing came back, so there is no routing and no confidence to show. Nothing would be written to GLPI.",
+                          )
+                        : t(
+                            "Le fournisseur a répondu, mais sa réponse était inexploitable (JSON invalide ou champs manquants) : aucune proposition n'a pu en être extraite. Rien ne serait écrit dans GLPI.",
+                            "The provider answered, but its answer was unusable (invalid JSON or missing fields): no proposal could be extracted from it. Nothing would be written to GLPI.",
+                          )
+                      : t(
+                          "Ce qui suit est la proposition du LLM, conservée pour explication. Rien ne serait écrit dans GLPI.",
+                          "What follows is the LLM's proposal, kept for explanation. Nothing would be written to GLPI.",
+                        )}
                   </span>
                 </Banner>
                 <div className="mt-4 flex flex-col">
-                  <Row
-                    label={t("Routage — catégorie", "Routing — category")}
-                    value={
-                      result.category_name
-                        ? `${result.category_name} (#${result.category})`
-                        : (result.category ?? "—")
-                    }
-                  />
-                  <Row
-                    label={t("Priorité", "Priority")}
-                    value={
-                      result.priority != null ? (
-                        <Tag tone={priorityTone(result.priority)}>
-                          {priorityLabel(result.priority, t)}
-                        </Tag>
-                      ) : (
-                        "—"
-                      )
-                    }
-                  />
-                  <Row
-                    label={t("Routage — technicien / groupe", "Routing — technician / group")}
-                    value={
-                      result.technician_id != null
-                        ? result.technician_name
-                          ? `${result.technician_name} (#${result.technician_id})`
-                          : `T#${result.technician_id}`
-                        : result.group_id != null
-                          ? result.group_name
-                            ? `${result.group_name} (#${result.group_id})`
-                            : `G#${result.group_id}`
-                          : "—"
-                    }
-                  />
-                  <Row
-                    label={t("Confiance", "Confidence")}
-                    value={
-                      <span className="flex items-center gap-2">
-                        {result.confidence != null ? (
-                          <Tag tone={confidenceTone(result.confidence)}>
-                            {Math.round(result.confidence * 100)}%
-                          </Tag>
-                        ) : (
-                          "—"
-                        )}
-                        {thresholdPct != null && (
-                          <span className="text-caption font-normal text-muted-foreground">
-                            {t(`seuil ${thresholdPct} %`, `threshold ${thresholdPct}%`)}
+                  {/* Sans Décision, ces quatre lignes n'affichent que des « — » : quatre
+                      champs vides se lisent comme un routage vide, pas comme une panne. */}
+                  {!noProposal && (
+                    <>
+                      <Row
+                        label={t("Routage — catégorie", "Routing — category")}
+                        value={
+                          result.category_name
+                            ? `${result.category_name} (#${result.category})`
+                            : (result.category ?? "—")
+                        }
+                      />
+                      <Row
+                        label={t("Priorité", "Priority")}
+                        value={
+                          result.priority != null ? (
+                            <Tag tone={priorityTone(result.priority)}>
+                              {priorityLabel(result.priority, t)}
+                            </Tag>
+                          ) : (
+                            "—"
+                          )
+                        }
+                      />
+                      <Row
+                        label={t("Routage — technicien / groupe", "Routing — technician / group")}
+                        value={
+                          result.technician_id != null
+                            ? result.technician_name
+                              ? `${result.technician_name} (#${result.technician_id})`
+                              : `T#${result.technician_id}`
+                            : result.group_id != null
+                              ? result.group_name
+                                ? `${result.group_name} (#${result.group_id})`
+                                : `G#${result.group_id}`
+                              : "—"
+                        }
+                      />
+                      <Row
+                        label={t("Confiance", "Confidence")}
+                        value={
+                          <span className="flex items-center gap-2">
+                            {result.confidence != null ? (
+                              <Tag tone={confidenceTone(result.confidence)}>
+                                {Math.round(result.confidence * 100)}%
+                              </Tag>
+                            ) : (
+                              "—"
+                            )}
+                            {thresholdPct != null && (
+                              <span className="text-caption font-normal text-muted-foreground">
+                                {t(`seuil ${thresholdPct} %`, `threshold ${thresholdPct}%`)}
+                              </span>
+                            )}
                           </span>
-                        )}
-                      </span>
-                    }
-                  />
+                        }
+                      />
+                    </>
+                  )}
                   <Row
                     label={
                       result.accepted
@@ -336,12 +367,16 @@ export function Sandbox() {
                   </div>
                 )}
 
-                {/* Souveraineté : ce qui est SORTI de l'instance, mot pour mot. */}
+                {/* Souveraineté : le TEXTE DU TICKET tel qu'il sort de l'instance, mot pour
+                    mot, masqué avec les réglages réels du moteur. Ce n'est PAS le prompt
+                    complet : l'appel y ajoute le prompt système, le catalogue de catégories
+                    et les fiches techniciens (domain/prompting.py), et ce bloc est un SECOND
+                    passage du masqueur — le titre ne doit donc rien promettre de plus. */}
                 <details className="mt-4 rounded-md border border-border">
                   <summary className="cursor-pointer px-3 py-2 text-body font-medium">
                     {t(
-                      "Texte réellement envoyé au LLM (masqué)",
-                      "Text actually sent to the LLM (masked)",
+                      "Texte du ticket tel qu'il part au LLM (masqué)",
+                      "Ticket text as it leaves for the LLM (masked)",
                     )}
                   </summary>
                   <div className="border-t border-border px-3 py-2">
@@ -355,6 +390,12 @@ export function Sandbox() {
                       </p>
                     )}
                     <p className="mt-2 text-caption text-muted-foreground">
+                      {t(
+                        "Seul le texte du ticket figure ici : le prompt système, le catalogue de catégories et les fiches techniciens s'y ajoutent dans l'appel réel et ne sont pas affichés.",
+                        "Only the ticket text is shown here: the system prompt, the category catalogue and the technician sheets are added in the real call and are not displayed.",
+                      )}
+                    </p>
+                    <p className="mt-1 text-caption text-muted-foreground">
                       {t(
                         "En édition Community, seuls l'e-mail et le téléphone sont masqués : IBAN, adresses IP et secrets partent EN CLAIR — c'est ce que montre le bloc ci-dessus.",
                         "In the Community edition only email and phone are masked: IBAN, IP addresses and secrets leave IN CLEAR — that is exactly what the block above shows.",

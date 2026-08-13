@@ -237,11 +237,16 @@ export function AiProvider() {
                 )
               }
             >
+              {/* `autoComplete="new-password"` et un `name` explicite : sans eux le
+                  navigateur propose d'enregistrer la clé API dans son gestionnaire de mots
+                  de passe (avec synchronisation cloud) — une sortie du coffre Fernet par une
+                  porte que le produit n'a jamais prévue. `"off"` ne convient pas : Chrome
+                  documente cette valeur comme IGNORÉE sur un champ `type="password"`. */}
               <Input
                 key={`${provider}-key`}
                 name={`${provider}-api-key`}
                 type="password"
-                autoComplete="off"
+                autoComplete="new-password"
                 spellCheck={false}
                 placeholder={t("(inchangée)", "(unchanged)")}
                 onChange={(e) => set(f.secretKey as keyof ConfigUpdate, e.target.value)}

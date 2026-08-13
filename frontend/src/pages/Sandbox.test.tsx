@@ -145,7 +145,7 @@ describe("Sandbox", () => {
     expect(await screen.findByText("seuil 70 %")).toBeInTheDocument();
   });
 
-  it("montre le texte réellement envoyé au LLM — et JAMAIS le brut", async () => {
+  it("montre le TEXTE DU TICKET tel qu'il part — jamais le brut, et sans promettre le prompt entier", async () => {
     vi.mocked(Api.sandbox).mockResolvedValue({
       accepted: true,
       reason: "accepted",
@@ -174,6 +174,61 @@ describe("Sandbox", () => {
     // à côté « pour comparer », ce qui referait fuir la PII sur l'écran censé la protéger.
     expect(bloc.textContent).not.toContain("alice@acme.com");
     expect(Api.testMask).toHaveBeenCalledWith("mon mail est alice@acme.com");
+    // Le titre ne doit promettre que ce qu'il montre : « Texte réellement envoyé au LLM »
+    // annonçait le prompt émis, qui contient en plus le prompt système, le catalogue de
+    // catégories et les fiches techniciens — jamais affichés ici.
+    expect(screen.getByText("Texte du ticket tel qu'il part au LLM (masqué)")).toBeInTheDocument();
+    expect(screen.queryByText(/Texte réellement envoyé au LLM/)).not.toBeInTheDocument();
+    expect(bloc.textContent).toContain("le prompt système");
+  });
+
+  // ── Quand il n'y a AUCUNE proposition ────────────────────────────────────────
+  // `llm_error` / `invalid_output` : `outcome.decision` vaut None côté backend, les cinq
+  // lignes de détail n'affichent donc que des « — » sous un bandeau qui promet « la
+  // proposition du LLM ». Une panne se lisait comme un routage vide.
+
+  /** Réponse sans Décision : tous les champs de routage sont nuls (routes/sandbox.py). */
+  const sansDecision = (reason: string) => ({
+    accepted: false,
+    reason,
+    category: null,
+    category_name: null,
+    priority: null,
+    technician_id: null,
+    technician_name: null,
+    group_id: null,
+    group_name: null,
+    confidence: null,
+    draft: null,
+  });
+
+  it("un échec du fournisseur dit qu'aucune proposition n'est revenue", async () => {
+    vi.mocked(Api.sandbox).mockResolvedValue(sansDecision("llm_error"));
+    render(<Sandbox />);
+    await userEvent.type(contenu(), "xx");
+    await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));
+
+    expect(await screen.findByText(/Aucune proposition n'a été produite/)).toBeInTheDocument();
+    expect(screen.getByText(/L'appel au fournisseur IA a échoué/)).toBeInTheDocument();
+    // Plus de promesse de proposition, ni de lignes de détail vides à interpréter.
+    expect(screen.queryByText(/proposition du LLM/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Routage — catégorie")).not.toBeInTheDocument();
+    expect(screen.queryByText("Confiance")).not.toBeInTheDocument();
+    // Le motif reste dit, et l'étape désignée est bien l'appel au LLM.
+    expect(screen.getByText("Erreur du fournisseur IA")).toBeInTheDocument();
+    expect(screen.getByText(/Refus à l'étape : appel au LLM/)).toBeInTheDocument();
+  });
+
+  it("une réponse illisible ne se confond pas avec un appel qui a échoué", async () => {
+    vi.mocked(Api.sandbox).mockResolvedValue(sansDecision("invalid_output"));
+    render(<Sandbox />);
+    await userEvent.type(contenu(), "xx");
+    await userEvent.click(screen.getByRole("button", { name: "Simuler la décision" }));
+
+    expect(await screen.findByText(/sa réponse était inexploitable/)).toBeInTheDocument();
+    expect(screen.queryByText(/L'appel au fournisseur IA a échoué/)).not.toBeInTheDocument();
+    expect(screen.getByText("Réponse du LLM illisible")).toBeInTheDocument();
+    expect(screen.queryByText("Routage — catégorie")).not.toBeInTheDocument();
   });
 
   it("affiche le coût, le modèle et la latence de l'essai", async () => {

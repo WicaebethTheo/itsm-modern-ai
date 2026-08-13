@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
-import { demo } from "../src/lib/demo";
-import { useFrench } from "./fixtures";
+import { mockConsoleApi, useFrench } from "./fixtures";
 
 // Parcours de PREMIÈRE INSTALLATION, de bout en bout : moteur sans compte admin →
-// création du compte dans l'interface → tableau de bord. Toute l'API est mockée
-// (`page.route`), y compris le basculement d'état provoqué par POST /api/auth/setup :
-// c'est ce basculement qui fait que la garde RequireAuth laisse passer au retour sur "/".
+// création du compte dans l'interface → tableau de bord. Le châssis authentifié est mocké
+// par `mockConsoleApi` (un endpoint oublié y est ajouté UNE fois pour tous les scénarios) ;
+// ne restent en local que les routes propres au scénario : la sonde d'auth et son
+// basculement au POST /api/auth/setup, qui fait passer la garde RequireAuth sur "/".
 test("pas installé → création du compte → tableau de bord", async ({ page }) => {
   await useFrench(page);
+  await mockConsoleApi(page);
   let configured = false;
   let submitted: unknown = null;
 
@@ -27,12 +28,6 @@ test("pas installé → création du compte → tableau de bord", async ({ page 
       json: { authenticated: true, auth_configured: true, setup_required: false },
     });
   });
-  await page.route("**/health", (route) => route.fulfill({ json: demo.health }));
-  await page.route("**/api/metrics", (route) => route.fulfill({ json: demo.metrics }));
-  await page.route("**/api/operational-metrics", (route) =>
-    route.fulfill({ json: demo.operational }),
-  );
-  await page.route("**/api/decisions", (route) => route.fulfill({ json: demo.decisions }));
 
   // La garde envoie sur l'installation, pas sur une connexion que personne ne peut passer.
   await page.goto("/");
@@ -63,6 +58,7 @@ test("pas installé → création du compte → tableau de bord", async ({ page 
 
 test("un compte déjà configuré ne peut pas repasser par l'installation", async ({ page }) => {
   await useFrench(page);
+  await mockConsoleApi(page);
   let setupCalled = false;
 
   await page.route("**/api/auth/status", (route) =>
@@ -88,6 +84,7 @@ test("un compte créé entre-temps (409) renvoie vers la connexion sans insister
   page,
 }) => {
   await useFrench(page);
+  await mockConsoleApi(page);
   // Course réelle : la sonde dit « à installer », mais un autre onglet a créé le compte.
   await page.route("**/api/auth/status", (route) =>
     route.fulfill({ json: { authenticated: false, auth_configured: false, setup_required: true } }),

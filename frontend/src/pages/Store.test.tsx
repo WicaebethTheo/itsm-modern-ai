@@ -37,7 +37,9 @@ const ENT_UNLICENSED: LicenseView = {
   })),
 };
 
-// Code SUPPORTER présent, licence valide → tout actif.
+// Code SUPPORTER présent, licence valide → tout ce qui PEUT l'être est actif.
+// `active: !coming_soon` reproduit l'invariant du backend (`routes/license.py`) : un module
+// annoncé n'a aucune surface d'usage, la licence ne le rend donc jamais actif.
 const ENT_ACTIVE: LicenseView = {
   edition: "supporter",
   valid: true,
@@ -49,7 +51,7 @@ const ENT_ACTIVE: LicenseView = {
     ...f,
     installed: true,
     entitled: true,
-    active: true,
+    active: !f.coming_soon,
   })),
 };
 
@@ -77,13 +79,17 @@ describe("Store (licence open-core)", () => {
     expect(
       screen.getByText(/vérifiée hors-ligne \(Ed25519, aucun appel sortant\)/),
     ).toBeInTheDocument();
-    // Les 3 features, toutes verrouillées.
-    expect(screen.getAllByText("Supporter").length).toBeGreaterThanOrEqual(3);
+    // Un SEUL module a une surface d'usage : il porte le verrou « Supporter ». Les deux
+    // autres sont « Prévu » — un verrou dessus promettrait qu'une clé les déverrouille.
+    expect(screen.getAllByText("Supporter")).toHaveLength(1);
+    expect(screen.getAllByText("Prévu")).toHaveLength(2);
     expect(screen.queryByText("Débloqué")).not.toBeInTheDocument();
-    // Résumé chiffré en tête : « qu'est-ce qui est actif chez moi ? » en une ligne.
+    // Résumé chiffré en tête : « qu'est-ce qui est actif chez moi ? » en une ligne, sans
+    // gonfler le compte des modules verrouillables avec deux promesses.
     expect(
-      screen.getByText("3 module(s) Supporter installés mais verrouillés"),
+      screen.getByText("1 module(s) Supporter installés mais verrouillés"),
     ).toBeInTheDocument();
+    expect(screen.getByText("2 module(s) à venir")).toBeInTheDocument();
     // Anti-DRM : le code est déjà là, la clé autorise, elle ne télécharge rien.
     expect(screen.getByText(/DÉJÀ installé dans cette image/)).toBeInTheDocument();
     expect(
@@ -108,14 +114,20 @@ describe("Store (licence open-core)", () => {
     expect(await screen.findAllByText("Débloqué")).toHaveLength(1);
     expect(screen.getAllByText("Prévu")).toHaveLength(2);
     expect(await screen.findByText("Licence activée.")).toBeInTheDocument();
-    // Résumé chiffré : 3/3 autorisés par la licence (dont 2 sans surface d'usage).
-    expect(screen.getByText("3 module(s) actif(s) sur 3")).toBeInTheDocument();
+    // Résumé chiffré : le DÉNOMINATEUR ne compte que les modules qui peuvent être actifs.
+    // « 3 sur 3 » annonçait en réussite deux promesses que le catalogue, deux cartes plus
+    // bas, décrit comme « pas encore de surface d'usage ».
+    expect(screen.getByText("1 module(s) actif(s) sur 1")).toBeInTheDocument();
+    expect(screen.getByText("2 module(s) à venir")).toBeInTheDocument();
     expect(screen.getByText("Jusqu'au 2027-01-01")).toBeInTheDocument();
   });
 
-  it("licence valide qui ne couvre PAS un module : le catalogue ne réclame pas une licence", async () => {
-    // Un client licencié à qui il manque une clé de feature lisait « Activez votre
-    // licence Supporter » — message faux, et vexant.
+  it("licence valide qui n'active RIEN : clé visible, retirable, et catalogue non accusateur", async () => {
+    // Deux régressions dans un seul état : (1) un client licencié à qui il manque une clé
+    // de feature lisait « en attente d'une licence » — faux, et vexant ; (2) l'écran se
+    // basait sur « quelque chose est actif » pour montrer la clé ET pour dégriser
+    // « Réinitialiser » — donc, licence valide n'autorisant rien, plus AUCUN chemin
+    // d'interface pour retirer une clé pourtant stockée.
     const partial: LicenseView = {
       ...ENT_ACTIVE,
       features: ENT_ACTIVE.features.map((f) =>
@@ -124,12 +136,30 @@ describe("Store (licence open-core)", () => {
     };
     vi.mocked(Api.getLicense).mockResolvedValue(partial);
     renderWithToast(<Store />);
+    // La clé stockée reste à l'écran (titulaire, échéance), et le dit sans mentir.
     await screen.findByText("ACME Corp");
-    expect(screen.getByText("2 module(s) actif(s) sur 3")).toBeInTheDocument();
+    expect(screen.getByText("Sans module actif")).toBeInTheDocument();
+    expect(screen.getByText(/n'autorise aucun module UTILISABLE/)).toBeInTheDocument();
+    // Le retrait reste possible : c'est le seul chemin de sortie.
+    expect(screen.getByRole("button", { name: "Réinitialiser" })).toBeEnabled();
     expect(screen.getByText("Non incluse dans votre licence actuelle.")).toBeInTheDocument();
     expect(
       screen.queryByText("Code installé, en attente d'une licence qui l'autorise."),
     ).not.toBeInTheDocument();
+  });
+
+  it("aucune clé stockée : « Réinitialiser » reste grisé (il n'y a rien à retirer)", async () => {
+    vi.mocked(Api.getLicense).mockResolvedValue(ENT_UNLICENSED);
+    renderWithToast(<Store />);
+    await screen.findByLabelText("Clé de licence");
+    expect(screen.getByRole("button", { name: "Réinitialiser" })).toBeDisabled();
+  });
+
+  it("clé refusée : « Réinitialiser » est actif (le backend a une raison à donner)", async () => {
+    vi.mocked(Api.getLicense).mockResolvedValue(ENT_INVALID);
+    renderWithToast(<Store />);
+    await screen.findByText(/Licence invalide/);
+    expect(screen.getByRole("button", { name: "Réinitialiser" })).toBeEnabled();
   });
 
   it("Code Supporter présent : clé invalide → bannière d'erreur traduite et actionnable", async () => {

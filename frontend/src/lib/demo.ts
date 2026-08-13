@@ -213,7 +213,13 @@ export const demo: {
   decisions: [
     d(48217, true, "accepted", 6, 2, 13, null, 0.94, "Imprimante 3e étage hors-ligne"),
     d(48216, true, "accepted", 1, 3, 11, null, 0.89, "Réinitialisation mot de passe AD"),
-    d(48215, false, "low_confidence", 4, 3, null, null, 0.61, "Outlook ne synchronise plus"),
+    // « à trier » REPRIS PAR LE REPLI : refusé par le seuil, mais un groupe de repli a été
+    // assigné (hors mode suggestion). C'est le cas que la colonne « repli » existe pour
+    // distinguer d'un « à trier » resté orphelin — il doit donc figurer dans la démo.
+    d(48215, false, "low_confidence", 4, 3, null, 5, 0.61, "Outlook ne synchronise plus", {
+      fallback_applied: true,
+      mode: "semi_auto",
+    }),
     d(48214, true, "accepted", 2, 2, null, 5, 0.92, "Demande accès dossier RH"),
     d(48213, true, "accepted", 5, 4, 11, null, 0.88, "Wifi instable open space"),
     d(
@@ -474,6 +480,12 @@ function d(
   group_id: number | null,
   confidence: number,
   subject: string,
+  /**
+   * Un acteur de repli a été assigné MALGRÉ le refus. Le moteur ne l'active que hors mode
+   * suggestion (`services/triage.py`), d'où le `mode` qui l'accompagne : une démo qui
+   * montrerait un repli en mode suggestion décrirait un moteur qui n'existe pas.
+   */
+  extra: { fallback_applied?: boolean; mode?: string } = {},
 ): DecisionEntry {
   const ts = new Date(Date.now() - id * 1000).toISOString();
   return {
@@ -494,8 +506,13 @@ function d(
     confidence,
     glpi_link: `https://glpi.demo.local/front/ticket.form.php?id=${id}`,
     annotation: "", // annotation manuelle (vide en démo)
-    mode: "suggestion", // démo : pilote en mode suggestion (sûr)
+    mode: extra.mode ?? "suggestion", // démo : pilote en mode suggestion (sûr)
     applied: false,
+    // Le moteur pose TOUJOURS ce drapeau (`routes/decisions.py` : `bool = False`). L'omettre
+    // laissait la colonne « repli » du Journal invisible en démo — et un fixture qui décrit
+    // une charge utile que le moteur n'émet plus est exactement ce qui a laissé passer le
+    // bug de la pastille verte.
+    fallback_applied: extra.fallback_applied ?? false,
   };
 }
 
@@ -515,5 +532,13 @@ function ref(
     eligible: on,
     skills,
     skill_tags: [],
+    // Date du dernier scan GLPI qui a vu la ligne : le moteur la renvoie sur CHAQUE entrée
+    // (`api/routes/referentials.py`). Sans elle, la démo n'affichait aucune fraîcheur de
+    // référentiel — la console paraissait ne pas savoir dire de quand datait son cache.
+    // Getter : la démo tourne longtemps dans un onglet, une date figée à l'import finirait
+    // par franchir le seuil de péremption et crier « référentiels anciens » sans raison.
+    get updated_at() {
+      return new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+    },
   };
 }

@@ -76,6 +76,21 @@ function formatJour(iso: string, lang: Lang): string {
   });
 }
 
+/**
+ * Absence PAS ENCORE ACTIVE mais PAS TERMINÉE — le test qui ne laisse aucun trou.
+ *
+ * Le serveur tranche `active` dans le fuseau configuré du MOTEUR ; `aujourdhui()` est une
+ * date UTC. Les deux divergent plusieurs heures par jour sur tout déploiement à offset
+ * négatif. Tester « commence après aujourd'hui » ouvrait alors une fenêtre où une absence
+ * n'était NI active (le serveur n'y est pas encore) NI à venir (sa date de début n'est plus
+ * postérieure à la date UTC) : invisible du résumé et de la ligne du technicien, sur la
+ * seule vue de planification — une absence d'un seul jour pouvait n'apparaître nulle part.
+ * On borne donc par la FIN : tant qu'elle n'est pas passée, l'absence reste annoncée.
+ */
+function pasEncoreTerminee(a: AbsenceView, jour: string): boolean {
+  return !a.active && a.end_date >= jour;
+}
+
 /** L'absence qui concerne ce technicien : celle en cours, sinon la prochaine déclarée. */
 export function absenceDuTechnicien(absences: AbsenceView[], extId: number): AbsenceView | null {
   const siennes = absences.filter((a) => a.technician_ext_id === extId);
@@ -83,7 +98,7 @@ export function absenceDuTechnicien(absences: AbsenceView[], extId: number): Abs
   return (
     siennes.find((a) => a.active) ??
     siennes
-      .filter((a) => a.start_date > jour)
+      .filter((a) => pasEncoreTerminee(a, jour))
       .sort((a, b) => a.start_date.localeCompare(b.start_date))[0] ??
     null
   );
@@ -285,13 +300,12 @@ export function AbsencePlanner({ focusTechId, onFocusHandled, onSaved }: Absence
   const absences = useMemo(() => res.data ?? [], [res.data]);
   const actives = useMemo(() => absences.filter((a) => a.active), [absences]);
   const activesIds = new Set(actives.map((a) => a.id));
-  const aVenir = useMemo(
-    () =>
-      absences
-        .filter((a) => !a.active && a.start_date > aujourdhui())
-        .sort((a, b) => a.start_date.localeCompare(b.start_date)),
-    [absences],
-  );
+  const aVenir = useMemo(() => {
+    const jour = aujourdhui();
+    return absences
+      .filter((a) => pasEncoreTerminee(a, jour))
+      .sort((a, b) => a.start_date.localeCompare(b.start_date));
+  }, [absences]);
 
   // Ce que les absences EN COURS coûtent réellement au routage, aujourd'hui.
   const perdusAujourdhui = useMemo(

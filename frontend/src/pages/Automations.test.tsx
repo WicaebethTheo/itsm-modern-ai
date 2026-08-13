@@ -101,6 +101,49 @@ describe("Automations — purge RGPD", () => {
     expect(await screen.findByText("Base verrouillée")).toBeInTheDocument();
   });
 
+  it("une fenêtre à 0 s'annonce « non purgé », jamais « au-delà de 0 j »", async () => {
+    // Le moteur traite 0 comme « ne pas purger » (c'est ce que dit le champ lui-même) :
+    // annoncer « les décisions de plus de 0 j » promettait la suppression de TOUT.
+    const confirm = confirmeAvec(false);
+    vi.mocked(Api.retention).mockResolvedValue({ ...RETENTION, decisions_days: 0 });
+    renderWithToast(<Automations />);
+    await userEvent.click(await screen.findByRole("button", { name: "Exécuter maintenant" }));
+
+    const message = confirm.mock.calls[0][0] as string;
+    expect(message).toContain("Journal des décisions : non purgé (0)");
+    expect(message).not.toMatch(/au-delà de 0\b/);
+    // L'autre fenêtre, elle, est bien annoncée.
+    expect(message).toContain("au-delà de 90 j");
+  });
+
+  it("deux fenêtres à 0 : la confirmation dit que rien ne sera supprimé", async () => {
+    const confirm = confirmeAvec(false);
+    vi.mocked(Api.retention).mockResolvedValue({
+      ...RETENTION,
+      decisions_days: 0,
+      llm_calls_days: 0,
+    });
+    renderWithToast(<Automations />);
+    await userEvent.click(await screen.findByRole("button", { name: "Exécuter maintenant" }));
+
+    expect(confirm.mock.calls[0][0]).toContain("la purge ne supprimera rien");
+  });
+
+  it("prévient quand un brouillon non enregistré diffère de ce qui sera appliqué", async () => {
+    const confirm = confirmeAvec(false);
+    renderWithToast(<Automations />);
+    const champ = await screen.findByLabelText(/Rétention Journal/);
+    await userEvent.clear(champ);
+    await userEvent.type(champ, "10");
+    // Averti AVANT le clic : la confirmation seule se lit en diagonale.
+    expect(screen.getByText(/Modifications non enregistrées/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Exécuter maintenant" }));
+    const message = confirm.mock.calls[0][0] as string;
+    expect(message).toMatch(/modifications non enregistrées/i);
+    expect(message).toContain("au-delà de 365 j");
+  });
+
   it("la confirmation reflète une fenêtre ENREGISTRÉE, pas un brouillon non sauvé", async () => {
     // Piège : saisir 10 j sans enregistrer, puis lancer la purge. Le serveur applique la
     // valeur PERSISTÉE (365) — la confirmation doit annoncer celle-là, sinon elle ment

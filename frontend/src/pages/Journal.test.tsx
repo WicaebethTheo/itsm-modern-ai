@@ -163,11 +163,17 @@ describe("Journal des décisions", () => {
     expect(screen.getByText("1/2 affichée(s) · 1 à trier")).toBeInTheDocument();
   });
 
-  // Délai explicite : la mention de plafond ne s'affiche QUE lorsque le lot rendu atteint
-  // la limite, donc ce cas doit vraiment peindre 500 lignes. C'est tenable en `vitest run`
-  // mais dépasse les 5 s par défaut sous l'instrumentation de couverture — préférer un
-  // délai franc plutôt qu'un test affaibli qui n'exercerait plus la borne.
-  it("annonce le plafond et recharge avec une limite plus large", { timeout: 30_000 }, async () => {
+  // Délai explicite : la troncature ne s'exerce QUE lorsque le lot rendu atteint la limite,
+  // donc ce cas doit vraiment peindre 500 lignes — ce qui se mesure autour de 3,5 s sous
+  // l'instrumentation de couverture (la porte de la CI, deux à trois fois plus lente que
+  // `vitest run`). 10 s laissent la marge d'une machine chargée sans porter un délai sans
+  // rapport avec la mesure ; le global (20 s, vitest.config.ts) couvrirait déjà le cas,
+  // l'override reste pour DIRE que ce test-ci est lent par nature. Un seul cas peint
+  // 500 lignes : tout ce qui dépend de la troncature est vérifié ici, et l'ordre des
+  // étapes évite de repeindre le lot (on ne vide pas la recherche avant de charger plus).
+  it("tronqué : le dit, le rappelle au filtre, et ne vide pas la vue pour en charger plus", {
+    timeout: 10_000,
+  }, async () => {
     const page = Array.from({ length: 500 }, (_, i) =>
       decision({ id: i + 1, ticket_id: 1000 + i }),
     );
@@ -178,19 +184,60 @@ describe("Journal des décisions", () => {
     expect(
       screen.getByText("Seules les 500 décisions les plus récentes sont affichées."),
     ).toBeInTheDocument();
+    // « 500/500 · 43 à trier » se lit comme un TOTAL : le compteur doit dire sa fenêtre.
+    expect(screen.getByText(/décompte limité aux 500 décisions chargées/)).toBeInTheDocument();
 
-    vi.mocked(Api.decisions).mockResolvedValue(page.slice(0, 10));
+    // Le filtre est LOCAL : « aucun résultat » ne prouve rien au-delà de la fenêtre, et
+    // la seule mention de troncature vivait après 500 lignes, là où personne ne la lit.
+    const search = screen.getByLabelText("Rechercher dans le journal");
+    await userEvent.type(search, "zzz");
+    expect(screen.getByText("Aucun résultat pour ce filtre.")).toBeInTheDocument();
+    expect(screen.getByText(/n'a porté que sur les 500 décisions chargées/)).toBeInTheDocument();
+
+    // « En charger davantage » remplaçait TOUT le corps de la carte par « Chargement… » —
+    // et donc la position de défilement de celui qui venait de lire 500 lignes. Le bouton
+    // vit au pied de la carte : il reste atteignable filtre en main, inutile de le vider
+    // (et de repeindre 500 lignes) pour l'exercer.
+    let resolve!: (v: DecisionEntry[]) => void;
+    vi.mocked(Api.decisions).mockReturnValue(new Promise((r) => (resolve = r)));
     await userEvent.click(screen.getByRole("button", { name: "En charger davantage" }));
     // Le fetcher dépend de `limit` : sans ça le clic ne relancerait rien.
     await waitFor(() => expect(Api.decisions).toHaveBeenCalledWith(1000));
+    expect(screen.getByText("Aucun résultat pour ce filtre.")).toBeInTheDocument();
+    expect(screen.queryByText("Chargement…")).not.toBeInTheDocument();
+    expect(screen.getByText("Mise à jour de la liste…")).toBeInTheDocument();
+
+    resolve(page.slice(0, 10));
+    await waitFor(() =>
+      expect(screen.queryByText("Mise à jour de la liste…")).not.toBeInTheDocument(),
+    );
   });
 
-  it("relance le chargement au clic sur Rafraîchir", async () => {
+  it("un compteur non tronqué ne s'excuse pas d'une fenêtre qui n'existe pas", async () => {
+    vi.mocked(Api.decisions).mockResolvedValue([decision()]);
+    render(<Journal />);
+    expect(await screen.findByText("1/1 affichée(s) · 0 à trier")).toBeInTheDocument();
+    expect(screen.queryByText(/décompte limité/)).not.toBeInTheDocument();
+  });
+
+  it("relance le chargement au clic sur Rafraîchir SANS effacer le tableau", async () => {
     vi.mocked(Api.decisions).mockResolvedValue([decision()]);
     render(<Journal />);
     await screen.findByText("#48217");
+
+    let resolve!: (v: DecisionEntry[]) => void;
+    vi.mocked(Api.decisions).mockReturnValue(new Promise((r) => (resolve = r)));
     await userEvent.click(screen.getByRole("button", { name: "Rafraîchir" }));
     await waitFor(() => expect(Api.decisions).toHaveBeenCalledTimes(2));
+    // « Chargement… » pleine largeur ne vaut que pour le PREMIER chargement : sinon on
+    // perd le tableau et sa position de défilement à chaque rafraîchissement.
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(screen.queryByText("Chargement…")).not.toBeInTheDocument();
+    // Une liste courte ne prétend pas non plus qu'il y aurait davantage à charger.
+    expect(screen.queryByRole("button", { name: "En charger davantage" })).not.toBeInTheDocument();
+
+    resolve([decision()]);
+    await waitFor(() => expect(screen.getByRole("table")).toBeInTheDocument());
   });
 
   it("rend le tableau défilable et nomme ses colonnes", async () => {

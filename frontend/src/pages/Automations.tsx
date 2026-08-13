@@ -96,13 +96,48 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
     }
   }
 
+  /**
+   * Fenêtre telle qu'elle sera RÉELLEMENT appliquée. 0 n'est pas « plus de 0 jour »
+   * (ce qui annoncerait la suppression de TOUT) : le moteur traite 0 comme « ne pas
+   * purger », exactement ce que dit l'indication sous le champ.
+   */
+  const windowLabel = (days: number) =>
+    days > 0 ? t(`au-delà de ${days} j`, `beyond ${days} d`) : t("non purgé (0)", "not purged (0)");
+
   async function runNow() {
-    // Confirmation explicite : action destructive irréversible (RGPD), incohérent sans garde-fou.
-    const ok = window.confirm(
+    // Confirmation explicite : action destructive irréversible (RGPD), incohérent sans
+    // garde-fou. Elle annonce les valeurs PERSISTÉES (`data`) et jamais le brouillon —
+    // c'est ce que le serveur appliquera. Le brouillon divergent est SIGNALÉ, pas utilisé.
+    const nothing = data.decisions_days === 0 && data.llm_calls_days === 0;
+    const lines = [
       t(
-        `Supprimer définitivement les décisions de plus de ${data.decisions_days} j et les appels LLM de plus de ${data.llm_calls_days} j ?`,
-        `Permanently delete decisions older than ${data.decisions_days} d and LLM calls older than ${data.llm_calls_days} d?`,
+        `Journal des décisions : ${windowLabel(data.decisions_days)}`,
+        `Decision journal: ${windowLabel(data.decisions_days)}`,
       ),
+      t(
+        `Appels LLM : ${windowLabel(data.llm_calls_days)}`,
+        `LLM calls: ${windowLabel(data.llm_calls_days)}`,
+      ),
+      nothing
+        ? t(
+            "Aucune fenêtre de rétention active : la purge ne supprimera rien.",
+            "No retention window is active: the purge will delete nothing.",
+          )
+        : t(
+            "Les lignes plus anciennes seront supprimées définitivement.",
+            "Older rows will be permanently deleted.",
+          ),
+    ];
+    if (dirty) {
+      lines.push(
+        t(
+          "Attention : des modifications non enregistrées sont à l'écran ; la purge applique les valeurs ci-dessus, pas celles saisies.",
+          "Warning: unsaved changes are on screen; the purge applies the values above, not the ones you typed.",
+        ),
+      );
+    }
+    const ok = window.confirm(
+      `${t("Exécuter la purge maintenant ?", "Run the purge now?")}\n\n${lines.join("\n")}`,
     );
     if (!ok) return;
     setRunning(true);
@@ -198,6 +233,16 @@ function PurgeCard({ data, reload }: { data: RetentionView; reload: () => void }
               {" · "}
               {t(`par ${data.last_run_by}`, `by ${data.last_run_by}`)}
             </>
+          )}
+          {/* Le bouton d'à côté n'applique PAS ce qui est à l'écran : le dire avant le clic,
+              pas seulement dans la confirmation qu'on lit en diagonale. */}
+          {dirty && (
+            <div className="text-warning">
+              {t(
+                "Modifications non enregistrées : « Exécuter maintenant » applique les valeurs enregistrées, pas celles affichées.",
+                "Unsaved changes: “Run now” applies the saved values, not the ones displayed.",
+              )}
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2">

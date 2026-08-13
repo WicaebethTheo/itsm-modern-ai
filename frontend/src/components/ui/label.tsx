@@ -1,4 +1,7 @@
 import * as React from "react";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
@@ -17,13 +20,22 @@ export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLab
 const LABELABLE = new Set(["input", "select", "textarea", "button", "meter", "output", "progress"]);
 
 /**
- * Un composant (Input, Textarea, Select…) relaie son `id` au contrôle qu'il rend, donc on
- * lui fait confiance ; une balise intrinsèque doit être dans la liste ci-dessus.
+ * Composants du dépôt dont on SAIT qu'ils relaient `id` au contrôle natif qu'ils rendent
+ * (`{...props}` sur un `<input>` / `<textarea>` / `<select>`). Liste blanche EXPLICITE, et
+ * non « tout ce qui n'est pas une balise » : un fragment, un composant de mise en page ou
+ * un composant maison qui avale ses props recevrait sinon l'identifiant sans jamais le
+ * poser sur un contrôle — le `<label for>` pointerait dans le vide, ce qui est PIRE que
+ * pas de libellé (un lecteur d'écran annonce alors un champ sans nom, et le clic sur le
+ * libellé ne focalise rien). Un nouveau composant de champ s'ajoute ici sciemment.
+ */
+const COMPOSANTS_RELAIS: readonly unknown[] = [Input, Textarea, Select];
+
+/**
  * Le paramètre est volontairement large : `ReactElement.type` vaut `string` OU un
  * constructeur de composant, et le restreindre à `ElementType` ne compile pas.
  */
 function peutPorterLeLabel(type: unknown): boolean {
-  return typeof type === "string" ? LABELABLE.has(type) : true;
+  return typeof type === "string" ? LABELABLE.has(type) : COMPOSANTS_RELAIS.includes(type);
 }
 
 /**
@@ -34,11 +46,14 @@ function peutPorterLeLabel(type: unknown): boolean {
  * n'étaient que deux frères : sans `htmlFor` — que presque aucun appelant ne passait — cliquer
  * le libellé ne focalisait rien et le champ n'avait aucun nom accessible.
  *
- * Deux garde-fous, pour ne rien casser là où l'enfant n'est pas un contrôle :
+ * Trois garde-fous, pour ne rien casser là où l'enfant n'est pas un contrôle :
  * - plusieurs enfants (contrôle + message d'erreur, groupe de boutons…) ⇒ aucune injection ;
- * - enfant intrinsèque non « labelable » (`<div>` qui enveloppe un groupe) ⇒ aucune injection.
+ * - enfant intrinsèque non « labelable » (`<div>` qui enveloppe un groupe) ⇒ aucune injection ;
+ * - enfant composant hors liste blanche (`COMPOSANTS_RELAIS`) ⇒ aucune injection.
  *
- * `htmlFor` reste accepté et l'emporte : c'est un override explicite, pas la règle.
+ * `htmlFor` reste accepté, mais c'est l'identifiant DÉJÀ PORTÉ par l'enfant qui gagne quand
+ * les deux divergent : un `htmlFor` copié-collé d'un autre appelant pointerait sinon sur le
+ * champ du formulaire voisin, en silence. Le conflit est signalé en développement.
  */
 export function Field({
   label,
@@ -60,7 +75,18 @@ export function Field({
       ? (unique as React.ReactElement<{ id?: string }>)
       : null;
   const idExistant = element?.props.id;
-  const cible = htmlFor ?? idExistant ?? (element ? auto : undefined);
+  if (
+    import.meta.env.DEV &&
+    htmlFor !== undefined &&
+    idExistant !== undefined &&
+    htmlFor !== idExistant
+  ) {
+    console.warn(
+      `Field « ${label} » : htmlFor="${htmlFor}" contredit l'id="${idExistant}" de son enfant ; ` +
+        "c'est l'id de l'enfant qui est utilisé (le libellé doit désigner CE contrôle).",
+    );
+  }
+  const cible = idExistant ?? htmlFor ?? (element ? auto : undefined);
   const contenu =
     element && !idExistant && cible ? React.cloneElement(element, { id: cible }) : children;
 

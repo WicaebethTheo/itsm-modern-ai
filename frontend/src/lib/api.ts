@@ -8,6 +8,41 @@
 import { demo } from "./demo";
 import { tr } from "./i18n";
 
+/**
+ * Messages de validation GÉNÉRIQUES de Pydantic v2 : ils décrivent la contrainte, jamais ce
+ * que l'exploitant doit faire, et ils arrivent en anglais dans une console française (« Input
+ * should be less than or equal to 5 »). Les afficher tels quels n'est pas plus actionnable
+ * qu'« API 422 » — on les laisse donc tomber au profit du libellé traduit par status, en ne
+ * gardant QUE les messages écrits par nos validateurs (anti-SSRF, cohérence de config).
+ */
+const VALIDATION_GENERIQUE = [
+  /^Input should /i,
+  /^Field required$/i,
+  /^Value is not a valid /i,
+  /^String should /i,
+  /^Ensure this value /i,
+  /^Extra inputs are not permitted$/i,
+  /^Unable to parse /i,
+  /^Assertion failed/i,
+];
+
+/** Au-delà, la cause utile est noyée : on borne au lieu de déverser tout le rapport 422. */
+const MAX_DETAILS = 3;
+
+/**
+ * Nom du champ mis en cause par une erreur 422 FastAPI : `loc` vaut `["body", "glpi_base_url"]`.
+ * Sans lui, « Field required » ne dit pas QUEL champ manque — inactionnable.
+ */
+function champFautif(item: Record<string, unknown>): string | null {
+  const loc = item.loc;
+  if (!Array.isArray(loc)) return null;
+  // On saute le conteneur (`body`, `query`, `path`) : c'est du vocabulaire HTTP, pas un champ.
+  const parts = loc.filter(
+    (p): p is string => typeof p === "string" && !["body", "query", "path", "header"].includes(p),
+  );
+  return parts.length > 0 ? parts.join(".") : null;
+}
+
 /** Extrait `payload.detail.message` (format d'erreur du backend) sans présumer de la forme. */
 function detailMessage(payload: unknown): string | null {
   if (payload && typeof payload === "object" && "detail" in payload) {
@@ -25,14 +60,19 @@ function detailMessage(payload: unknown): string | null {
     // perdaient et l'exploitant lisait « API 422 » à la place de la cause.
     if (Array.isArray(detail)) {
       const messages = detail
-        .map((item) =>
-          item && typeof item === "object" && typeof (item as { msg?: unknown }).msg === "string"
-            ? // Pydantic v2 préfixe les ValueError levées par un validateur ; le préfixe
-              // est du bruit pour l'exploitant, le message utile est derrière.
-              (item as { msg: string }).msg.replace(/^Value error, /, "")
-            : null,
-        )
-        .filter((m): m is string => !!m);
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return null;
+          const item = entry as Record<string, unknown>;
+          if (typeof item.msg !== "string" || !item.msg) return null;
+          // Pydantic v2 préfixe les ValueError levées par un validateur ; le préfixe
+          // est du bruit pour l'exploitant, le message utile est derrière.
+          const msg = item.msg.replace(/^Value error, /, "").trim();
+          if (!msg || VALIDATION_GENERIQUE.some((r) => r.test(msg))) return null;
+          const champ = champFautif(item);
+          return champ ? `${champ} : ${msg}` : msg;
+        })
+        .filter((m): m is string => !!m)
+        .slice(0, MAX_DETAILS);
       if (messages.length > 0) return messages.join(" · ");
     }
   }
@@ -322,11 +362,31 @@ function asText(v: unknown): string | null {
   return typeof v === "string" && v.trim() !== "" ? v : null;
 }
 
-/** Booléen tolérant : un moteur plus ancien peut rendre le drapeau en texte JSON. */
+/**
+ * Écritures d'un booléen sérialisé en chaîne, partagées par `asBoolean` et `asBool` : la
+ * config runtime stocke `"1"`/`"0"`, les réponses JSON `"true"`/`"false"`, et les formulaires
+ * historiques `"yes"`/`"on"`. Une seule liste, sinon les deux lecteurs divergent.
+ */
+const BOOLEENS_VRAIS = ["1", "true", "yes", "on", "vrai"];
+const BOOLEENS_FAUX = ["0", "false", "no", "off", "faux"];
+
+/**
+ * Booléen tolérant : un moteur plus ancien peut rendre le drapeau en texte JSON.
+ *
+ * MÊMES écritures qu'`asBool` (même fichier, même produit) : le premier alias de `has_run`
+ * est une CLÉ RUNTIME, et la convention de sérialisation de la config runtime est `"1"`/`"0"`
+ * — n'accepter que `"true"`/`"false"` ici aurait lu le drapeau comme ABSENT le jour où le
+ * moteur passe par cette voie, et la page Statut serait retombée sur la pastille verte du
+ * symptôme n°1. Différence assumée avec `asBool` : trois états (`null` = « rien à affirmer »)
+ * au lieu de deux, parce qu'ici l'absence d'information n'est pas « faux ».
+ */
 function asBoolean(v: unknown): boolean | null {
   if (typeof v === "boolean") return v;
-  if (v === "true") return true;
-  if (v === "false") return false;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (BOOLEENS_VRAIS.includes(s)) return true;
+    if (BOOLEENS_FAUX.includes(s)) return false;
+  }
   return null;
 }
 
@@ -544,7 +604,7 @@ export const GLPI_OAUTH_SCOPES = [
 
 /** Vrai si une valeur de config stockée en chaîne représente un booléen vrai. */
 export function asBool(v: string | null | undefined): boolean {
-  return v != null && ["1", "true", "yes", "on", "vrai"].includes(v.trim().toLowerCase());
+  return v != null && BOOLEENS_VRAIS.includes(v.trim().toLowerCase());
 }
 
 export interface DecisionEntry {
@@ -1022,6 +1082,13 @@ export const Api = {
           group_name: null,
           confidence: 0.9,
           draft: "Bonjour, nous avons bien reçu votre demande et la prenons en charge.",
+          // Le moteur renvoie TOUJOURS ce qu'un essai vient de coûter (routes/sandbox.py) :
+          // sans ces trois champs, la démo masquait le bloc de coût de la Sandbox — soit
+          // exactement l'écran qu'un exploitant regarde avant d'autoriser un flux réel.
+          model: "mistral-large-latest",
+          cost_eur: 0.0021,
+          prompt_tokens: 812,
+          completion_tokens: 143,
         } satisfies SandboxResult)
       : api.post<SandboxResult>("/api/sandbox", { title, content }),
 };

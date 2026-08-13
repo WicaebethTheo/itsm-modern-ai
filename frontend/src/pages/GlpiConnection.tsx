@@ -378,10 +378,13 @@ export function GlpiConnection() {
                 ))}
               </div>
             </Field>
-            {/* Les champs de secret portent `autoComplete="off"` et un `name` explicite :
-              sans eux, Chrome et Firefox proposent d'enregistrer le jeton GLPI dans le
-              gestionnaire de mots de passe, avec synchronisation cloud — un secret qui
-              sort du coffre Fernet par une porte que le produit n'a jamais prevue. */}
+            {/* Les champs de secret portent `autoComplete="new-password"` et un `name`
+              explicite : sans eux, Chrome et Firefox proposent d'enregistrer le jeton GLPI
+              dans le gestionnaire de mots de passe, avec synchronisation cloud — un secret
+              qui sort du coffre Fernet par une porte que le produit n'a jamais prevue.
+              `"off"` ne tient PAS cette promesse : c'est la valeur que Chrome documente
+              comme IGNOREE sur un champ `type="password"`. Seul `"new-password"` supprime
+              reellement l'autofill et l'invite d'enregistrement (comme `pages/Account.tsx`). */}
             <Field
               label={t("Client secret", "Client secret")}
               hint={c?.glpi_oauth_client_secret_set ? keepHint : undefined}
@@ -389,7 +392,7 @@ export function GlpiConnection() {
               <Input
                 name="glpi-oauth-client-secret"
                 type="password"
-                autoComplete="off"
+                autoComplete="new-password"
                 spellCheck={false}
                 placeholder={t("(inchangé)", "(unchanged)")}
                 onChange={(e) => set("glpi_oauth_client_secret", e.target.value)}
@@ -402,7 +405,7 @@ export function GlpiConnection() {
               <Input
                 name="glpi-oauth-password"
                 type="password"
-                autoComplete="off"
+                autoComplete="new-password"
                 spellCheck={false}
                 placeholder={t("(inchangé)", "(unchanged)")}
                 onChange={(e) => set("glpi_oauth_password", e.target.value)}
@@ -418,7 +421,7 @@ export function GlpiConnection() {
               <Input
                 name="glpi-user-token"
                 type="password"
-                autoComplete="off"
+                autoComplete="new-password"
                 spellCheck={false}
                 placeholder={t("(inchangé)", "(unchanged)")}
                 onChange={(e) => set("glpi_user_token", e.target.value)}
@@ -431,7 +434,7 @@ export function GlpiConnection() {
               <Input
                 name="glpi-app-token"
                 type="password"
-                autoComplete="off"
+                autoComplete="new-password"
                 spellCheck={false}
                 placeholder={t("(inchangé)", "(unchanged)")}
                 onChange={(e) => set("glpi_app_token", e.target.value)}

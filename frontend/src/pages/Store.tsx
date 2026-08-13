@@ -72,15 +72,27 @@ export function Store() {
 
   const lic = license.data;
   const features = lic?.features ?? [];
+  // Un module « à venir » n'a AUCUNE surface d'usage : le backend refuse déjà de le
+  // déclarer `active` (cf. `routes/license.py`, invariant verrouillé par un test). On ne
+  // redit donc pas la règle ici — mais le DÉNOMINATEUR, lui, doit la suivre : compter des
+  // promesses dans « x sur 3 » peignait un retard permanent, et « 3 sur 3 » une réussite
+  // que le catalogue contredisait deux cartes plus bas.
+  const usable = features.filter((f) => !f.coming_soon);
+  const comingCount = features.length - usable.length;
+  const activeCount = features.filter((f) => f.active).length;
+  const installedCount = usable.filter((f) => f.installed).length;
   // Badge honnête : "Supporter" uniquement si une feature est RÉELLEMENT active
   // (installée ET licenciée), pas seulement parce qu'une clé est présente.
-  const anyActive = features.some((f) => f.active);
-  // Une licence valide peut exister SANS couvrir un module donné : on distingue les
+  const anyActive = activeCount > 0;
+  // Une licence valide peut exister SANS couvrir un module UTILISABLE : on distingue les
   // deux, sinon le catalogue accuse à tort le client de ne pas avoir de licence.
   const licensed = !!lic?.valid && lic.edition === "supporter";
-  const activeCount = features.filter((f) => f.active).length;
-  const installedCount = features.filter((f) => f.installed).length;
   const invalidError = lic && !lic.valid ? lic.error : null;
+  // Une clé EST stockée dès qu'elle est valide, ou dès que le backend a une raison de
+  // refus à donner (aucun jeton en base ⇒ ni `valid`, ni `error`). C'est ce seul fait qui
+  // ouvre le retrait : le baser sur « quelque chose est actif » enfermait l'exploitant
+  // dont la licence n'autorise rien — plus aucun chemin d'interface pour retirer sa clé.
+  const keyStored = licensed || !!invalidError;
   const mappedError = invalidError ? LICENSE_ERRORS[invalidError] : undefined;
   const errorText = mappedError ? t(mappedError.fr, mappedError.en) : invalidError;
   // Expiration : jours restants (depuis expires_at), pour prévenir avant l'échéance.
@@ -89,7 +101,7 @@ export function Store() {
     const ms = new Date(`${lic.expires_at}T00:00:00Z`).getTime() - Date.now();
     return Math.ceil(ms / 86_400_000);
   })();
-  const expiringSoon = anyActive && daysLeft != null && daysLeft <= 30;
+  const expiringSoon = licensed && daysLeft != null && daysLeft <= 30;
 
   async function activate() {
     if (!key.trim()) return;
@@ -163,8 +175,8 @@ export function Store() {
             <>
               <Tag tone="green">
                 {t(
-                  `${activeCount} module(s) actif(s) sur ${features.length}`,
-                  `${activeCount} of ${features.length} module(s) active`,
+                  `${activeCount} module(s) actif(s) sur ${usable.length}`,
+                  `${activeCount} of ${usable.length} module(s) active`,
                 )}
               </Tag>
               <Tag tone="muted">
@@ -191,6 +203,14 @@ export function Store() {
               </span>
             </>
           )}
+          {/* Les modules annoncés sont comptés À PART, jamais dans « x sur N » : une
+              licence ne leur donne aucune surface d'usage, les fondre dans le total
+              revenait à facturer du vert pour une promesse. */}
+          {comingCount > 0 ? (
+            <Tag tone="muted">
+              {t(`${comingCount} module(s) à venir`, `${comingCount} module(s) coming soon`)}
+            </Tag>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -236,8 +256,12 @@ export function Store() {
           présent (édition unique), une troisième carte « code absent » ne pouvait donc
           jamais s'afficher chez un exploitant — et emportait avec elle la seule mention
           de la vérification hors-ligne. */}
-      {anyActive ? (
-        /* Licence ACTIVE : statut + renouvellement (remplacer par une nouvelle clé). */
+      {/* La carte de statut suit la CLÉ STOCKÉE, pas la capacité débloquée : une licence
+          valide qui n'autorise (encore) aucun module utilisable doit rester visible et
+          RETIRABLE. La baser sur `anyActive` effaçait la clé de l'écran — plus de titulaire,
+          plus d'échéance, et un bouton « Réinitialiser » grisé : une impasse. */}
+      {licensed ? (
+        /* Licence VALIDE stockée : statut + renouvellement (remplacer par une nouvelle clé). */
         <Card>
           <PanelHead
             title={t("Licence active", "Active license")}
@@ -246,10 +270,15 @@ export function Store() {
               "Valid Supporter license, verified offline (Ed25519, no outbound call). Renew it with a new key before it expires.",
             )}
             right={
-              <Tag tone="green">
-                <Check className="h-3 w-3" />
-                {t("Active", "Active")}
-              </Tag>
+              anyActive ? (
+                <Tag tone="green">
+                  <Check className="h-3 w-3" />
+                  {t("Active", "Active")}
+                </Tag>
+              ) : (
+                /* Clé valide mais aucune capacité débloquée : la pastille verte mentirait. */
+                <Tag tone="amber">{t("Sans module actif", "No active module")}</Tag>
+              )
             }
           />
           <CardContent className="flex flex-col gap-3 text-body">
@@ -274,6 +303,14 @@ export function Store() {
                 </span>
               )}
             </div>
+            {!anyActive ? (
+              <Banner kind="warning">
+                {t(
+                  "Cette clé est valide mais n'autorise aucun module UTILISABLE : rien n'est débloqué dans cette instance. Vérifiez le périmètre de votre licence auprès de l'éditeur — ou retirez la clé ci-dessous.",
+                  "This key is valid but authorises no USABLE module: nothing is unlocked on this instance. Check your license scope with the publisher — or remove the key below.",
+                )}
+              </Banner>
+            ) : null}
             {expiringSoon ? (
               <Banner kind="warning">
                 {t(
@@ -354,11 +391,9 @@ export function Store() {
               <Button onClick={activate} disabled={activating || !key.trim()}>
                 {activating ? t("Activation…", "Activating…") : t("Activer", "Activate")}
               </Button>
-              <Button
-                variant="outline"
-                onClick={reset}
-                disabled={resetting || (!anyActive && !invalidError)}
-              >
+              {/* Actif dès qu'une clé EST stockée — y compris une clé valide qui n'autorise
+                  rien : c'est précisément le cas où il faut pouvoir la retirer. */}
+              <Button variant="outline" onClick={reset} disabled={resetting || !keyStored}>
                 {resetting ? t("Réinitialisation…", "Resetting…") : t("Réinitialiser", "Reset")}
               </Button>
             </div>
@@ -392,15 +427,16 @@ export function Store() {
                 <span className="text-ui font-medium">{t(f.label_fr, f.label_en)}</span>
                 <span className="flex items-center gap-1">
                   {/* « Débloqué » sur un module sans surface d'usage peindrait une promesse
-                      en réussite : un module annoncé reste « Prévu », licence ou pas. */}
-                  {f.coming_soon ? <Tag tone="muted">{t("Prévu", "Planned")}</Tag> : null}
-                  {f.active ? (
-                    f.coming_soon ? null : (
-                      <Tag tone="green">
-                        <Check className="h-3 w-3" />
-                        {t("Débloqué", "Unlocked")}
-                      </Tag>
-                    )
+                      en réussite : un module annoncé reste « Prévu », licence ou pas — et
+                      « Prévu » remplace le verrou plutôt que de s'y ajouter, sinon on
+                      promettrait qu'une clé le déverrouille. */}
+                  {f.coming_soon ? (
+                    <Tag tone="muted">{t("Prévu", "Planned")}</Tag>
+                  ) : f.active ? (
+                    <Tag tone="green">
+                      <Check className="h-3 w-3" />
+                      {t("Débloqué", "Unlocked")}
+                    </Tag>
                   ) : (
                     <LockedBadge />
                   )}

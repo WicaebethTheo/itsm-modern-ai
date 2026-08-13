@@ -54,7 +54,7 @@ Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `
 
 | Endpoint | Méthode | Description |
 |---|---|---|
-| `/api/discovery/{kind}` | `GET` | Liste tout le cache pour `kind ∈ {category, entity, technician, group}`. Chaque entrée porte `updated_at` : l'horodatage du dernier scan, pour que la console puisse dire la **fraîcheur** du référentiel (un technicien parti il y a trois mois reste sinon dans la liste sans que rien ne le signale). |
+| `/api/discovery/{kind}` | `GET` | Liste tout le cache pour `kind ∈ {category, entity, technician, group}`. Chaque entrée porte `updated_at` : l'horodatage du dernier scan **qui a vu cette entrée** (`services/referentials.sync` l'écrit ligne par ligne, uniquement sur les objets rapportés par GLPI). Un objet disparu de GLPI est conservé mais **n'est pas rajeuni** : il garde la date du dernier scan qui l'a vu. La console, elle, n'exploite aujourd'hui que le **maximum** de ces dates (`dernierScan`, `components/SyncButton.tsx`) pour dater la dernière synchro et signaler un cache de plus de 30 jours — elle ne signale pas encore les entrées individuellement en retard. |
 | `/api/scope` | `GET` | Périmètre actuel (catégories autorisées + entités). |
 | `/api/scope` | `PUT` | Met à jour le périmètre. |
 | `/api/modes` | `PUT` | Mode d'exécution par entité (`suggestion`/`semi_auto`/`full_auto`), 2ᵉ seuil semi-auto, et **cible de repli** (`fallback_group_id` / `fallback_technician_id`, groupe prioritaire). Une cible non éligible est refusée (`400 fallback_not_eligible`) plutôt qu'acceptée sans effet. |

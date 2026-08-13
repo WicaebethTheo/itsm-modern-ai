@@ -8,7 +8,7 @@ import {
   Terminal,
   Timer,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { LockedBadge } from "@/components/ui/LockedBadge";
 import { Field } from "@/components/ui/label";
 import { PanelHead } from "@/components/ui/panel";
+import { Select } from "@/components/ui/select";
 import { Tag, type TagTone } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
@@ -129,16 +130,27 @@ export function EngineSettings() {
   const piiAdvanced =
     (license.data?.features ?? []).find((f) => f.key === "pii_advanced")?.active ?? false;
 
+  // L'admin a-t-il touché au formulaire depuis la dernière lecture serveur ? Vidé juste
+  // avant `cfg.reload()` sur un enregistrement réussi : le serveur redevient alors la
+  // référence (il peut avoir NORMALISÉ une valeur, il faut la reprendre).
+  const edite = useRef(false);
+
+  // FUSION, jamais écrasement — même motif que `Scope` et `RefEligibilityEditor`.
+  // `save()` déclenche `cfg.reload()` sans pouvoir l'attendre (`useResource.reload` ne rend
+  // pas de promesse) et rouvre le formulaire aussitôt : ce qui était tapé pendant
+  // l'aller-retour se faisait écraser SANS UN MOT à l'arrivée de la réponse.
   useEffect(() => {
-    if (c) setDraft(toDraft(c));
+    if (c && !edite.current) setDraft(toDraft(c));
   }, [c]);
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
 
   function setNum(k: NumKey, v: string) {
+    edite.current = true;
     setDraft((d) => ({ ...d, nums: { ...d.nums, [k]: v } }));
   }
   function patch(p: Partial<Draft>) {
+    edite.current = true;
     setDraft((d) => ({ ...d, ...p }));
   }
 
@@ -197,6 +209,9 @@ export function EngineSettings() {
         execution_mode_default: draft.mode,
       };
       await Api.updateConfig(payload);
+      // Le serveur redevient la référence : la relecture doit pouvoir ramener ce qu'il a
+      // RÉELLEMENT enregistré. Une saisie faite APRÈS ce point rearme la garde et survit.
+      edite.current = false;
       cfg.reload();
       toast.success(
         t(
@@ -335,18 +350,20 @@ export function EngineSettings() {
                     "suggestion: no write · semi/full-auto: applies the Decision and replies to the requester.",
                   )}
                 >
-                  <select
+                  {/* Primitive partagée, pas une chaîne de classes recopiée : la copie
+                      locale avait déjà perdu la largeur pleine, le rembourrage vertical et
+                      l'état désactivé — sur le réglage qui ARME l'écriture dans GLPI. */}
+                  <Select
                     id="cfg-mode-default"
                     value={draft.mode}
                     onChange={(e) => patch({ mode: e.target.value as ExecutionMode })}
-                    className="h-9 rounded-md border border-input bg-card px-3 text-ui shadow-sm transition-colors hover:border-muted-foreground/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   >
                     <option value="suggestion">{t("Suggestion (sûr)", "Suggestion (safe)")}</option>
                     <option value="semi_auto">
                       {t("Semi-auto (≥ seuil)", "Semi-auto (≥ threshold)")}
                     </option>
                     <option value="full_auto">Full-auto</option>
-                  </select>
+                  </Select>
                 </Field>
                 <Field
                   htmlFor="cfg-semi-threshold"

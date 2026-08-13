@@ -284,6 +284,64 @@ describe("EngineSettings — brouillon, état modifié, indications", () => {
     expect(hint).toHaveTextContent(/0,5 permissif/);
   });
 
+  it("une saisie faite PENDANT le rechargement n'est pas écrasée", async () => {
+    // `save()` déclenche `cfg.reload()` sans pouvoir l'attendre (`useResource.reload` ne
+    // rend pas de promesse) et rouvre le formulaire aussitôt : à l'arrivée de la réponse,
+    // l'effet d'initialisation réécrivait le brouillon SANS CONDITION. Tout ce qui avait
+    // été tapé pendant l'aller-retour disparaissait en silence.
+    let repondre: (c: ConfigView) => void = () => {};
+    vi.mocked(Api.getConfig)
+      .mockResolvedValueOnce(config())
+      .mockImplementationOnce(
+        () =>
+          new Promise<ConfigView>((r) => {
+            repondre = r;
+          }),
+      );
+    renderPage();
+    await attendreChargement();
+
+    fireEvent.change(screen.getByLabelText(/Seuil de confiance/), { target: { value: "0.8" } });
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(Api.updateConfig).toHaveBeenCalledTimes(1));
+
+    // Le rechargement est EN VOL : l'admin continue de saisir.
+    fireEvent.change(screen.getByLabelText(/Nom de l'assistant/), { target: { value: "Astrid" } });
+    repondre(config());
+
+    await waitFor(() => expect(Api.getConfig).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText(/Nom de l'assistant/)).toHaveValue("Astrid");
+    expect(screen.getByText("Modifications non enregistrées.")).toBeInTheDocument();
+  });
+
+  it("sans saisie en cours, le rechargement REPREND la valeur du serveur", async () => {
+    // La garde ne doit pas figer le brouillon : le serveur reste la référence (il peut
+    // avoir normalisé une valeur), tant que rien n'attend d'être enregistré.
+    vi.mocked(Api.getConfig)
+      .mockResolvedValueOnce(config())
+      .mockResolvedValue(config({ assistant_name: "Normalisé par le serveur" }));
+    renderPage();
+    await attendreChargement();
+
+    fireEvent.change(screen.getByLabelText(/Seuil de confiance/), { target: { value: "0.8" } });
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Nom de l'assistant/)).toHaveValue("Normalisé par le serveur"),
+    );
+    expect(screen.getByText("Tout est enregistré.")).toBeInTheDocument();
+  });
+
+  // Le <select> du mode par défaut gardait une chaîne de classes recopiée à la main, qui
+  // avait déjà divergé de `components/ui/select.tsx` : ni largeur pleine, ni rembourrage
+  // vertical, ni état désactivé — sur le réglage qui arme l'écriture dans GLPI.
+  it("le mode par défaut passe par la primitive Select", async () => {
+    renderPage();
+    await attendreChargement();
+    const select = screen.getByLabelText("Mode par défaut");
+    expect(select).toHaveClass("w-full", "py-1", "disabled:opacity-50");
+  });
+
   // Le composant Field accepte `htmlFor` depuis toujours ; aucun champ ne le passait, donc
   // le <select> de mode n'avait aucun nom accessible et les libellés ne focalisaient rien.
   it("chaque champ a un nom accessible", async () => {

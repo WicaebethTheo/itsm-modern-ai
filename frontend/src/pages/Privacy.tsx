@@ -29,7 +29,10 @@ const MASK_EXAMPLE_EN =
   "Hello, I can no longer sign in. My email is jean.dupont@example.com " +
   "and the transfer to IBAN FR76 3000 4000 5000 0123 4567 890 is blocked. Thanks.";
 
-// Libellés des compteurs renvoyés par `Api.testMask` (clés de `domain/masking.mask`).
+// Libellés des compteurs renvoyés par `Api.testMask` (clés de `domain/masking.mask`, plus
+// celles déduites de la passe Supporter par `routes/privacy._added_placeholders`).
+// Une clé inconnue reste affichée telle quelle : mieux vaut un libellé brut qu'un
+// remplacement passé sous silence.
 const COUNT_LABELS: Record<string, [string, string]> = {
   email: ["E-mails", "Emails"],
   phone: ["Téléphones", "Phone numbers"],
@@ -39,6 +42,8 @@ const COUNT_LABELS: Record<string, [string, string]> = {
   cloud_key: ["Clés cloud", "Cloud keys"],
   ip: ["Adresses IP", "IP addresses"],
   mac: ["Adresses MAC", "MAC addresses"],
+  nir: ["NIR", "NIR"],
+  siret: ["SIREN / SIRET", "SIREN / SIRET"],
 };
 
 /** En-tête de carte avec une icône à gauche du titre. */
@@ -62,6 +67,9 @@ export function Privacy() {
   const retention = useResource(useCallback(() => Api.retention(), []));
   const [text, setText] = useState(() => tr(MASK_EXAMPLE_FR, MASK_EXAMPLE_EN));
   const [result, setResult] = useState<MaskTestOut | null>(null);
+  // Le texte RÉELLEMENT testé, figé au moment du test : `text` continue de bouger sous les
+  // doigts, il ne peut pas servir de référence pour dire « rien n'a été remplacé ».
+  const [tested, setTested] = useState("");
   const [testing, setTesting] = useState(false);
 
   const view = privacy.data;
@@ -70,7 +78,9 @@ export function Privacy() {
   async function runTest() {
     setTesting(true);
     try {
-      setResult(await Api.testMask(text));
+      const out = await Api.testMask(text);
+      setTested(text);
+      setResult(out);
     } catch (e: unknown) {
       toast.error(`${t("Erreur", "Error")} : ${(e as Error).message}`);
     } finally {
@@ -86,6 +96,10 @@ export function Privacy() {
     v.categories.filter((c) => !c.active && c.scope !== "roadmap");
 
   const hits = result ? Object.entries(result.counts).filter(([, n]) => n > 0) : [];
+  // Garde-fou de dernier recours : un masquage sans compteur (marqueur d'un plugin hors
+  // convention, par exemple) ne doit JAMAIS faire dire « ce texte part tel quel ». Le texte
+  // affiché fait foi — on ne nie pas un remplacement qu'on montre à l'écran.
+  const texteModifie = result !== null && result.masked !== tested;
 
   const lastRun = ret?.last_run_at
     ? new Date(ret.last_run_at).toLocaleString(locale, {
@@ -164,9 +178,13 @@ export function Privacy() {
                   {t("Catégories de données", "Data categories")}
                 </HeadTitle>
               }
+              // « part tel quel » est RÉSERVÉ au verdict du testeur, qui l'affirme d'un
+              // texte précis. L'employer aussi en sous-titre permanent le rendait
+              // indiscernable d'une constatation — et un test ne pouvait plus vérifier que
+              // la page ne le dit jamais à tort.
               subtitle={t(
-                "Ce qui est remplacé avant l'envoi au modèle — et ce qui part tel quel.",
-                "What is replaced before sending to the model — and what leaves untouched.",
+                "Ce qui est remplacé avant l'envoi au modèle, et ce qui ne l'est pas.",
+                "What is replaced before sending to the model, and what is not.",
               )}
             />
             <CardContent className="p-0">
@@ -263,6 +281,13 @@ export function Privacy() {
                         </Tag>
                       ))}
                     </div>
+                  ) : texteModifie ? (
+                    <p className="text-caption text-muted-foreground">
+                      {t(
+                        "Des données ont été remplacées (voir le texte ci-dessus) : elles ne partent pas au LLM.",
+                        "Some data was replaced (see the text above): it does not reach the LLM.",
+                      )}
+                    </p>
                   ) : (
                     <p className="text-caption text-muted-foreground">
                       {t(

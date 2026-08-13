@@ -8,6 +8,9 @@ from fastapi.testclient import TestClient
 
 from itsm_modern_ai.api.app import create_app
 from itsm_modern_ai.config.settings import Settings
+from itsm_modern_ai.domain import licensing
+
+from ..unit.test_licensing import TEST_PUBLIC_KEY_HEX, VALID
 
 
 def _settings(db_url, **kw) -> Settings:
@@ -52,6 +55,67 @@ def test_test_mask_community_masks_email_not_iban(client):
     assert "[EMAIL]" in out  # email masqué (Community)
     assert "FR7630004000031234567890143" in out  # IBAN NON masqué (Supporter, sans licence)
     assert "[IBAN]" not in out
+
+
+@pytest.fixture
+def supporter_client(db_url, monkeypatch):
+    """Client avec une licence Supporter VALIDE collée (paire de test, pas celle de prod)."""
+    monkeypatch.setattr(licensing, "PUBLISHER_PUBLIC_KEY_HEX", TEST_PUBLIC_KEY_HEX)
+    with TestClient(create_app(_settings(db_url))) as c:
+        assert c.post("/api/license", json={"key": VALID}).json()["valid"] is True
+        yield c
+
+
+# NIR de test : 13 chiffres + clé = 97 - (numéro mod 97) — le même que tests/unit/test_features.
+_NIR_VALID = "1 85 12 75 116 001 74"
+
+
+def test_test_mask_counts_supporter_pass(supporter_client):
+    """Un texte masqué UNIQUEMENT par la passe Supporter doit renvoyer des compteurs.
+
+    Sans ça, l'écran DPO affichait « Aucun remplacement — ce texte part tel quel au LLM »
+    juste sous le bloc qui montre `[NIR]` : sur la page destinée à la DPO, l'outil se
+    contredisait lui-même. Les compteurs du cœur ne couvrent pas NIR/SIRET.
+    """
+    r = supporter_client.post("/api/privacy/test-mask", json={"text": f"NIR {_NIR_VALID}"})
+    assert r.status_code == 200
+    body = r.json()
+    assert "[NIR]" in body["masked"] and _NIR_VALID not in body["masked"]
+    assert body["counts"].get("nir") == 1
+    # Le contrat de l'écran : un remplacement visible ⇒ au moins un compteur non nul.
+    assert any(n > 0 for n in body["counts"].values())
+
+
+def test_test_mask_counts_core_and_supporter_together(supporter_client):
+    """Les deux passes s'additionnent dans le même dictionnaire, sans s'écraser.
+
+    NB : le SIREN est ici à 9 chiffres. Un SIRET à 14 chiffres valide Luhn, donc le
+    masquage CARTE du cœur l'attrape AVANT la passe Supporter (comportement du produit,
+    pas de l'endpoint) — il ressortirait en `card`, ce qui rendrait le test trompeur.
+    """
+    body = supporter_client.post(
+        "/api/privacy/test-mask",
+        json={"text": f"Mail alice@acme.com, NIR {_NIR_VALID}, SIREN 123456782"},
+    ).json()
+    counts = body["counts"]
+    assert counts["email"] == 1
+    assert counts.get("nir") == 1
+    assert counts.get("siret") == 1
+
+
+def test_test_mask_without_pii_reports_nothing(supporter_client):
+    """Aucun marqueur ajouté ⇒ aucun compteur : le repère « part tel quel » reste vrai."""
+    body = supporter_client.post(
+        "/api/privacy/test-mask", json={"text": "Le poste ne demarre plus depuis ce matin."}
+    ).json()
+    assert body["masked"] == "Le poste ne demarre plus depuis ce matin."
+    assert all(n == 0 for n in body["counts"].values())
+
+
+def test_test_mask_placeholder_already_in_input_is_not_counted(supporter_client):
+    """Un `[NIR]` déjà présent dans le texte d'entrée n'est pas un remplacement."""
+    body = supporter_client.post("/api/privacy/test-mask", json={"text": "vu un [NIR] ici"}).json()
+    assert body["counts"].get("nir", 0) == 0
 
 
 def test_dpo_report_downloads(client):

@@ -165,12 +165,41 @@ describe("Privacy", () => {
     expect(screen.getByText(/Non masqué dans l'état actuel/)).toBeInTheDocument();
   });
 
-  it("annonce « aucun remplacement » quand rien n'a été masqué", async () => {
-    vi.mocked(Api.testMask).mockResolvedValue({ masked: "rien à masquer", counts: {} });
+  it("annonce « aucun remplacement » quand le texte ressort IDENTIQUE", async () => {
+    vi.mocked(Api.testMask).mockResolvedValue({ masked: "rien a masquer", counts: {} });
+    renderPrivacy();
+    await screen.findByText("Adresses e-mail");
+    const zone = document.querySelector("textarea") as HTMLTextAreaElement;
+    await userEvent.clear(zone);
+    await userEvent.type(zone, "rien a masquer");
+    await userEvent.click(screen.getByRole("button", { name: "Tester" }));
+    expect(await screen.findByText(/Aucun remplacement/)).toBeInTheDocument();
+  });
+
+  it("compte les remplacements de la passe Supporter (NIR/SIRET)", async () => {
+    // `routes/privacy.py` déduit ces compteurs des marqueurs ajoutés par l'overlay : sans
+    // eux, un texte ne contenant QU'UN NIR revenait avec des compteurs vides.
+    vi.mocked(Api.testMask).mockResolvedValue({
+      masked: "NIR [NIR] SIREN [SIRET]",
+      counts: { nir: 1, siret: 1 },
+    });
     renderPrivacy();
     await screen.findByText("Adresses e-mail");
     await userEvent.click(screen.getByRole("button", { name: "Tester" }));
-    expect(await screen.findByText(/Aucun remplacement/)).toBeInTheDocument();
+    expect(await screen.findByText(/NIR × 1/)).toBeInTheDocument();
+    expect(screen.getByText(/SIREN \/ SIRET × 1/)).toBeInTheDocument();
+  });
+
+  it("texte RÉELLEMENT masqué mais sans compteur : ne dit JAMAIS « part tel quel »", async () => {
+    // Garde-fou de dernier recours (marqueur d'un plugin hors convention) : la page
+    // affichait « Aucun remplacement — ce texte part tel quel au LLM » juste sous le bloc
+    // montrant `[NIR]`. Sur l'écran destiné à la DPO, l'outil se contredisait lui-même.
+    vi.mocked(Api.testMask).mockResolvedValue({ masked: "NIR [NIR]", counts: {} });
+    renderPrivacy();
+    await screen.findByText("Adresses e-mail");
+    await userEvent.click(screen.getByRole("button", { name: "Tester" }));
+    expect(await screen.findByText(/Des données ont été remplacées/)).toBeInTheDocument();
+    expect(screen.queryByText(/part tel quel/)).not.toBeInTheDocument();
   });
 
   it("purge ACTIVE : affiche l'heure de passage et la dernière exécution", async () => {

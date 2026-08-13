@@ -101,7 +101,14 @@ export function Journal() {
     });
   }, [rows, query, pendingOnly, t]);
 
-  const truncated = !decisions.loading && !decisions.error && rows.length === limit;
+  // Le lot rendu ATTEINT la limite demandée : il y a très probablement plus de décisions
+  // en base que ce qu'on affiche — donc plus que ce qu'on COMPTE et ce qu'on FILTRE.
+  // `decisions.loading` n'entre plus dans le calcul : pendant un rechargement, le pied de
+  // page doit rester en place au lieu de disparaître puis revenir.
+  const truncated = !decisions.error && rows.length > 0 && rows.length === limit;
+  // Chargement AVEC des lignes déjà à l'écran (« En charger davantage », « Rafraîchir ») :
+  // remplacer le tableau par « Chargement… » effacerait aussi la position de défilement.
+  const loadingMore = decisions.loading && rows.length > 0;
 
   return (
     <Card className="overflow-hidden">
@@ -109,10 +116,18 @@ export function Journal() {
         title={t("Journal des décisions", "Decision journal")}
         subtitle={
           decisions.data
-            ? t(
-                `${filtered.length}/${rows.length} affichée(s) · ${pendingCount} à trier`,
-                `${filtered.length}/${rows.length} shown · ${pendingCount} to triage`,
-              )
+            ? // « 500/500 affichée(s) · 43 à trier » se lit comme un TOTAL alors que le
+              // compteur ne porte que sur la fenêtre chargée. Le suffixe n'apparaît que
+              // lorsque la liste est effectivement tronquée : sinon le compteur EST le total.
+              truncated
+              ? t(
+                  `${filtered.length}/${rows.length} affichée(s) · ${pendingCount} à trier — décompte limité aux ${limit} décisions chargées`,
+                  `${filtered.length}/${rows.length} shown · ${pendingCount} to triage — count limited to the ${limit} loaded decisions`,
+                )
+              : t(
+                  `${filtered.length}/${rows.length} affichée(s) · ${pendingCount} à trier`,
+                  `${filtered.length}/${rows.length} shown · ${pendingCount} to triage`,
+                )
             : undefined
         }
         right={
@@ -154,8 +169,10 @@ export function Journal() {
       />
 
       {/* Chargement / erreur / vide / contenu : EXCLUSIFS. Un <table> monté à vide ne
-          montre que ses en-têtes — indiscernable d'un journal vide. */}
-      {decisions.loading ? (
+          montre que ses en-têtes — indiscernable d'un journal vide.
+          Le « Chargement… » pleine largeur ne vaut QUE pour le premier chargement : une
+          fois des lignes à l'écran, elles restent (l'attente se dit en pied de tableau). */}
+      {decisions.loading && rows.length === 0 ? (
         <p className="p-6 text-body text-muted-foreground">{t("Chargement…", "Loading…")}</p>
       ) : decisions.error ? (
         <div className="p-5">
@@ -203,6 +220,17 @@ export function Journal() {
               dense
               icon={SearchX}
               title={t("Aucun résultat pour ce filtre.", "No result for this filter.")}
+              // La seule mention de troncature vivait en PIED de tableau, donc après
+              // 500 lignes : personne ne la lit avant de conclure que le ticket cherché
+              // n'existe pas. Le filtre est local, il ne voit que la fenêtre chargée.
+              description={
+                truncated
+                  ? t(
+                      `La recherche n'a porté que sur les ${limit} décisions chargées : un ticket plus ancien n'y figure pas encore. Chargez-en davantage en bas de page.`,
+                      `The search only covered the ${limit} loaded decisions: an older ticket is not among them yet. Load more at the bottom of the page.`,
+                    )
+                  : undefined
+              }
             />
           ) : (
             // 7 colonnes dont une porte un champ + un bouton : sous ~1100 px la dernière
@@ -385,24 +413,46 @@ export function Journal() {
 
       {/* Le plafond doit se DIRE : « 500 décision(s) » laissait croire qu'on voyait
           tout le journal alors qu'on n'en voit que la queue. */}
-      {truncated && (
+      {(truncated || loadingMore) && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3 text-caption text-muted-foreground">
-          <span>
-            {t(
-              `Seules les ${limit} décisions les plus récentes sont affichées.`,
-              `Only the ${limit} most recent decisions are shown.`,
+          <div className="flex flex-wrap items-center gap-2">
+            {truncated && (
+              <span>
+                {t(
+                  `Seules les ${limit} décisions les plus récentes sont affichées.`,
+                  `Only the ${limit} most recent decisions are shown.`,
+                )}
+              </span>
             )}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={limit >= MAX_LIMIT}
-            onClick={() => setLimit((n) => Math.min(n + PAGE, MAX_LIMIT))}
-          >
-            {limit >= MAX_LIMIT
-              ? t("Maximum atteint", "Maximum reached")
-              : t("En charger davantage", "Load more")}
-          </Button>
+            {/* Indicateur DISCRET : le tableau reste à l'écran (et à sa position de
+                défilement) pendant qu'un lot plus large arrive. La région existe en
+                permanence, sinon rien n'est annoncé à la mise à jour. */}
+            <span role="status" className="flex items-center gap-1.5">
+              {loadingMore ? (
+                <>
+                  <RefreshCw aria-hidden className="h-3 w-3 animate-spin" />
+                  {t("Mise à jour de la liste…", "Updating the list…")}
+                </>
+              ) : (
+                ""
+              )}
+            </span>
+          </div>
+          {/* Bouton rendu seulement quand la troncature est AVÉRÉE : pendant un
+              chargement, proposer d'en charger davantage promet une page qui n'est
+              peut-être pas là (le lot en vol peut être le dernier). */}
+          {truncated && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={limit >= MAX_LIMIT}
+              onClick={() => setLimit((n) => Math.min(n + PAGE, MAX_LIMIT))}
+            >
+              {limit >= MAX_LIMIT
+                ? t("Maximum atteint", "Maximum reached")
+                : t("En charger davantage", "Load more")}
+            </Button>
+          )}
         </div>
       )}
     </Card>

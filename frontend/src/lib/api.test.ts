@@ -10,6 +10,7 @@ import {
   readPollCycle,
   updateCommand,
 } from "./api";
+import { demo } from "./demo";
 
 describe("asBool", () => {
   it("reconnaît les valeurs vraies (config en chaîne)", () => {
@@ -48,6 +49,53 @@ describe("ApiError — messages centralisés", () => {
   it("accepte un detail string (style FastAPI par défaut), ignore un message non-chaîne", () => {
     expect(new ApiError(404, { detail: "texte brut" }).message).toBe("texte brut");
     expect(new ApiError(404, { detail: { message: 42 } }).message).toBe("Ressource introuvable");
+  });
+});
+
+describe("ApiError — 422 FastAPI (detail en tableau)", () => {
+  it("nomme le champ fautif : « Field required » seul n'est pas actionnable", () => {
+    const err = new ApiError(422, {
+      detail: [{ loc: ["body", "glpi_base_url"], msg: "Value error, URL bloquée (anti-SSRF)" }],
+    });
+    expect(err.message).toBe("glpi_base_url : URL bloquée (anti-SSRF)");
+  });
+
+  it("écarte les messages de validation GÉNÉRIQUES (anglais en dur, non actionnables)", () => {
+    // « Input should be less than or equal to 5 » dans une console française n'apprend rien
+    // de plus qu'« API 422 » — et n'a aucune traduction. On ne l'affiche donc pas.
+    expect(
+      new ApiError(422, {
+        detail: [
+          { loc: ["body", "llm_retries"], msg: "Input should be less than or equal to 5" },
+          { loc: ["body", "llm_model"], msg: "Field required" },
+        ],
+      }).message,
+    ).toBe("API 422");
+  });
+
+  it("garde les messages de NOS validateurs même mêlés à des messages génériques", () => {
+    const err = new ApiError(422, {
+      detail: [
+        { loc: ["body", "llm_retries"], msg: "Input should be a valid integer" },
+        { loc: ["body", "llm_base_url"], msg: "Value error, Appel bloqué (anti-SSRF)" },
+      ],
+    });
+    expect(err.message).toBe("llm_base_url : Appel bloqué (anti-SSRF)");
+  });
+
+  it("borne à 3 messages : un rapport de validation entier noierait la cause utile", () => {
+    const detail = Array.from({ length: 8 }, (_, i) => ({
+      loc: ["body", `champ_${i}`],
+      msg: `Value error, cause ${i}`,
+    }));
+    const err = new ApiError(422, { detail });
+    expect(err.message).toBe("champ_0 : cause 0 · champ_1 : cause 1 · champ_2 : cause 2");
+  });
+
+  it("sans `loc` exploitable, le message reste affiché tel quel (sans préfixe vide)", () => {
+    expect(
+      new ApiError(422, { detail: [{ loc: ["body"], msg: "Value error, cause" }] }).message,
+    ).toBe("cause");
   });
 });
 
@@ -183,6 +231,20 @@ describe("readPollCycle — état du dernier cycle de polling", () => {
     expect(state.cycle.error_message).toBe("GLPI 401");
     expect(state.cycle.processed).toBeNull(); // champ non remonté ≠ zéro
   });
+
+  it("`has_run` se lit comme le reste de la config (« 1 »/« 0 », pas seulement true/false)", () => {
+    // Le premier alias de `has_run` est une CLÉ RUNTIME, et la config runtime sérialise ses
+    // booléens en « 1 »/« 0 » : n'accepter que « true »/« false » aurait lu le drapeau comme
+    // ABSENT — retour direct à la pastille verte sur un moteur qui n'a jamais bouclé.
+    const avecDrapeau = (has_run: unknown): EngineStatus =>
+      ({ ...base, last_poll: { has_run } }) as unknown as EngineStatus;
+    for (const vrai of ["1", "true", "TRUE", " on ", "yes", "vrai", true]) {
+      expect(readPollCycle(avecDrapeau(vrai)).kind).toBe("ran");
+    }
+    for (const faux of ["0", "false", "no", "off", "faux", false]) {
+      expect(readPollCycle(avecDrapeau(faux)).kind).toBe("never");
+    }
+  });
 });
 
 describe("Api.health — le 503 de /health porte le diagnostic, pas une erreur", () => {
@@ -234,5 +296,52 @@ describe("updateCommand — commande de MAJ selon le runtime", () => {
   it("runtime hôte (ou inconnu) → install.sh --update", () => {
     expect(updateCommand("host")).toBe("./install.sh --update");
     expect(updateCommand(undefined)).toBe("./install.sh --update");
+  });
+});
+
+describe("fixtures de démo — elles doivent suivre le contrat du moteur", () => {
+  // Un fixture qui décrit une charge utile que le moteur n'émet plus est exactement ce qui
+  // a laissé passer le bug de la pastille verte : la démo valide alors un contrat MORT.
+  it("chaque décision porte `fallback_applied`, dont au moins une avec un repli assigné", () => {
+    expect(demo.decisions.every((d) => typeof d.fallback_applied === "boolean")).toBe(true);
+    const repli = demo.decisions.filter((d) => d.fallback_applied);
+    expect(repli.length).toBeGreaterThan(0);
+    // Le moteur n'assigne un repli que sur un REFUS, et hors mode suggestion.
+    for (const d of repli) {
+      expect(d.accepted).toBe(false);
+      expect(d.mode).not.toBe("suggestion");
+      expect(d.technician_id ?? d.group_id).not.toBeNull();
+    }
+  });
+
+  it("chaque référentiel porte `updated_at` (fraîcheur du scan)", () => {
+    for (const items of [demo.technicians, demo.groups, demo.categories, demo.entities]) {
+      expect(items.length).toBeGreaterThan(0);
+      for (const it of items) {
+        expect(it.updated_at).toBeTruthy();
+        expect(Number.isNaN(new Date(it.updated_at as string).getTime())).toBe(false);
+      }
+    }
+  });
+
+  it("la sandbox de démo renvoie le modèle, le coût et les jetons", async () => {
+    // `DEMO` se décide À L'IMPORT, d'après le chemin servi : on rejoue donc l'import du
+    // module sur `/demo` pour exercer la branche démo, exactement comme la console publique.
+    const avant = window.location.pathname;
+    window.history.pushState({}, "", "/demo/sandbox");
+    try {
+      vi.resetModules();
+      const { Api: ApiDemo } = await import("./api");
+      const r = await ApiDemo.sandbox("Bonjour", "test");
+      // Le moteur renvoie TOUJOURS ce qu'un essai a coûté (routes/sandbox.py) : sans ces
+      // trois champs, le bloc de coût de la Sandbox est invisible en démo.
+      expect(r.model).toBeTruthy();
+      expect(typeof r.cost_eur).toBe("number");
+      expect(typeof r.prompt_tokens).toBe("number");
+      expect(typeof r.completion_tokens).toBe("number");
+    } finally {
+      window.history.pushState({}, "", avant);
+      vi.resetModules();
+    }
   });
 });
