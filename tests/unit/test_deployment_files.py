@@ -218,6 +218,51 @@ def test_la_majeure_postgres_de_la_ci_suit_celle_du_produit():
     assert verifies, "aucun fichier de CI vérifié — le verrou ne protégerait plus rien"
 
 
+def test_les_workflows_qui_lancent_la_suite_pointent_la_MEME_base():
+    """Deux workflows lancent la meme suite : ils doivent la cabler pareil.
+
+    Defaut mesure sur la publication de 0.9.80 : `ci.yml` publiait PostgreSQL sur le port
+    5432 et `docker-publish.yml` sur 55432. Or une poignee de modules construisent
+    l'application — donc `Settings` — a l'IMPORT : ils ne voient jamais `TEST_DATABASE_URL`
+    et retombent sur le defaut du code, `localhost:5432`. La CI passait donc par
+    COINCIDENCE (son service ecoutait sur ce meme port), pendant que la publication
+    echouait sur vingt erreurs de collecte « BASE INJOIGNABLE » — la release a ete creee
+    sans que l'image ne soit jamais construite.
+
+    On exige donc que les DEUX variables soient posees explicitement, et qu'elles designent
+    le port REELLEMENT publie par le service. Plus rien ne doit reposer sur un defaut.
+    """
+    for fichier in FICHIERS_CI:
+        chemin = ROOT / fichier
+        if not chemin.is_file():
+            continue
+        conf = yaml.safe_load(chemin.read_text(encoding="utf-8"))
+        for nom, job in conf["jobs"].items():
+            service = (job.get("services") or {}).get("postgres")
+            if not service:
+                continue
+            # UNIQUEMENT les jobs qui lancent la SUITE. Le job `migrations` a lui aussi une
+            # base, mais il joue Alembic avec ses propres URL (`URL_VIDE`, `URL_PEUPLEE`) et
+            # ne charge jamais `Settings` par defaut : lui imposer ce contrat serait exiger
+            # des variables qui n'ont aucun sens pour lui.
+            etapes = " ".join(str(e.get("run", "")) for e in job.get("steps", []))
+            if "pytest" not in etapes:
+                continue
+            env = job.get("env") or {}
+            for variable in ("TEST_DATABASE_URL", "DATABASE_URL"):
+                assert variable in env, (
+                    f"{fichier}:{nom} lance un PostgreSQL sans poser {variable} — la suite "
+                    "retomberait sur le defaut du code"
+                )
+            # Le port publie par le service doit etre celui que les URL designent.
+            publie = str(service["ports"][0]).split(":")[0]
+            for variable in ("TEST_DATABASE_URL", "DATABASE_URL"):
+                assert f"@localhost:{publie}/" in env[variable], (
+                    f"{fichier}:{nom} : {variable} ne pointe pas le port {publie} "
+                    f"reellement publie ({env[variable]})"
+                )
+
+
 def test_l_etape_client_postgres_met_le_bon_binaire_sur_le_chemin_et_le_verifie():
     """Installer un client n'est pas l'aligner : encore faut-il que ce soit LUI qui réponde.
 
