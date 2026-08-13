@@ -9,46 +9,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { useResource } from "@/hooks/useResource";
 import { Api, updateCommand, type VersionInfo } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { type IconName, NAV, navByPath } from "@/lib/nav";
+import { NAV, navByPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
-
-/** Les 4 icônes de la section « Opération » (fidèles à la maquette). */
-function SidebarIcon({ name }: { name: IconName }) {
-  const common = {
-    className: "h-3.5 w-3.5 shrink-0",
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.7,
-  } as const;
-  if (name === "grid")
-    return (
-      <svg {...common} aria-hidden="true">
-        <rect x="3" y="3" width="7" height="9" />
-        <rect x="14" y="3" width="7" height="5" />
-        <rect x="14" y="12" width="7" height="9" />
-        <rect x="3" y="16" width="7" height="5" />
-      </svg>
-    );
-  if (name === "clock")
-    return (
-      <svg {...common} aria-hidden="true">
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7v5l3 2" />
-      </svg>
-    );
-  if (name === "log")
-    return (
-      <svg {...common} aria-hidden="true">
-        <path d="M3 4h18v4H3zM3 10h18v4H3zM3 16h18v4H3z" />
-      </svg>
-    );
-  return (
-    <svg {...common} aria-hidden="true">
-      <path d="M4 7h16M4 12h16M4 17h10" />
-    </svg>
-  );
-}
 
 /** Cible de `aria-controls` : le déclencheur DÉSIGNE le panneau qu'il ouvre. */
 const ACCOUNT_POPOVER_ID = "account-popover";
@@ -339,31 +301,50 @@ export function Layout() {
               <span className="font-semibold tracking-tight">ITSM Modern AI</span>
             </div>
 
-            {NAV.map((section) => (
-              <div key={section.en} className="flex flex-col gap-0.5">
-                <p className="px-2 pt-4 pb-1 text-caption font-medium uppercase tracking-[0.08em] text-muted-foreground">
-                  {t(section.fr, section.en)}
-                </p>
-                {section.items.map((it) => (
-                  <NavLink
-                    key={it.to}
-                    to={it.to}
-                    end={it.end}
-                    className={({ isActive }) =>
-                      cn(
-                        "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 transition-colors",
-                        isActive
-                          ? "bg-primary/15 text-accent-indigo"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                      )
-                    }
+            {/* Une <nav> pour toute la barre, et une LISTE NOMMÉE par section : les
+                intertitres « Opération / Configuration / Avancé » n'étaient que du texte gris
+                pour un lecteur d'écran, qui annonçait quinze liens à plat. Ils étiquettent
+                désormais leur groupe (`aria-labelledby`), qui annonce aussi son nombre
+                d'entrées — d'où la <ul>, et non un `role="group"` posé sur une <div>. */}
+            <nav aria-label={t("Navigation principale", "Main navigation")}>
+              {NAV.map((section) => (
+                <div key={section.en}>
+                  <p
+                    id={`nav-${section.en.toLowerCase()}`}
+                    className="px-2 pt-4 pb-1 text-caption font-medium uppercase tracking-[0.08em] text-muted-foreground"
                   >
-                    {it.icon && <SidebarIcon name={it.icon} />}
-                    {t(it.fr, it.en)}
-                  </NavLink>
-                ))}
-              </div>
-            ))}
+                    {t(section.fr, section.en)}
+                  </p>
+                  <ul
+                    aria-labelledby={`nav-${section.en.toLowerCase()}`}
+                    className="flex flex-col gap-0.5"
+                  >
+                    {section.items.map((it) => {
+                      const Icon = it.icon;
+                      return (
+                        <li key={it.to}>
+                          <NavLink
+                            to={it.to}
+                            end={it.end}
+                            className={({ isActive }) =>
+                              cn(
+                                "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 transition-colors",
+                                isActive
+                                  ? "bg-primary/15 text-accent-indigo"
+                                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                              )
+                            }
+                          >
+                            <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            <span className="truncate">{t(it.fr, it.en)}</span>
+                          </NavLink>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </nav>
 
             <div className="mt-auto flex flex-col gap-1.5 px-2 pt-3 text-caption text-muted-foreground">
               {cfg.data ? (

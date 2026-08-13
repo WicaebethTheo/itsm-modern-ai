@@ -44,6 +44,26 @@ qu'elle montrait. Aucun changement de comportement du moteur.
   enregistrée(s) », et le bouton d'écriture devenait cliquable. Il compare désormais à la
   version du serveur dont l'écran est effectivement issu.
 
+### Menu latéral
+
+Toutes les entrées portent une **icône** — elles étaient quatre sur quinze, et ces quatre-là
+donnaient à « Opération » un relief que les deux autres sections n'avaient pas. Chaque section
+est désormais une **liste nommée par son intertitre** : « Opération / Configuration / Avancé »
+n'était que du texte gris pour un lecteur d'écran, qui annonçait quinze liens à plat.
+
+Le classement répond à trois questions distinctes — ce que le moteur **a fait** (écrans de
+lecture), ce qu'il a **le droit** de faire (les garde-fous), et les outils qu'on n'ouvre pas
+toutes les semaines. Deux entrées changent donc de section :
+
+- **« Connexion GLPI » passe en Configuration.** On y saisit une URL, un jeton, et on teste :
+  c'est un réglage. L'état de la connexion, lui, est déjà porté par le chip de la topbar et
+  par la page Statut, qui sont, eux, des écrans de lecture.
+- **« Coûts & quotas » passe en Opération.** La page le dit elle-même en pied d'écran : « le
+  plafond et les tarifs se règlent dans Moteur, cette page est en lecture seule ».
+
+Dans « Configuration », l'ordre suit le pipeline de triage : d'où viennent les tickets, qui
+les lit, sous quelles limites, sur quel périmètre, vers qui, avec quel masquage.
+
 ### Compte administrateur
 
 L'entête passe de neuf objets à quatre, et affiche enfin **quel compte est connecté**

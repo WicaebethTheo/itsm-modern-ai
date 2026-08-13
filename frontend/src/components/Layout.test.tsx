@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Api } from "@/lib/api";
 import { demo } from "@/lib/demo";
+import { NAV } from "@/lib/nav";
 import { Layout } from "./Layout";
 
 /**
@@ -252,5 +253,56 @@ describe("Layout — menu de compte", () => {
     expect(screen.queryByText(demo.me.email)).not.toBeInTheDocument();
     // Et le reste du menu fonctionne toujours.
     expect(screen.getByRole("button", { name: /Déconnexion/ })).toBeInTheDocument();
+  });
+});
+
+/**
+ * La sidebar n'avait aucun assert : quinze liens, dont quatre seulement portaient une icône,
+ * et trois intertitres qu'aucune technologie d'assistance ne reliait à leurs entrées.
+ */
+describe("Layout — sidebar", () => {
+  beforeEach(() => {
+    vi.mocked(Api.health).mockResolvedValue(demo.health);
+    vi.mocked(Api.version).mockResolvedValue(demo.version);
+    vi.mocked(Api.getLicense).mockResolvedValue(license(false));
+    vi.mocked(Api.getConfig).mockResolvedValue(demo.config);
+    vi.mocked(Api.me).mockResolvedValue(demo.me);
+  });
+
+  /** La barre de navigation, par son nom accessible — la topbar porte des libellés homonymes. */
+  function sidebar() {
+    return screen.getByRole("navigation", { name: "Navigation principale" });
+  }
+
+  it("chaque entrée porte une icône", () => {
+    renderLayout();
+    const liens = within(sidebar()).getAllByRole("link");
+    expect(liens).toHaveLength(NAV.flatMap((s) => s.items).length);
+    for (const lien of liens) {
+      // `aria-hidden` : l'icône DOUBLE le libellé, elle ne s'annonce pas deux fois.
+      const icone = lien.querySelector("svg");
+      expect(icone, `« ${lien.textContent} » sans icône`).not.toBeNull();
+      expect(icone).toHaveAttribute("aria-hidden", "true");
+    }
+  });
+
+  it("chaque section est une liste NOMMÉE par son intertitre", () => {
+    renderLayout();
+    for (const section of NAV) {
+      const liste = within(sidebar()).getByRole("list", { name: section.fr });
+      expect(within(liste).getAllByRole("listitem")).toHaveLength(section.items.length);
+    }
+  });
+
+  it("« Opération » ne contient que des écrans de lecture", () => {
+    // Un écran où l'on saisit un jeton n'est pas de l'observation : « Connexion GLPI » est
+    // passée en Configuration, et « Coûts & quotas » — en lecture seule — l'a remplacée.
+    renderLayout();
+    const operation = within(sidebar()).getByRole("list", { name: "Opération" });
+    expect(
+      within(operation)
+        .getAllByRole("link")
+        .map((l) => l.textContent),
+    ).toEqual(["Tableau de bord", "Statut", "Journaux", "Coûts & quotas"]);
   });
 });
