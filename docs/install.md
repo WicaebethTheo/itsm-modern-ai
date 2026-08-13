@@ -278,7 +278,12 @@ connexion habituel (email + mot de passe). Toute la configuration se fait ensuit
 - **Connexion GLPI** : base URL `apirest.php`, **user token** (et app token si requis).
 - **Fournisseur IA** : choisissez parmi **Mistral EU** (souverain, défaut), **OpenAI** (hors UE — à valider DPO), **Ollama** (modèle **local**, **pas de clé**) ou **Anthropic / Claude** (hors UE — à valider DPO) ; saisir la **clé API** (sauf Ollama).
 - **Moteur › Garde-fous** : seuil de confiance et cost cap. Le menu **Moteur** regroupe quatre écrans — *Garde-fous*, *Modes d'exécution*, *Ingestion*, *Prompt & réponse*. (L'ancienne URL `/engine` redirige vers *Garde-fous*.)
-- **Périmètre (scan GLPI puis sélection)** : lancez le **scan GLPI** (`POST /api/glpi/sync`) pour mettre en cache catégories, entités, techniciens et groupes, puis **sélectionnez** ce que l'IA a le droit d'utiliser — **catégories autorisées + entités** du périmètre, **techniciens/groupes éligibles** et leur **fiche en prose** (routage). Le moteur n'agit que dans ce périmètre effectif. **Plus de fichier YAML** : les fiches sont éditées dans l'UI et stockées en base.
+- **Périmètre effectif (scan GLPI puis sélection, sur trois écrans)** : lancez d'abord le **scan GLPI** (`POST /api/glpi/sync`), qui met en cache catégories, entités, techniciens et groupes. La sélection de ce que l'IA a le droit d'utiliser se fait ensuite sur trois écrans distincts de **Configuration** :
+  - **Règles métier** — **catégories autorisées** et **entités** du périmètre (c'est aussi là que se règlent, par entité, le mode d'exécution et la cible de repli) ;
+  - **Techniciens** — les techniciens éligibles au routage et leur **fiche en prose** ;
+  - **Groupes** — les groupes éligibles et leur fiche.
+
+  Le moteur n'agit que dans ce périmètre effectif. **Plus de fichier YAML** : les fiches sont éditées dans l'UI et stockées en base.
 
 Les **secrets** (clé LLM, tokens GLPI ; pas de clé pour Ollama) sont stockés **chiffrés au repos** (Fernet, FR-25) et ne sont **jamais** réaffichés ni mis dans `.env`.
 
@@ -293,12 +298,24 @@ Les **secrets** (clé LLM, tokens GLPI ; pas de clé pour Ollama) sont stockés 
 > }'
 > ```
 
+### Changer son mot de passe (cas nominal)
+
+Tant que vous êtes **connecté**, rien de tout ce qui suit n'est nécessaire : la page
+**Compte & sécurité** s'ouvre depuis le menu de compte, en haut à droite de la console (elle
+n'a pas d'entrée dans le menu latéral). Elle rappelle l'adresse et le nom du compte unique, et
+porte la carte **« Changer le mot de passe »** — le mot de passe **actuel** y est redemandé,
+une session ouverte ne suffisant pas à s'approprier le compte. La rotation **révoque toutes les
+sessions**, y compris celle qui vient de la demander : on est renvoyé sur l'écran de connexion.
+L'**adresse** et le **nom affiché**, eux, ne se changent pas depuis cette page — c'est
+`admin_setup --email … --email-only` sur l'hôte.
+
 ### Mot de passe administrateur oublié
 
 C'est la première question que pose un exploitant à qui l'on retire la variable
 d'environnement, alors répondons-y franchement : **il n'y a aucune réinitialisation par
 email**. Le produit ne parle à aucun serveur SMTP — c'est une contrainte de souveraineté
-assumée, pas un oubli. Le seul chemin de récupération est la **CLI livrée dans l'image**, ce qui
+assumée, pas un oubli. Le seul chemin de récupération — c'est-à-dire quand on ne peut **plus se
+connecter**, la page Compte & sécurité étant alors hors de portée — est la **CLI livrée dans l'image**, ce qui
 revient à dire que **l'accès shell à la machine hôte est le facteur d'authentification de
 dernier recours** (quiconque l'a pouvait déjà lire `master.key` dans le volume : cette CLI
 n'élargit pas la surface d'attaque).

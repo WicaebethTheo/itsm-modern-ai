@@ -45,12 +45,16 @@ C'est la seule méthode requise : tout se fait depuis la page Supporter de l'app
 
 > **Compte admin** : il se crée **à la première visite** de la console (email + mot de passe),
 > pas via une variable d'environnement — rien à faire ici pour devenir Supporter, sinon être
-> connecté (la page Supporter est une page d'administration). Mot de passe oublié :
-> `docker compose exec itsm python -m itsm_modern_ai.admin_setup --force`.
+> connecté (la page Supporter est une page d'administration). Changement de mot de passe :
+> page **Compte & sécurité**, menu de compte en haut à droite. Mot de passe **oublié** (plus de
+> session du tout) : `docker compose exec itsm python -m itsm_modern_ai.admin_setup --force`.
 
 ## Revenir en Community (désactivation)
 
-Sur la **même page Supporter**, **retirez la clé** (champ vidé / bouton de retrait) et validez.
+Sur la **même page Supporter** (section *Avancé* du menu), retirez la clé avec le bouton
+**« Réinitialiser »**. Il est présent dans les deux états de la page : sous la licence active,
+à côté de « Renouveler / remplacer la clé » ; et sur l'écran de saisie, à côté d'« Activer »,
+dès qu'une clé est stockée — y compris une clé valide qui n'autorise rien.
 Les fonctionnalités Supporter se **reverrouillent** immédiatement ; la donnée reste intacte
 (retour à l'édition Community).
 

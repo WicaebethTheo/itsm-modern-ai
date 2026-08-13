@@ -1,3 +1,50 @@
+## 2026-08-13 — 0.9.82 — la doc citait des libelles que la console n'a plus
+
+Suite de la revue croisee, sur le lot que la 0.9.81 avait laisse : les libelles
+d'ecran. Rien ici ne change le comportement du moteur — l'image publiee est
+identique. Ce qui change, c'est qu'on cherche desormais les reglages ou ils sont.
+
+### Noms d'ecrans herites d'avant le decoupage 0.9.80
+
+`docs/install.md` decrivait un ecran « Perimetre » qui fusionnait en realite TROIS
+ecrans (Regles metier, Techniciens, Groupes). `docs/modes.md` gardait une seconde
+occurrence que la 0.9.81 avait manquee. `docs/roadmap.md` citait `EngineSettings`,
+supprime. `docs/dpo.md` renvoyait a une « page Journal » (l'entree s'appelle
+Journaux ; « Journal des decisions » est le titre d'une carte). Le schema Mermaid
+du guide exploitant nommait « Page GLPI » et « Page Fournisseur ».
+
+### Deux erreurs de fond, pas de libelle
+
+- **Le CHANGELOG citait le pied de Couts & quotas a l'envers.** Il lui faisait dire
+  que « le plafond ET LES TARIFS se reglent dans Moteur » ; le texte reel dit que les
+  tarifs ne sont editables par AUCUN ecran. Cette citation fautive avait essaime dans
+  le commentaire de `frontend/src/lib/nav.ts`, puis de la sur le site. Les trois
+  surfaces sont corrigees.
+- **`guide-fonctionnement.md` donnait `active = installed AND entitled`.** Le code
+  ajoute `AND NOT coming_soon` (`api/routes/license.py`). Consequence, absente du
+  guide : deux des trois features du catalogue sont `coming_soon`, donc une licence
+  qui les couvre ne fait rien de plus. Seul le masquage PII avance est activable.
+
+### Comptages remis sur la mesure
+
+`docs/roadmap.md` annoncait « 3 parcours Playwright ». Il y a **6 specs** —
+`fixtures.ts` n'en est pas une, ce qui explique aussi le « 7 » errone de la 0.9.81.
+
+### Un chemin que la doc ne mentionnait nulle part
+
+Changer son mot de passe en etant connecte se fait depuis la page **Compte &
+securite** (hors sidebar, menu de compte). Les quatre endroits qui parlaient de mot
+de passe ne documentaient QUE la CLI hote — exact pour un mot de passe oublie,
+lacunaire pour un changement volontaire.
+
+### Sur la reecriture d'un journal
+
+Les entrees anterieures au renommage sont **annotees, pas reecrites** : remplacer
+« Perimetre » par « Regles metier » dans une entree ecrite avant le renommage
+produirait une entree qui n'a jamais existe, et priverait le lecteur de
+l'information qu'il cherche. Seule exception : la fausse citation ci-dessus, qui
+etait fausse le jour ou elle a ete ecrite.
+
 ## 2026-08-13 — 0.9.81 — ce que les trois surfaces affirmaient sans que le code le tienne
 
 Revue croisee application / site / documentation / GitHub. Le produit s'en sort bien ; les
@@ -88,7 +135,8 @@ qu'elle montrait. Aucun changement de comportement du moteur.
 
 ### Ce qui pouvait vous coûter quelque chose
 
-- **« Scanner GLPI » effaçait la saisie en cours** sur Périmètre, Techniciens et Groupes : le
+- **« Scanner GLPI » effaçait la saisie en cours** sur Périmètre — l'écran que cette même
+  version renomme **Règles métier**, nom qu'il porte depuis —, Techniciens et Groupes : le
   rechargement des référentiels réinitialisait le brouillon, sans un mot.
 - **Une absence du jour masquait toutes les absences à venir**, sur la seule vue de planification.
 - **Les navigateurs proposaient d'enregistrer le jeton GLPI et la clé LLM** dans leur
@@ -108,19 +156,22 @@ qu'elle montrait. Aucun changement de comportement du moteur.
 ### Menu latéral
 
 Toutes les entrées portent une **icône** — elles étaient quatre sur quinze, et ces quatre-là
-donnaient à « Opération » un relief que les deux autres sections n'avaient pas. Chaque section
-est désormais une **liste nommée par son intertitre** : « Opération / Configuration / Avancé »
-n'était que du texte gris pour un lecteur d'écran, qui annonçait quinze liens à plat.
+donnaient à « Opération » un relief que les trois autres sections n'avaient pas. Chaque section
+est désormais une **liste nommée par son intertitre** : « Opération / Moteur / Configuration /
+Avancé » n'était que du texte gris pour un lecteur d'écran, qui annonçait quinze liens à plat.
 
-Le classement répond à trois questions distinctes — ce que le moteur **a fait** (écrans de
-lecture), ce qu'il a **le droit** de faire (les garde-fous), et les outils qu'on n'ouvre pas
-toutes les semaines. Deux entrées changent donc de section :
+Le classement répond à quatre questions distinctes — ce que le moteur **a fait** (écrans de
+lecture), **comment** il se comporte (les garde-fous, dans l'ordre du pipeline), à **quoi** il a
+accès (raccordements, référentiels, conformité), et les outils qu'on n'ouvre pas toutes les
+semaines. Deux entrées changent donc de section :
 
 - **« Connexion GLPI » passe en Configuration.** On y saisit une URL, un jeton, et on teste :
   c'est un réglage. L'état de la connexion, lui, est déjà porté par le chip de la topbar et
   par la page Statut, qui sont, eux, des écrans de lecture.
-- **« Coûts & quotas » passe en Opération.** La page le dit elle-même en pied d'écran : « le
-  plafond et les tarifs se règlent dans Moteur, cette page est en lecture seule ».
+- **« Coûts & quotas » passe en Opération.** La page le dit elle-même en pied d'écran : le
+  plafond de coût se règle dans **Moteur › Garde-fous**, et les tarifs ne sont éditables
+  depuis **aucun** écran — ils viennent de l'environnement (`LLM_PRICE_*_PER_MTOK`) ou d'un
+  `POST /api/config`. Cette page est en lecture seule.
 
 Dans « Configuration », l'ordre suit le pipeline de triage : d'où viennent les tickets, qui
 les lit, sous quelles limites, sur quel périmètre, vers qui, avec quel masquage.
@@ -564,7 +615,8 @@ sur une coupure réseau de trois secondes, puis un doublon au rejeu.
 
 ### …et il a désormais un propriétaire
 
-Une **cible de repli par entité** (page Périmètre, à côté du mode). Quand le garde-fou refuse,
+Une **cible de repli par entité** (page Périmètre, devenue **Règles métier** en 0.9.80, à côté
+du mode). Quand le garde-fou refuse,
 le ticket est **assigné** à cette cible — et rien d'autre.
 
 - **Router, jamais classer.** Aucune catégorie, aucune priorité n'est posée : une mauvaise

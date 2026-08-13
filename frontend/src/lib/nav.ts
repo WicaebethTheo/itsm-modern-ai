@@ -18,9 +18,10 @@
 //   · « Connexion GLPI » quittait mal « Opération » : on y saisit une URL, un jeton et on
 //     teste — c'est un écran de RÉGLAGE. L'état de la connexion, lui, est déjà porté par le
 //     chip de la topbar et par la page Statut, qui sont, eux, des écrans de lecture.
-//   · « Coûts & quotas » rejoint « Opération » : la page le dit elle-même en pied d'écran,
-//     « le plafond et les tarifs se règlent dans Moteur, cette page est en lecture seule ».
-//     Elle observe une dépense ; elle ne configure rien.
+//   · « Coûts & quotas » rejoint « Opération » : la page le dit elle-même en pied d'écran —
+//     le plafond se règle dans « Moteur › Garde-fous », les tarifs ne sont éditables par AUCUN
+//     écran (environnement `LLM_PRICE_*_PER_MTOK` ou `POST /api/config`), et cette page est en
+//     lecture seule. Elle observe une dépense ; elle ne configure rien.
 //
 // POURQUOI « Moteur » est une SECTION et non plus une entrée : c'était une page de dix-sept
 // contrôles répartis en sept cartes et quatre thèmes sans rapport — les bornes de sécurité du

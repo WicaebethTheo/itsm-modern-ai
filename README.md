@@ -10,7 +10,7 @@ On-premise, souverain, open-core.
 *Automated GLPI ticket triage with an LLM kept behind deterministic guardrails.*
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.9.81-blueviolet)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.9.82-blueviolet)](pyproject.toml)
 [![GHCR image](https://img.shields.io/badge/GHCR-image_publique-2496ED?logo=github&logoColor=white)](https://github.com/WicaebethTheo/itsm-modern-ai/pkgs/container/itsm-modern-ai)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
 
@@ -237,6 +237,8 @@ Détail et limites connues : [Sécurité & limites](https://docs.itsm-modern-ai.
 
 ### Mot de passe administrateur oublié
 
+Tant qu'une session est ouverte, le mot de passe se change depuis la console, page **Compte &
+sécurité** (menu de compte, en haut à droite) ; ce qui suit ne concerne que la perte d'accès.
 Il n'existe aucun envoi d'email de réinitialisation. La reprise en main se fait depuis
 l'hôte : avoir un accès shell à la machine *est* le facteur d'authentification.
 

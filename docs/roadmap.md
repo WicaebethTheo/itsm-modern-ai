@@ -6,7 +6,7 @@
 
 ### Court terme
 
-- **Couverture E2E étendue** — actuellement 7 specs Playwright. À ajouter : Règles métier (configuration du périmètre en parcours réel), Confidentialité (DPO) (masquage PII configurable), Techniciens (édition des fiches).
+- **Couverture E2E étendue** — actuellement 6 specs Playwright (`frontend/e2e/` : `ergonomie`, `login`, `navigation`, `sandbox`, `setup`, `typographie` — `fixtures.ts` n'est pas une spec). À ajouter : Règles métier (configuration du périmètre en parcours réel), Confidentialité (DPO) (masquage PII configurable), Techniciens (édition des fiches).
 - **Page Supporter / Automations marketplace** — placeholders UI en place ; backing en cours pour la rétention RGPD. Reste à brancher les automations restantes (notifications, exports planifiés, etc.).
 
 ### Moyen terme
