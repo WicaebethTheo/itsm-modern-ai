@@ -60,3 +60,49 @@ test("aucun widget flottant ne recouvre le bouton « Enregistrer »", async ({ p
     }
   }
 });
+
+/**
+ * Le découpage par écran doit RESTER.
+ *
+ * Il ne tient qu'à des `import()` dynamiques dans `App.tsx` : un seul `import` statique
+ * remis par distraction — un IDE le propose volontiers en auto-import — et tout retombe
+ * dans un chunk unique. Rien ne casse alors, rien ne rougit : la console redevient
+ * simplement plus lourde au premier écran, sans que personne ne s'en aperçoive.
+ *
+ * Mesuré à l'introduction : 577,3 ko pour atteindre l'écran de connexion, contre 383,1 ko
+ * après découpage — et 423,3 ko après avoir visité quatre écrans, parce que ceux qu'on
+ * n'ouvre pas ne sont jamais téléchargés.
+ */
+test("un écran qu'on n'ouvre pas n'est pas téléchargé", async ({ page }) => {
+  await useFrench(page);
+  await mockAuthSession(page);
+  await mockConsoleApi(page);
+
+  const scripts = new Set<string>();
+  page.on("response", (r) => {
+    const chemin = new URL(r.url()).pathname;
+    if (chemin.endsWith(".js")) scripts.add(chemin);
+  });
+
+  await page.goto("/login");
+  await page.getByLabel("Adresse email").fill("admin@exemple.fr");
+  await page.getByLabel("Mot de passe").fill("s3cretaire");
+  await page.getByRole("button", { name: "Se connecter" }).click();
+  await page.getByRole("heading", { name: "Tableau de bord" }).waitFor();
+  await page.waitForTimeout(400);
+
+  const avant = new Set(scripts);
+  // « Développement » est l'écran le moins ouvert du produit : s'il voyage avec le reste,
+  // c'est que plus rien n'est découpé.
+  await page.getByRole("link", { name: "Développement" }).click();
+  // On attend l'URL, pas un titre : la page Debug interroge des routes que les mocks
+  // partagés ne couvrent pas, et son contenu n'est pas le sujet — le chunk l'est.
+  await page.waitForURL(/\/debug$/);
+  await page.waitForTimeout(600);
+
+  const nouveaux = [...scripts].filter((s) => !avant.has(s));
+  expect(
+    nouveaux.length,
+    "aucun chunk chargé à la demande : le découpage a disparu",
+  ).toBeGreaterThan(0);
+});

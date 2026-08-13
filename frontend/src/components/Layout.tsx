@@ -1,5 +1,5 @@
 import { ChevronDown, Heart, LogOut, UserCog } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { FloatingActions } from "@/components/FloatingActions";
 import { LangToggle } from "@/components/LangToggle";
@@ -426,7 +426,28 @@ export function Layout() {
               tabIndex={-1}
               className="flex-1 scroll-pb-20 overflow-y-auto p-5 sm:p-6"
             >
-              <Outlet />
+              {/* Frontière de chargement des écrans, posée ICI et pas autour des `Routes` :
+                  les pages sont chargées à la demande (`App.tsx`), et une frontière plus
+                  haute viderait TOUTE la console — barre latérale et entête comprises — à
+                  chaque navigation. Seule la zone de contenu doit clignoter.
+
+                  Le repli est annoncé (`role="status"`) : sans lui, un lecteur d'écran
+                  reste muet entre le clic et l'arrivée de l'écran. Sur un LAN le chunk
+                  arrive en quelques millisecondes et le repli n'est jamais vu ; il existe
+                  pour le cas où il ne l'est pas. */}
+              <Suspense
+                fallback={
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    className="p-2 text-body text-muted-foreground"
+                  >
+                    {t("Chargement…", "Loading…")}
+                  </p>
+                }
+              >
+                <Outlet />
+              </Suspense>
             </main>
           </div>
         </div>

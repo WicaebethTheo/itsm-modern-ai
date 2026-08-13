@@ -1,28 +1,65 @@
+import { lazy } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ToastProvider } from "@/components/ui/toast";
 import { DEMO } from "@/lib/api";
-import { Account } from "@/pages/Account";
-import { AiProvider } from "@/pages/AiProvider";
-import { Automations } from "@/pages/Automations";
-import { CostQuotas } from "@/pages/CostQuotas";
-import { Dashboard } from "@/pages/Dashboard";
-import { Debug } from "@/pages/Debug";
-import { Guardrails } from "@/pages/engine/Guardrails";
-import { Ingestion } from "@/pages/engine/Ingestion";
-import { Modes } from "@/pages/engine/Modes";
-import { PromptReply } from "@/pages/engine/PromptReply";
-import { GlpiConnection } from "@/pages/GlpiConnection";
-import { Groups } from "@/pages/Groups";
-import { Journal } from "@/pages/Journal";
+// Les DEUX écrans servis en direct, et c'est délibéré : ils sont le premier contact avec le
+// produit. `Setup` est la toute première visite (création du compte), `Login` toutes les
+// suivantes. Les charger paresseusement ferait payer un aller-retour réseau supplémentaire
+// à l'écran qu'on voit le plus, pour économiser des octets qu'on télécharge de toute façon.
 import { Login } from "@/pages/Login";
-import { Privacy } from "@/pages/Privacy";
-import { Sandbox } from "@/pages/Sandbox";
-import { Scope } from "@/pages/Scope";
 import { Setup } from "@/pages/Setup";
-import { Status } from "@/pages/Status";
-import { Store } from "@/pages/Store";
-import { Technicians } from "@/pages/Technicians";
+
+/**
+ * Les vingt écrans authentifiés sont chargés À LA DEMANDE.
+ *
+ * Mesuré sur ce dépôt : un chunk unique de 531,70 ko (162,92 ko gzip) — soit toutes les
+ * pages du produit, y compris celles qu'un exploitant n'ouvre jamais (Bac à sable,
+ * Développement, Supporter), téléchargées et surtout ANALYSÉES avant le premier pixel.
+ *
+ * Ce que cela vaut, honnêtement : sur un LAN, les octets ne coûtent presque rien. Le vrai
+ * gain est le temps de parse et d'exécution de ce qu'on n'ouvre pas. C'est pourquoi les deux
+ * écrans d'entrée restent statiques : on n'échange pas une latence certaine sur l'écran le
+ * plus vu contre une économie théorique sur les autres.
+ *
+ * `import()` avec un chemin littéral, jamais construit : c'est ce qui permet à Vite de
+ * découper à la compilation. Un `import(\`@/pages/${nom}\`)` embarquerait tout.
+ */
+const Account = lazy(() => import("@/pages/Account").then((m) => ({ default: m.Account })));
+const AiProvider = lazy(() =>
+  import("@/pages/AiProvider").then((m) => ({ default: m.AiProvider })),
+);
+const Automations = lazy(() =>
+  import("@/pages/Automations").then((m) => ({ default: m.Automations })),
+);
+const CostQuotas = lazy(() =>
+  import("@/pages/CostQuotas").then((m) => ({ default: m.CostQuotas })),
+);
+const Dashboard = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })));
+const Debug = lazy(() => import("@/pages/Debug").then((m) => ({ default: m.Debug })));
+const Guardrails = lazy(() =>
+  import("@/pages/engine/Guardrails").then((m) => ({ default: m.Guardrails })),
+);
+const Ingestion = lazy(() =>
+  import("@/pages/engine/Ingestion").then((m) => ({ default: m.Ingestion })),
+);
+const Modes = lazy(() => import("@/pages/engine/Modes").then((m) => ({ default: m.Modes })));
+const PromptReply = lazy(() =>
+  import("@/pages/engine/PromptReply").then((m) => ({ default: m.PromptReply })),
+);
+const GlpiConnection = lazy(() =>
+  import("@/pages/GlpiConnection").then((m) => ({ default: m.GlpiConnection })),
+);
+const Groups = lazy(() => import("@/pages/Groups").then((m) => ({ default: m.Groups })));
+const Journal = lazy(() => import("@/pages/Journal").then((m) => ({ default: m.Journal })));
+const Privacy = lazy(() => import("@/pages/Privacy").then((m) => ({ default: m.Privacy })));
+const Sandbox = lazy(() => import("@/pages/Sandbox").then((m) => ({ default: m.Sandbox })));
+const Scope = lazy(() => import("@/pages/Scope").then((m) => ({ default: m.Scope })));
+const Status = lazy(() => import("@/pages/Status").then((m) => ({ default: m.Status })));
+const Store = lazy(() => import("@/pages/Store").then((m) => ({ default: m.Store })));
+const Technicians = lazy(() =>
+  import("@/pages/Technicians").then((m) => ({ default: m.Technicians })),
+);
 
 export default function App() {
   return (
