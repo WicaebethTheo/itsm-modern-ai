@@ -62,7 +62,7 @@ src/itsm_modern_ai/
 ├── persistence/   SQLModel/PostgreSQL (psycopg 3), journal, idempotence, UtcDateTime
 ├── config/        Settings (pydantic-settings) + credentials GLPI
 └── api/           FastAPI : routes REST, auth (Argon2), rate-limit, SPA static
-frontend/          SPA React 19 + Vite 6 + Tailwind v4 (i18n FR/EN, Biome)
+frontend/          SPA React 19 + Vite 8 + Tailwind v4 (i18n FR/EN, Biome)
 migrations/        Alembic
 scripts/           spike_routing.py (Epic 1), diagnostics GLPI
 tests/             pytest + respx (unit + integration)

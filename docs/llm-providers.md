@@ -9,7 +9,7 @@
 | **OpenAI** | Hors UE | oui | Activation = choix explicite de l'opérateur, validation DPO. |
 | **Anthropic / Claude** | Hors UE | oui | Idem OpenAI ; supporte Sonnet 4.6+. |
 
-Sélection sans code (UI → page IA). Le défaut souverain reste **Mistral EU**.
+Sélection sans code (UI → page **Fournisseur IA**). Le défaut souverain reste **Mistral EU**.
 
 ## Architecture du connecteur
 

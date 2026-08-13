@@ -82,7 +82,7 @@ export const demo: {
   // La démo montre une console déjà installée : elle a donc un compte, comme une vraie.
   me: { email: "admin@demo.local", display_name: "Alex Martin" },
   info: {
-    version: "0.9.80",
+    version: "0.9.81",
     title: "ITSM Modern AI — moteur de triage (headless)",
     endpoints: [
       { path: "/health", methods: ["GET"] },
@@ -132,7 +132,7 @@ export const demo: {
   },
   status: {
     ok: true,
-    version: "0.9.80", // même valeur que APP_VERSION — règle de release
+    version: "0.9.81", // même valeur que APP_VERSION — règle de release
     polling_enabled: true,
     polling_interval_seconds: 60,
     whitelist_loaded: true,
@@ -337,7 +337,7 @@ export const demo: {
     last_run_by: "scheduler",
   },
   version: {
-    current: "0.9.80",
+    current: "0.9.81",
     latest: null,
     update_available: false,
     check_enabled: false,
@@ -358,7 +358,7 @@ export const demo: {
         label_fr: "Masquage PII avancé",
         label_en: "Advanced PII masking",
         description_fr:
-          "Masquage des IBAN/cartes et des secrets (mots de passe, tokens, clés API), identifiants FR (NIR, SIRET), patterns regex personnalisés et règles par entité. En Community, seuls e-mail et téléphone sont masqués.",
+          "Masquage des IBAN/cartes et des secrets (mots de passe, tokens, clés API), identifiants FR (NIR, SIREN, SIRET). En Community, seuls e-mail et téléphone sont masqués. Patterns regex personnalisés et règles par entité : roadmap.",
         description_en:
           "Masking of IBANs/cards and secrets (passwords, tokens, API keys), French identifiers (NIR, SIRET), custom regex patterns and per-entity rules. In Community, only email and phone are masked.",
         installed: true,

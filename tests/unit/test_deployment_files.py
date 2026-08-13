@@ -880,3 +880,50 @@ def test_env_example_donne_une_stack_coherente():
 @pytest.mark.parametrize("script", ["install.sh", "docker/entrypoint.sh"])
 def test_shell_scripts_parse(script):
     assert subprocess.run(["bash", "-n", str(ROOT / script)], check=False).returncode == 0
+
+
+def test_le_port_choisi_survit_REELLEMENT_au_premier_compose_lance_a_la_main(tmp_path):
+    """On EXECUTE la persistance du port, on ne la cherche pas au grep.
+
+    `install.sh --port 8080` se contentait d'un `export ITSM_HOST_PORT="$PORT"` : une
+    variable du process courant. Le `.env` copie depuis `.env.example` n'en portait aucune
+    trace. Consequence mesuree : le premier `docker compose up -d` relance a la main —
+    apres un reboot, une mise a jour, n'importe quand — retombait sur le defaut de
+    `docker-compose.yml` (`${ITSM_HOST_PORT:-8000}`) et republiait sur 8000. La console
+    changeait d'adresse toute seule, sans un message.
+
+    On rejoue donc le bloc REEL de l'installeur sur un faux `.env`, deux fois : une
+    premiere ecriture, puis une seconde avec un autre port pour verifier qu'il MET A JOUR
+    au lieu d'empiler des lignes contradictoires (la derniere gagnerait, mais un `.env`
+    a deux valeurs est un piege pour qui le relit).
+    """
+    trouve = re.search(
+        r"^if grep -q \'\^ITSM_HOST_PORT=\' \.env.*?^fi$",
+        _texte("install.sh"),
+        re.M | re.S,
+    )
+    assert trouve, "install.sh : le bloc de persistance de ITSM_HOST_PORT est introuvable"
+    bloc = trouve.group(0)
+
+    env = tmp_path / ".env"
+    env.write_text("SESSION_HTTPS_ONLY=false\n", encoding="utf-8")
+
+    def rejoue(port: str) -> str:
+        subprocess.run(
+            ["sh", "-c", f'set -e\nPORT={port}\n{bloc}'],
+            cwd=tmp_path, capture_output=True, text=True, check=True,
+        )
+        return env.read_text(encoding="utf-8")
+
+    apres = rejoue("8080")
+    assert "ITSM_HOST_PORT=8080" in apres, (
+        "install.sh --port 8080 n'ecrit toujours pas le port dans .env : le premier "
+        "`docker compose up -d` lance a la main republiera sur 8000."
+    )
+    assert "SESSION_HTTPS_ONLY=false" in apres, "l'ecriture a ecrase le reste du .env"
+
+    apres = rejoue("9090")
+    assert "ITSM_HOST_PORT=9090" in apres
+    assert apres.count("ITSM_HOST_PORT=") == 1, (
+        f"deux lignes ITSM_HOST_PORT coexistent dans .env :\n{apres}"
+    )

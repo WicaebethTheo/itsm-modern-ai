@@ -109,7 +109,7 @@ def _categories(advanced: bool, flags: dict[str, bool]) -> list[PiiCategory]:
                     scope="supporter", active=flags["secret"]),
         PiiCategory(key="network", label_fr="Adresses IP & MAC", label_en="IP & MAC addresses",
                     example="10.0.1.42, a4:5e:60:…", scope="supporter", active=flags["network"]),
-        PiiCategory(key="nir_siret", label_fr="NIR / SIRET", label_en="NIR / SIRET",
+        PiiCategory(key="nir_siret", label_fr="NIR / SIREN / SIRET", label_en="NIR / SIREN / SIRET",
                     example="1 85 12 …, 552 120 …", scope="supporter", active=advanced),
         # Patterns regex personnalisés : la capacité existe dans l'overlay (AdvancedPiiMasker
         # .from_rules) mais n'est pas encore exposée à la configuration → jamais active en prod.

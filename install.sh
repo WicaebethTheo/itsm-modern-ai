@@ -528,6 +528,17 @@ fi
 # mot de passe de la base → propriétaire seul (jamais world-readable).
 chmod 600 .env 2>/dev/null || true
 check_add ".env file (chmod 600)" ok
+
+# Le port doit etre PERSISTE dans .env, pas seulement exporte dans ce shell.
+# Sans cela, `--port 8080` ne valait que pour le `docker compose up` lance par
+# l'installeur : le premier `docker compose up -d` relance a la main repartait sur
+# ${ITSM_HOST_PORT:-8000} (docker-compose.yml) et republiait sur 8000 — console
+# « disparue » pour les clients, sans qu'aucun message ne l'explique.
+if grep -q '^ITSM_HOST_PORT=' .env 2>/dev/null; then
+  sed -i.bak "s|^ITSM_HOST_PORT=.*|ITSM_HOST_PORT=${PORT}|" .env && rm -f .env.bak
+else
+  printf '\n# Port publie sur l hote (ecrit par install.sh --port).\nITSM_HOST_PORT=%s\n' "$PORT" >> .env
+fi
 export ITSM_HOST_PORT="$PORT"
 
 # ── 2b) Mise à jour : SAUVEGARDE la base, puis récupère la dernière version ────

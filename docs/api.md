@@ -7,18 +7,25 @@
 | Endpoint | Méthode | Description |
 |---|---|---|
 | `/health` | `GET` | Healthcheck (statut, version GLPI, statut LLM). |
-| `/metrics` | `GET` | **Métriques Prometheus d'infrastructure** (hors `/api`) : volumétrie + latence HTTP par route templatée. Voir ci-dessous. |
-| `/api/status` | `GET` | Métriques engine (polling, whitelist, compteur LLM, cost cap). |
-| `/api/metrics` | `GET` | KPIs métier agrégés sur 14 jours (à ne pas confondre avec `/metrics`). |
-| `/api/operational-metrics` | `GET` | Dashboard inversé (équipe, fenêtre glissante 7 j). |
+| `/api/status` | `GET` | Métriques engine (polling, whitelist, compteur LLM, cost cap). Le détail — volumétrie, coûts, diagnostic du dernier cycle — est **omis** sans session admin. |
+
+## Endpoints qui exigent une authentification
+
+| Endpoint | Méthode | Description |
+|---|---|---|
+| `/metrics` | `GET` | **Métriques Prometheus d'infrastructure** (hors `/api`). **Session administrateur requise**, ou `METRICS_TOKEN` — voir ci-dessous. |
+| `/api/metrics` | `GET` | KPIs métier agrégés sur 14 jours (à ne pas confondre avec `/metrics`). Session requise. |
+| `/api/operational-metrics` | `GET` | Dashboard inversé (équipe, fenêtre glissante 7 j). Session requise. |
 
 > **`/metrics` (Prometheus)** — endpoint d'**infrastructure**, distinct de `/api/metrics`
 > (KPI métier). Format exposition Prometheus : `itsm_http_requests_total` (compteur) et
 > `itsm_http_request_duration_seconds` (histogramme), labellisés par **route templatée**
 > (ex. `/api/decisions/{id}`) — pas de PII ni d'identifiant concret dans les labels.
-> Activable via `METRICS_ENABLED` (défaut `true`). Si `METRICS_TOKEN` est défini, l'endpoint
-> exige `Authorization: Bearer <jeton>` (ou `X-Metrics-Token`), sinon `401` ; vide = scrape
-> non authentifié (rétrocompatible). Détails : [`docs/install.md`](install.md).
+> Activable via `METRICS_ENABLED` (défaut `true`). **Cet endpoint n'est plus anonyme depuis
+> la 0.9.48** : si `METRICS_TOKEN` est défini, il exige `Authorization: Bearer <jeton>` (ou
+> `X-Metrics-Token`) ; si `METRICS_TOKEN` est **vide**, il exige une **session administrateur**.
+> Un scrape Prometheus anonyme reçoit donc un `401` dans les deux cas : poser `METRICS_TOKEN`
+> est la seule façon de le faire fonctionner. Détails : [`docs/install.md`](install.md).
 
 ## Authentification (Argon2 + session signée)
 
@@ -35,7 +42,7 @@ Un **seul** compte administrateur, créé **à la première visite** — pas d'a
 
 ⚠️ **L'adresse du compte n'apparaît dans aucune réponse NON authentifiée.** `/api/auth/status` est public : diffuser l'identifiant à un anonyme lui offrirait la moitié du couple à deviner. De même, un login raté renvoie le **même** code et le **même** message que l'email soit inconnu ou le mot de passe faux — et le hash est payé dans tous les cas, pour que le chronomètre ne dise pas ce que le message tait.
 
-Rate-limit : 5 tentatives / 600 s par IP, blocage 300 s (configurable). Honore `X-Forwarded-For` si `TRUST_PROXY_HEADERS=true`. **`/api/auth/setup` est compté par le même limiteur** que le login : sans cela, la création offrirait un point de martèlement non compté, et un moyen de sonder gratuitement si l'instance est encore revendicable.
+Rate-limit : 5 tentatives / 300 s par IP, blocage 300 s (configurable). Honore `X-Forwarded-For` si `TRUST_PROXY_HEADERS=true`. **`/api/auth/setup` est compté par le même limiteur** que le login : sans cela, la création offrirait un point de martèlement non compté, et un moyen de sonder gratuitement si l'instance est encore revendicable.
 
 > **Fenêtre de revendication (risque assumé)** : tant qu'aucun compte n'existe, `POST /api/auth/setup` est ouvert à quiconque atteint le port. Ni jeton d'amorçage ni fenêtre temporelle — choix délibéré, annoncé par un `WARNING` à chaque démarrage. **N'exposez pas le port avant d'avoir créé le compte** (cf. [`SECURITY.md`](../SECURITY.md) et [`docs/install.md`](install.md)).
 

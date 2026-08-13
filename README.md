@@ -10,7 +10,7 @@ On-premise, souverain, open-core.
 *Automated GLPI ticket triage with an LLM kept behind deterministic guardrails.*
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.9.80-blueviolet)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.9.81-blueviolet)](pyproject.toml)
 [![GHCR image](https://img.shields.io/badge/GHCR-image_publique-2496ED?logo=github&logoColor=white)](https://github.com/WicaebethTheo/itsm-modern-ai/pkgs/container/itsm-modern-ai)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
 
@@ -214,7 +214,9 @@ dernier numéro de version publié sur `api.github.com` et n'envoie aucune donn�
 l'instance ; `UPDATE_CHECK_URL=` vide la désactive. La licence Supporter, elle, est vérifiée
 hors-ligne en toutes circonstances : Ed25519, aucun serveur de licence.
 
-**Masquage.** Email et téléphone sont toujours masqués avant l'appel au LLM. IBAN et cartes,
+**Masquage.** Email et téléphone sont masqués avant l'appel au LLM, activés par défaut —
+mais ce sont deux bascules que l'administrateur peut éteindre depuis la page
+Confidentialité, auquel cas les adresses partent en clair. IBAN et cartes,
 secrets (mots de passe, jetons, clés d'API), IP et MAC, identifiants français (NIR, SIRET)
 sont débloqués par une licence Supporter. **Sans licence, IBAN et secrets partent en clair
 au LLM** — la console et le rapport DPO l'affichent l'un comme l'autre, plutôt que de le

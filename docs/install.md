@@ -376,7 +376,11 @@ La terminaison **TLS est déléguée à un reverse proxy** (nginx, Caddy, …) p
 
 > ⚠️ **IP réelle du client derrière le proxy** — par défaut, `request.client.host` vaut l'IP du proxy, ce qui rend le rate-limit du login (FR-24) contournable. Pour rétablir l'IP d'origine :
 >
-> 1. Activez `TRUST_PROXY_HEADERS=true` dans le `.env` (lecture de la 1ʳᵉ valeur de `X-Forwarded-For`).
+> 1. Activez `TRUST_PROXY_HEADERS=true` dans le `.env`. La valeur retenue est la **N-ième
+>    en partant de la DROITE** de `X-Forwarded-For`, où N vaut `TRUSTED_PROXY_HOPS` (défaut `1`) —
+>    et non la première, qui est librement falsifiable par le client. Derrière deux proxys en
+>    cascade, laisser N à `1` ferait porter le rate-limit et l'audit sur l'IP du proxy
+>    intermédiaire : ajustez-le au nombre réel de sauts que vous maîtrisez.
 > 2. Lancez `uvicorn` avec `--proxy-headers --forwarded-allow-ips=<IP du proxy>` (ou `*` si le proxy est seul devant). En conteneur, l'entrypoint le fait automatiquement quand `TRUST_PROXY_HEADERS=true` est exporté.
 > 3. N'activez ces options **que** derrière un proxy fiable — sans ça, n'importe quel client peut forger l'IP via le header.
 

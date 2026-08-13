@@ -32,6 +32,19 @@ livré dans l'image unique ; sa portée **diffère selon la licence** (open-core
 > configuration** : la console les affiche « à venir » et ils **ne masquent rien** pour l'instant.
 > À ne PAS présenter comme actifs à la DPO tant que leur configuration n'est pas livrée.
 
+> ⚠️ **L'expiration d'une licence rouvre le flux en clair, sans intervention humaine.**
+> Le masquage avancé est conditionné à une licence *valide* : le jour où elle expire, le
+> cycle de polling suivant reconstruit le moteur avec IBAN, cartes, secrets, IP/MAC et
+> NIR/SIREN/SIRET **désactivés**, et ces données repartent en clair au fournisseur LLM — où
+> elles s'accumulent aussi en clair dans la table `llm_calls`. Le seul signal automatique
+> est un `WARNING` dans les journaux du conteneur ; la console prévient l'**administrateur**
+> à J-30, mais rien ne prévient la DPO, et rien ne suspend le traitement.
+>
+> C'est une **régression de conformité déclenchée par une échéance de facturation**, non par
+> une décision technique. Deux conséquences à porter au registre : inscrire la date
+> d'échéance comme une échéance de conformité, et décider à l'avance si le polling doit être
+> suspendu (`polling_enabled`) plutôt que de laisser le traitement continuer dégradé.
+
 > En modes `semi_auto`/`full_auto`, le **brouillon généré par le LLM est re-masqué** (selon
 > la licence) avant toute publication publique au demandeur.
 
@@ -61,7 +74,7 @@ nominatives peuvent donc apparaître en clair dans le contenu transmis au LLM. L
   - **Données transmises par l'instance** : **aucune**. Requête `GET` sans corps, sans identifiant d'instance, sans compteur d'usage, sans donnée de ticket. Le fournisseur de la plateforme d'hébergement du dépôt voit ce que voit n'importe quel visiteur d'une page publique (adresse IP publique de sortie, en-têtes HTTP standard) ;
   - **Données reçues** : le dernier numéro de version publié et les notes de release ;
   - **Désactivation** : `UPDATE_CHECK_URL=` (valeur vide) dans `.env` → **aucun appel**, déploiement **air-gap 100 % hors-ligne**. Le produit reste pleinement fonctionnel.
-- **Licence Supporter** : vérifiée **100 % hors-ligne** (signature Ed25519, clé publique embarquée). **Aucun serveur de licence, aucun appel sortant** — y compris en air-gap.
+- **Licence Supporter** : vérifiée **100 % hors-ligne** (signature Ed25519, clé publique embarquée). **Aucun serveur de licence, aucun appel sortant** — y compris en air-gap. La vérification est hors-ligne ; l'**expiration**, elle, a des effets sur le masquage (voir l'avertissement plus haut).
 - **Périmètre d'action restreint par l'admin** : l'IA n'utilise que les **catégories, techniciens, groupes et entités explicitement sélectionnés** par l'admin (Whitelist curée depuis un scan GLPI). Tout objet hors de ce périmètre est ignoré (Ticket « à trier »).
 
 ## Minimisation
@@ -170,7 +183,7 @@ Une fenêtre **`<= 0` désactive** la purge de la table concernée (défaut sûr
 > |---|---|---|
 > | `processed_tickets` | identifiant GLPI de chaque ticket traité + horodatage | c'est le **registre d'idempotence** : le purger ferait re-trier (et re-facturer) d'anciens tickets. Aucun contenu, mais un identifiant et une date. |
 > | `referential_cache` | **noms** des techniciens/groupes, profils GLPI, **fiches en prose** | c'est le périmètre autorisé, rafraîchi par scan GLPI ; le purger désarmerait le moteur. Ces fiches méritent une **revue périodique** par l'admin. |
-> | `audit_log` | actions d'administration, avec l'**IP** de l'auteur | donnée d'**imputabilité** (art. 5.1.f / 32). La purger sur la fenêtre « tickets » offrirait un effacement de traces trivial : régler la rétention à 0 est justement une action auditée. |
+> | `audit_log` | actions d'administration, avec l'**IP** de l'auteur | donnée d'**imputabilité** (art. 5.1.f / 32) ⚠️ **écrite mais lue par aucune route, aucun écran, aucun export** : la seule consultation possible est un `psql` direct. À régler AVANT de s'engager sur une exigence d'auditabilité, pas au moment de l'audit. La purger sur la fenêtre « tickets » offrirait un effacement de traces trivial : régler la rétention à 0 est justement une action auditée. |
 >
 > **Absences (`technician_absences`) — donnée personnelle, purgée.** « Qui est en congé,
 > quand » est une donnée personnelle. Elle est conservée **tant que l'absence est en cours

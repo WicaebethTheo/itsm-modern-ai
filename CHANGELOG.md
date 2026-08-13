@@ -1,3 +1,64 @@
+## 2026-08-13 — 0.9.81 — ce que les trois surfaces affirmaient sans que le code le tienne
+
+Revue croisee application / site / documentation / GitHub. Le produit s'en sort bien ; les
+ecarts se concentrent la ou personne ne relit : les notes de release, les commandes de
+secours, et les promesses commerciales.
+
+### Corrige — un exploitant se serait trompe
+
+- **`install.sh --port` n'ecrivait rien.** Le drapeau se contentait d'un `export` valable
+  pour le seul `docker compose up` de l'installeur. Le premier `up -d` relance a la main
+  retombait sur le defaut du compose et republiait sur 8000 : la console changeait
+  d'adresse toute seule. Le port est desormais PERSISTE dans `.env`, et
+  `ITSM_HOST_PORT` y est documente. Verrouille par un test qui REJOUE le bloc reel.
+- **`.env.example`** proposait d'epingler `0.9.48`, un tag qui n'existe pas sur GHCR.
+
+### Corrige — la documentation decrivait un autre controle d'acces que le code
+
+- **`docs/api.md` classait `/metrics`, `/api/metrics` et `/api/operational-metrics` parmi
+  les endpoints publics.** Les trois exigent une authentification ; `/metrics` n'est plus
+  anonyme depuis la 0.9.48. Un exploitant configurait un scrape Prometheus anonyme et
+  recoltait des 401 sans comprendre. Les endpoints authentifies ont maintenant leur propre
+  section.
+- **`docs/api.md`** annoncait une fenetre de rate-limit de 600 s ; elle est de 300 s.
+- **`docs/install.md`** decrivait la lecture de la *premiere* valeur de `X-Forwarded-For` —
+  c'est-a-dire le comportement falsifiable. Le code lit la N-ieme en partant de la DROITE
+  (`TRUSTED_PROXY_HOPS`), reglage qui n'etait documente nulle part.
+
+### Corrige — affirmations que le produit ne tenait pas
+
+- **« Email et telephone sont toujours masques »** (README) : ce sont deux bascules que
+  l'administrateur peut eteindre depuis Confidentialite (DPO), auquel cas les adresses
+  partent en clair. Le produit le disait deja partout ailleurs, y compris dans le rapport
+  DPO qu'il genere.
+- **L'expiration d'une licence rouvre le flux en clair** au cycle de polling suivant, sans
+  intervention humaine — regression de conformite declenchee par une echeance de
+  facturation. Ce n'etait documente nulle part ; ca l'est maintenant dans `docs/dpo.md`.
+- **`audit_log` est ecrite mais lue par aucune route, aucun ecran, aucun export.**
+  `SECURITY.md` et `docs/dpo.md` la presentaient comme une piste d'audit disponible. La
+  limite y figure desormais, avec l'accumulation non bornee des IP.
+- **`docs/supporter.md`** ouvrait sur « tout est hors-ligne » ; seule la verification de
+  licence l'est.
+- **`docs/features.md`** annoncait les quatre motifs de masquage « tous ON par defaut » —
+  faux en Community, ou trois d'entre eux sont forces a inactif.
+- **`docs/roadmap.md`** promettait multi-tenant / SSO SAML / audit ISO / AD « deverrouilles
+  a l'unite par licence » : `KNOWN_FEATURES` ne connait que trois cles et jette
+  silencieusement les autres.
+
+### Corrige — noms d'ecrans hérités d'avant le decoupage 0.9.80
+
+`docs/modes.md` et `docs/llm-providers.md` renvoyaient encore a « Perimetre » et « page IA »
+(devenus **Regles metier** et **Fournisseur IA**) ; `docs/roadmap.md` citait `EngineSettings`,
+ecran supprime. `frontend/src/lib/demo.ts` decrivait les patterns regex personnalises comme
+livres alors que sa propre page Confidentialite les classe roadmap. Le libelle de la
+categorie PII devient « NIR / SIREN / SIRET » : le SIREN *est* masque
+(`features/pii_advanced.py`), c'est le produit qui le sous-declarait.
+
+### Publication
+
+Cette version emporte le correctif Ollama merge apres le tag `v0.9.80` : l'image publiee en
+0.9.80 accumule encore une depense pour un fournisseur local qui ne facture rien.
+
 ## 2026-08-12 — 0.9.80 — L'interface cesse d'affirmer ce qu'elle n'a pas mesuré
 
 Une revue écran par écran de la console. Le fil rouge n'était pas esthétique : à plusieurs
