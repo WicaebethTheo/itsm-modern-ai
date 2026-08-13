@@ -75,6 +75,42 @@ fi
 # Bornée VOLONTAIREMENT (pas de boucle infinie muette) : au bout du plafond on sort en
 # erreur avec un message exploitable — une base durablement injoignable est une panne à
 # diagnostiquer, pas quelque chose à attendre en silence.
+# Hôte visé par DATABASE_URL, lu depuis l'URL RÉELLE du moteur (pas une reconstruction).
+hote_de_la_base() {
+  python -c "
+from sqlalchemy import make_url
+from itsm_modern_ai.config.settings import get_settings
+print(make_url(get_settings().database_url).host or '')
+" 2>/dev/null || echo ""
+}
+
+# Conseil affiché QUAND l'hôte visé est la boucle locale.
+#
+# Le défaut du code est `...@localhost:5432` — pensé pour un `make run` depuis les sources.
+# Dans un conteneur, `localhost` désigne le conteneur LUI-MÊME, qui n'embarque aucun
+# PostgreSQL : un `docker run` sans `DATABASE_URL` ne peut donc pas aboutir. Sans ce
+# message, l'exploitant attendait le plafond entier — deux minutes — pour lire ensuite
+# « vérifiez le service postgres (docker compose logs postgres) », c'est-à-dire un conseil
+# qui ne s'applique PAS au chemin qu'il a pris.
+#
+# On n'échoue pas pour autant : avec `--network host`, `localhost` désigne l'hôte, et un
+# PostgreSQL peut très bien y écouter — la configuration est alors parfaitement valable,
+# elle a juste besoin qu'on la laisse démarrer.
+conseil_si_base_locale() {
+  case "$1" in
+    localhost|127.0.0.1|::1|"") ;;
+    *) return 0 ;;
+  esac
+  echo "[entrypoint] DATABASE_URL vise « $1 » : dans un conteneur, c'est CE conteneur," >&2
+  echo "[entrypoint]   et l'image n'embarque aucun PostgreSQL. Trois façons d'en fournir un :" >&2
+  echo "[entrypoint]   · docker compose (recommandé) — le compose du README lève la base ;" >&2
+  echo "[entrypoint]   · docker run --network <reseau> -e DATABASE_URL=postgresql+psycopg://" >&2
+  echo "[entrypoint]     <user>:<mdp>@<hote>:5432/<base> — pointez le conteneur PostgreSQL ;" >&2
+  echo "[entrypoint]   · une base gérée par la DSI : même variable, son hôte à elle." >&2
+  echo "[entrypoint]   (Si vous utilisez --network host avec un PostgreSQL sur la machine," >&2
+  echo "[entrypoint]    ignorez ceci : l'attente ci-dessous fera son travail.)" >&2
+}
+
 DB_DERNIERE_ERREUR=""
 attendre_la_base() {
   local plafond="${DB_WAIT_MAX_TRIES:-60}" delai="${DB_WAIT_DELAY:-2}" essai=1
@@ -94,6 +130,9 @@ create_engine(get_settings().database_url).connect().close()
       return 0
     fi
     echo "[entrypoint] base PostgreSQL injoignable — tentative $essai/$plafond, nouvel essai dans ${delai}s"
+    # Le conseil sort à la PREMIÈRE tentative ratée, pas au bout du plafond : deux secondes
+    # au lieu de deux minutes pour savoir qu'on cherche une base là où il n'y en a pas.
+    [ "$essai" -eq 1 ] && conseil_si_base_locale "$(hote_de_la_base)"
     essai=$((essai + 1))
     sleep "$delai"
   done
@@ -101,8 +140,11 @@ create_engine(get_settings().database_url).connect().close()
 }
 
 if ! attendre_la_base; then
-  echo "[entrypoint] ÉCHEC : PostgreSQL est resté injoignable. Vérifiez le service 'postgres'" >&2
-  echo "[entrypoint]   (docker compose logs postgres) et DATABASE_URL." >&2
+  echo "[entrypoint] ÉCHEC : PostgreSQL est resté injoignable." >&2
+  # Les DEUX chemins, pas seulement compose : ce message s'adressait au seul déploiement
+  # qui, précisément, n'en a presque jamais besoin.
+  echo "[entrypoint]   · sous compose : docker compose logs postgres" >&2
+  echo "[entrypoint]   · sinon : vérifiez DATABASE_URL (hôte, port, identifiants, réseau)." >&2
   echo "[entrypoint] Dernière erreur : $(echo "$DB_DERNIERE_ERREUR" | tail -3)" >&2
   exit 1
 fi

@@ -314,6 +314,46 @@ def test_le_chown_de_l_entrypoint_epargne_REELLEMENT_le_pgdata(tmp_path):
     assert {"logs", "master.key"} <= listes, "la commande extraite ne liste plus rien"
 
 
+@pytest.mark.parametrize(
+    ("hote", "conseille"),
+    [
+        pytest.param("localhost", True, id="localhost"),
+        pytest.param("127.0.0.1", True, id="ipv4-boucle"),
+        pytest.param("", True, id="url-sans-hote"),
+        pytest.param("postgres", False, id="service-compose"),
+        pytest.param("db.interne.lan", False, id="base-de-la-dsi"),
+    ],
+)
+def test_l_entrypoint_dit_la_verite_a_qui_n_utilise_pas_compose(hote, conseille):
+    """Le message d'aide doit s'adresser au chemin RÉELLEMENT pris.
+
+    Le défaut du code est `...@localhost:5432`, pensé pour un `make run` depuis les sources.
+    Dans un conteneur, `localhost` désigne CE conteneur, qui n'embarque aucun PostgreSQL :
+    un `docker run` sans `DATABASE_URL` ne peut pas aboutir. L'exploitant attendait pourtant
+    le plafond entier — soixante tentatives, deux minutes — pour lire ensuite « vérifiez le
+    service postgres (docker compose logs postgres) », un conseil qui ne s'applique pas au
+    chemin qu'il a pris.
+
+    La fonction est EXÉCUTÉE : chercher le mot « docker run » dans le script prouverait
+    qu'on l'a écrit, pas qu'il sort au bon moment ni pour le bon hôte. Et elle ne doit PAS
+    parler quand l'hôte est légitime, sinon elle devient un bruit qu'on apprend à ignorer.
+    """
+    fonctions = _fonctions_shell("docker/entrypoint.sh", "conseil_si_base_locale")
+    lance = subprocess.run(
+        ["bash", "-c", f'{fonctions}\nconseil_si_base_locale "{hote}"'],
+        capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL,
+    )
+    sortie = lance.stdout + lance.stderr
+    if conseille:
+        assert "n'embarque aucun PostgreSQL" in sortie, f"aucun conseil pour l'hôte « {hote} »"
+        # Les trois issues réelles, pas la seule qui suppose compose.
+        assert "docker compose" in sortie and "docker run" in sortie
+        # …et le cas légitime `--network host` n'est pas présenté comme une erreur.
+        assert "--network host" in sortie
+    else:
+        assert sortie.strip() == "", f"conseil hors-sujet pour l'hôte « {hote} »"
+
+
 def test_l_entrypoint_attend_la_base_avant_de_migrer():
     """Sans attente, `alembic upgrade head` échoue à la première seconde du premier
     `up -d` (le cluster n'accepte pas encore les connexions), `set -e` tue le conteneur et
