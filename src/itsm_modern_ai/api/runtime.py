@@ -111,6 +111,12 @@ def build_llm(settings: Settings, secrets: SecretsPort) -> LlmPort | None:
     )
 
 
+# Fournisseurs qui n'emettent aucune facture : le modele tourne sur l'infrastructure de
+# l'exploitant. Y appliquer un tarif reviendrait a inventer une depense — et le plafond de
+# cout, lui, est bien reel dans ses effets.
+FOURNISSEURS_SANS_FACTURATION = frozenset({"ollama"})
+
+
 def build_triage_service(
     settings: Settings, secrets: SecretsPort, itsm: ItsmPort | None = None
 ) -> TriageService | None:
@@ -185,6 +191,23 @@ def build_triage_service(
         # valeurs surchargées, sans modifier triage.py (calcul du cost cap juste après bascule).
         price_in = cfg.get_float("llm_price_input_per_mtok", settings.llm_price_input_per_mtok)
         price_out = cfg.get_float("llm_price_output_per_mtok", settings.llm_price_output_per_mtok)
+        # …SAUF pour un fournisseur qui ne FACTURE RIEN.
+        #
+        # Les tarifs par défaut valent 2,0 et 6,0 €/Mtok, et `triage._journal_llm_call` les
+        # applique sans regarder le fournisseur. Une instance Ollama — modèle 100 % local,
+        # aucune facturation, c'est le chemin souverain que le produit met en avant —
+        # accumulait donc une dépense INEXISTANTE, jusqu'à heurter le plafond (5 €/jour par
+        # défaut). Passé ce point, `cost_cap.is_over_cap` renvoie True et TOUS les nouveaux
+        # tickets partent « à trier » sans un seul appel au modèle : le déploiement gratuit
+        # s'arrête de trier, pour une dépense qui n'a jamais eu lieu.
+        #
+        # On met donc les tarifs à zéro plutôt que de neutraliser le plafond : le journal des
+        # appels reste écrit (nombre d'appels, modèle, tokens — l'observabilité ne change
+        # pas), seule la colonne de coût dit la vérité, et le plafond continue de protéger
+        # un basculement ultérieur vers un fournisseur payant.
+        fournisseur = cfg.get("llm_provider") or settings.llm_provider
+        if fournisseur in FOURNISSEURS_SANS_FACTURATION:
+            price_in = price_out = 0.0
     settings = settings.model_copy(
         update={
             "llm_price_input_per_mtok": price_in,
