@@ -60,7 +60,9 @@ Les fonctionnalités Supporter se **reverrouillent** immédiatement ; la donnée
   SQLite (PostgreSQL encaisse les écritures concurrentes) : c'est que le pilote est **mono-process**
   — le rate-limit du login est en mémoire (pas de store partagé, donc contournable en tournant à
   plusieurs) et deux planificateurs se disputeraient les cycles de poll.
-- **Air-gap / souveraineté** : tout est hors-ligne. La licence est vérifiée par signature
+- **Air-gap / souveraineté** : *la vérification de licence* est hors-ligne — pas la totalité
+  du produit. Le vérificateur de version interroge GitHub par défaut (le couper : `UPDATE_CHECK_URL=`
+  vide), et le fournisseur LLM est appelé sauf en Ollama local. La licence est vérifiée par signature
   Ed25519 embarquée — **aucun appel sortant**, aucun serveur de licence à joindre. La clé
   **privée** de signature reste dans le dépôt privé de signature des licences ; elle n'est
   jamais ici.

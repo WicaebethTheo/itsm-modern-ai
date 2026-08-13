@@ -6,7 +6,7 @@
 
 ### Court terme
 
-- **Couverture E2E étendue** — actuellement 3 parcours Playwright (login → dashboard, navigation → journal, sandbox). À ajouter : Scope/Modes (configuration du périmètre en parcours réel), EngineSettings (masquage PII configurable), Technicians (édition des fiches).
+- **Couverture E2E étendue** — actuellement 7 specs Playwright. À ajouter : Règles métier (configuration du périmètre en parcours réel), Confidentialité (DPO) (masquage PII configurable), Techniciens (édition des fiches).
 - **Page Supporter / Automations marketplace** — placeholders UI en place ; backing en cours pour la rétention RGPD. Reste à brancher les automations restantes (notifications, exports planifiés, etc.).
 
 ### Moyen terme
@@ -23,7 +23,7 @@
 
 ### Long terme
 
-- **Modules Supporter** (open-core) — multi-tenant, SSO SAML, audit log signé ISO, self-service AD hors-bande. Hors cible PME, déverrouillés à l'unité par licence.
+- **Modules Supporter** (open-core) — multi-tenant, SSO SAML, audit log signé ISO, self-service AD hors-bande. Hors cible PME, et **hors du catalogue actuel** : `KNOWN_FEATURES` (`domain/licensing.py`) ne connaît que `pii_advanced`, `multi_entity` et `scheduled_exports`, et toute autre clé portée par une licence est silencieusement ignorée. Les livrer supposerait donc d'abord d'étendre le catalogue — ce ne sont pas des modules qu'une clé débloquerait aujourd'hui.
 - **NER française complète** pour le masquage PII (V1 = regex email/tél/IBAN/secret). Couvrira noms/adresses, à valider DPO.
 - **Calibration du seuil de confiance** par catégorie et par entité (V1 = seuil unique global, configurable).
 

@@ -1,6 +1,6 @@
 # Modes d'exécution
 
-> Trois modes, réglables **par entité GLPI** dans la console (page Périmètre → `PUT /api/modes`). Défaut global sûr : `suggestion`.
+> Trois modes, réglables **par entité GLPI** dans la console (page **Règles métier** → `PUT /api/modes`). Défaut global sûr : `suggestion`.
 
 | Mode | Mutation GLPI | Suivi | Réponse au demandeur | Quand l'utiliser |
 |---|:---:|:---:|:---:|---|

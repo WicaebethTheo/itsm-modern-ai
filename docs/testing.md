@@ -4,7 +4,7 @@
 
 | Suite | Compte | Commande |
 |---|---:|---|
-| **pytest** (unit + integration via `respx`) | **698** | `make test` |
+| **pytest** (unit + integration via `respx`) | **699** | `make test` |
 | **Vitest + Testing Library** (composants + pages) | **460** (36 fichiers) | `make ui-test` |
 | **Playwright** (E2E, API mockée) | **11 parcours** (6 fichiers) | `make ui-e2e` |
 | **ruff** (Python) | 0 violation | `make lint` |
@@ -117,7 +117,7 @@ couverture soit suffisante.
 | Suite | Mesure | Seuil | Commande |
 |---|---:|---:|---|
 | Backend | **88,0 %** de *branches* (90,0 % de lignes) | 85 % | `pytest --cov` |
-| Frontend | **72,1 %** de *statements*, 62,6 % de branches | 65 / 56 / 65 | `npm run test:coverage` |
+| Frontend | **88,1 %** de *statements*, 83,6 % de branches, 90,1 % de lignes | 85 / 78 / 86 | `npm run test:coverage` |
 
 Deux choix de configuration qui font toute la différence :
 
