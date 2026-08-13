@@ -1,3 +1,14 @@
+/* Geist, AUTO-HÉBERGÉE. Le stack `--font-sans` la déclarait depuis toujours sans que
+   personne ne l'ait jamais installée : le document ne portait AUCUNE `@font-face`, et
+   `"Geist Variable"` mesurait exactement comme une famille inventée. Toute la console
+   tournait donc sur la police par défaut du navigateur — le « fallback sans casse » du
+   commentaire ci-dessous, qui aura duré.
+
+   Le paquet embarque le fichier : rien n'est tiré d'un CDN, l'invariant de souveraineté
+   tient (une instance air-gap affiche la même chose qu'une autre). Cinq sous-ensembles
+   sont livrés, mais chacun porte son `unicode-range` : un navigateur en français ou en
+   anglais ne télécharge que le latin, soit 29 Ko. */
+@import "@fontsource-variable/geist";
 @import "tailwindcss";
 
 /* Variante sombre activée par la classe `.dark` sur <html>. */
@@ -124,7 +135,11 @@
     color: hsl(var(--foreground));
     font-family: var(--font-sans);
     font-feature-settings: "ss01", "cv11";
-    -webkit-font-smoothing: antialiased;
+    /* PAS de `-webkit-font-smoothing: antialiased`. Cette ligne coupe le rendu SOUS-PIXEL :
+       sur un écran Retina elle affine le texte de façon flatteuse, mais sur un écran 1×
+       — la majorité des postes d'exploitation — elle jette les deux tiers de l'information
+       que l'écran sait afficher, et tout le texte paraît pâle et cotonneux. On laisse donc
+       le navigateur choisir : il sait, lui, sur quelle dalle il peint. */
     text-rendering: optimizeLegibility;
   }
   /* Focus visible cohérent (spec § 8). */

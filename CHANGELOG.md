@@ -64,6 +64,29 @@ toutes les semaines. Deux entrées changent donc de section :
 Dans « Configuration », l'ordre suit le pipeline de triage : d'où viennent les tickets, qui
 les lit, sous quelles limites, sur quel périmètre, vers qui, avec quel masquage.
 
+### Typographie — la police du produit n'avait jamais été chargée
+
+`--font-sans` déclarait `"Geist Variable"` depuis la première version, avec ce commentaire :
+« tant que le paquet n'est pas installé, le fallback s'applique sans casse ». Le paquet n'avait
+jamais été installé et aucun fichier ne l'importait : le document ne portait **aucune**
+`@font-face`, et `"Geist Variable"` mesurait exactement comme une famille inventée. Toute la
+console tournait donc sur la police par défaut du navigateur — c'est-à-dire sur une police
+différente d'un poste à l'autre. Un stack de polices échoue toujours en silence : c'est sa
+raison d'être. **Geist est désormais embarquée**, servie par l'instance (aucun CDN, l'invariant
+de souveraineté tient, et une instance air-gap affiche la même chose qu'une autre) ; le
+navigateur ne télécharge que le sous-ensemble latin, 29 Ko. Deux tests E2E verrouillent le
+point : la police est *chargée* et non seulement déclarée, et aucune requête ne quitte la
+machine.
+
+`-webkit-font-smoothing: antialiased` est retiré. Il coupe le rendu sous-pixel : flatteur sur
+un écran Retina, il jette sur un écran 1× — la majorité des postes d'exploitation — les deux
+tiers de l'information que la dalle sait afficher, et le texte paraît pâle et cotonneux.
+
+Les icônes de la barre latérale sont dessinées dans un carré de 24 et rendues à 16 px : avec
+le trait par défaut de la bibliothèque, elles peignaient un trait de **1,31 px**, à cheval sur
+deux colonnes de pixels. Il vaut désormais **1 px pile**, comme les SVG dessinés à la main
+qu'elles remplacent (1,7 sur 14 px).
+
 ### Compte administrateur
 
 L'entête passe de neuf objets à quatre, et affiche enfin **quel compte est connecté**

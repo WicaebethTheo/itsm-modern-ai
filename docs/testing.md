@@ -6,7 +6,7 @@
 |---|---:|---|
 | **pytest** (unit + integration via `respx`) | **679** | `make test` |
 | **Vitest + Testing Library** (composants + pages) | **433** (32 fichiers) | `make ui-test` |
-| **Playwright** (E2E, API mockée) | **7 parcours** (4 fichiers) | `make ui-e2e` |
+| **Playwright** (E2E, API mockée) | **9 parcours** (5 fichiers) | `make ui-e2e` |
 | **ruff** (Python) | 0 violation | `make lint` |
 | **Biome + tsc** (TS/JSX) | 0 violation | `make ui-lint` |
 
@@ -142,7 +142,9 @@ non bloquants (`allow_failure`). À rebrancher dans `ci.yml` le jour où ils son
 - **uv** pour la gestion des dépendances Python (rapide, déterministe).
 - **respx** pour mocker les appels HTTP GLPI et LLM dans les tests.
 - **Testing Library** pour les tests React (oriented user behavior).
-- **Playwright** pour les E2E (3 parcours : login → dashboard, navigation → journal, login → sandbox).
+- **Playwright** pour les E2E — parcours d'usage (installation, connexion, navigation, bac à sable)
+  et deux contrôles que jsdom ne peut pas rendre : la police du produit est-elle réellement
+  chargée, et l'interface tire-t-elle quelque chose d'un hôte tiers.
 
 ## Voir aussi
 

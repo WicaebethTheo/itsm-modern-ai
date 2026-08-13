@@ -335,7 +335,15 @@ export function Layout() {
                               )
                             }
                           >
-                            <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                            {/* `strokeWidth` 1.5, pas le 2 par défaut de lucide : l'icône est
+                            dessinée dans un viewBox de 24 et rendue à 16 px, donc le trait
+                            vaut `2 × 16/24 = 1,33 px` — il tombe À CHEVAL sur deux colonnes
+                            de pixels et l'antialiasing le rend cotonneux. 1,5 donne
+                            `1,5 × 16/24 = 1 px` PILE, net sur un écran 1× comme sur un 2×.
+                            Les SVG dessinés à la main qui précédaient appliquaient déjà ce
+                            calcul (1,7 sur 14 px = 0,99 px) ; on ne le perd pas en passant
+                            à une bibliothèque. */}
+                        <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                             <span className="truncate">{t(it.fr, it.en)}</span>
                           </NavLink>
                         </li>
