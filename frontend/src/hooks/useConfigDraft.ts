@@ -42,8 +42,16 @@ export interface ConfigDraft<D> {
   dirty: boolean;
   saving: boolean;
   patch: (p: Partial<D>) => void;
-  /** `garde` peut refuser l'enregistrement (confirmation déclinée) en rendant `false`. */
-  save: (garde?: () => boolean) => Promise<void>;
+  /**
+   * `garde` peut refuser l'enregistrement (confirmation déclinée) en rendant `false`.
+   *
+   * Rend `true` UNIQUEMENT si le serveur a accepté. Sans cette valeur, un appelant qui
+   * enchaîne sur `save()` — pour relire une ressource voisine, par exemple — le faisait
+   * aussi bien après un échec : la page se rafraîchissait comme après un succès, ce qui
+   * accrédite l'idée que l'enregistrement a eu lieu. Et le chemin d'échec, n'étant pas
+   * distinguable, n'était testable nulle part.
+   */
+  save: (garde?: () => boolean) => Promise<boolean>;
 }
 
 export function useConfigDraft<D>(
@@ -54,14 +62,29 @@ export function useConfigDraft<D>(
   const toast = useToast();
   const cfg = useResource(useCallback(() => Api.getConfig(), []));
   const c = cfg.data;
-  const [draft, setDraft] = useState<D>(() => toDraft(null));
+
+  // Les deux projections sont FIGÉES au premier rendu, et c'est un garde-fou, pas une
+  // optimisation. Placées dans les dépendances du `useMemo` et de l'effet ci-dessous, une
+  // projection recréée à chaque rendu — c'est-à-dire définie dans le corps du composant
+  // appelant au lieu du module — bouclait : nouvelle identité → effet → `setDraft` → rendu
+  // → nouvelle identité. Mesuré : « Maximum update depth exceeded », vingt-sept fois. React
+  // finit par couper la boucle, donc la page s'affiche et seule la console hurle : le pire
+  // symptôme, celui qu'on ne voit pas. Le contrat n'était tenu que par un commentaire ; il
+  // l'est désormais par le code, quelle que soit la façon dont un appelant les passe.
+  const proj = useRef({ toDraft, toPayload });
+
+  const [draft, setDraft] = useState<D>(() => proj.current.toDraft(null));
   const [saving, setSaving] = useState(false);
-  const saved = useMemo(() => toDraft(c), [c, toDraft]);
+  const saved = useMemo(() => proj.current.toDraft(c), [c]);
   const edite = useRef(false);
 
   useEffect(() => {
-    if (c && !edite.current) setDraft(toDraft(c));
-  }, [c, toDraft]);
+    if (c && !edite.current) setDraft(proj.current.toDraft(c));
+  }, [c]);
+
+  // Dernière identité de brouillon connue, lisible depuis une clôture asynchrone.
+  const dernierDraft = useRef(draft);
+  dernierDraft.current = draft;
 
   const patch = useCallback((p: Partial<D>) => {
     edite.current = true;
@@ -71,23 +94,34 @@ export function useConfigDraft<D>(
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
 
   const save = useCallback(
-    async (garde?: () => boolean) => {
-      if (garde && !garde()) return;
+    async (garde?: () => boolean): Promise<boolean> => {
+      if (garde && !garde()) return false;
       setSaving(true);
+      // Le brouillon TEL QU'ENVOYÉ. La garde ci-dessous compare la fin de l'appel à ce
+      // point de départ ; `draft` seul ne le permet pas, il est figé dans cette clôture.
+      const envoye = draft;
       try {
-        await Api.updateConfig(toPayload(draft));
+        await Api.updateConfig(proj.current.toPayload(envoye));
         // Le serveur redevient la référence : il a pu NORMALISER une valeur, la relecture
         // doit pouvoir la ramener.
-        edite.current = false;
+        //
+        // MAIS seulement si rien n'a été tapé PENDANT l'appel. Les champs ne sont pas
+        // désactivés le temps du POST : baisser le drapeau inconditionnellement, c'était
+        // autoriser la relecture à écraser une saisie faite entre le clic et la réponse —
+        // sans un mot, et sur la moitié précisément que le commentaire ci-dessus promet de
+        // protéger. La garde ne couvrait que l'autre moitié (la saisie pendant le GET).
+        if (dernierDraft.current === envoye) edite.current = false;
         cfg.reload();
         toast.success(succes);
+        return true;
       } catch (e: unknown) {
         toast.error(`${tr("Erreur", "Error")} : ${(e as Error).message}`);
+        return false;
       } finally {
         setSaving(false);
       }
     },
-    [draft, toPayload, cfg.reload, toast, succes],
+    [draft, cfg.reload, toast, succes],
   );
 
   return { config: c, error: cfg.error, draft, saved, dirty, saving, patch, save };

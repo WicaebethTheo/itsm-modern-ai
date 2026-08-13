@@ -26,7 +26,7 @@ export function ErreurDeLecture({ error }: { error: string | null }) {
   const t = useT();
   if (!error) return null;
   return (
-    <Banner kind="error">
+    <Banner kind="error" role="alert">
       {t("Impossible de charger la configuration :", "Could not load the configuration:")} {error}
     </Banner>
   );
@@ -58,14 +58,26 @@ export function SaveBar({
 }) {
   const t = useT();
   return (
+    // `data-savebar` : repère lu par `FloatingActions` pour se pousser au-dessus de cette
+    // barre. Sans lui, le widget « café » recouvrait la moitié basse du bouton (mesuré à
+    // 1366×768). Un attribut plutôt qu'une connaissance des routes dans le Layout : la barre
+    // est la seule à savoir qu'elle existe, et le jour où un autre écran l'adopte, ça suit.
     <div
+      data-savebar=""
       className={cn(
         "sticky bottom-0 z-20 -mx-5 -mb-5 mt-2 border-t border-border bg-card/95 backdrop-blur",
         "supports-[backdrop-filter]:bg-card/80 sm:-mx-6 sm:-mb-6",
       )}
     >
       <div className="flex items-center justify-between gap-4 px-5 py-3 sm:px-6">
+        {/* Region live, comme la barre de `Scope.tsx` dont celle-ci est issue : l'attribut
+            s'etait perdu a la factorisation. Sans lui, le message `alerte` — « dont le
+            passage en ecriture reelle dans GLPI » — est inaudible, et le bouton etant
+            `disabled` tant que rien n'a change, il sort aussi de l'ordre de tabulation :
+            un lecteur d'ecran ne trouvait ni la commande, ni son explication. */}
         <p
+          role="status"
+          aria-live="polite"
           className={cn(
             "truncate text-body",
             alerte && dirty

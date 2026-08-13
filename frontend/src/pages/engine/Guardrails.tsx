@@ -1,5 +1,6 @@
 import { ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
+import { Banner } from "@/components/Banner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/label";
@@ -52,6 +53,19 @@ export function Guardrails() {
     ),
   );
   const { draft, patch } = cfg;
+
+  // Seuil semi-auto EN VIGUEUR (celui du serveur) : il se règle sur l'écran « Modes ».
+  // L'avertissement doit porter sur ce que le moteur applique, pas sur le brouillon d'un
+  // autre écran — c'est la même règle que le miroir de `Modes.tsx`.
+  const seuilSemi = cfg.config?.auto_min_confidence_default ?? "";
+  const conf = Number(draft.confiance);
+  const semi = Number(seuilSemi);
+  const semiInerte =
+    seuilSemi !== "" &&
+    draft.confiance !== "" &&
+    Number.isFinite(conf) &&
+    Number.isFinite(semi) &&
+    semi < conf;
 
   return (
     <div className="space-y-6">
@@ -129,6 +143,26 @@ export function Guardrails() {
           </Field>
         </CardContent>
       </Card>
+
+      {/* Miroir de l'avertissement de « Modes d'exécution ».
+          Sur l'ancienne page, les deux seuils voisinaient : le bandeau apparaissait à la
+          frappe, quel que soit celui des deux qu'on bougeait. Séparés, l'avertissement n'a
+          survécu que dans un sens — et c'est la direction la MOINS dangereuse qui a été
+          conservée. Monter le seuil de confiance au-dessus du seuil semi-auto rend ce
+          dernier inerte : `engine.evaluate()` a déjà renvoyé « à trier » avant que le mode
+          ne soit consulté. L'exploitant réduit donc l'automatisation qu'il croit avoir
+          réglée, sans qu'aucun écran ne le lui dise. */}
+      {semiInerte && (
+        <Banner kind="warning" role="status">
+          {t(
+            `Le seuil de confiance saisi (${draft.confiance}) dépasse le seuil semi-auto en vigueur (${seuilSemi}) : ce dernier n'aura plus aucun effet, la barrière d'entrée tranchera avant lui.`,
+            `The confidence threshold entered (${draft.confiance}) exceeds the enforced semi-auto threshold (${seuilSemi}): the latter will have no effect, the entry barrier decides first.`,
+          )}{" "}
+          <Link className="underline underline-offset-2 hover:text-foreground" to="/engine/modes">
+            {t("Régler les modes d'exécution", "Adjust the execution modes")}
+          </Link>
+        </Banner>
+      )}
 
       <SaveBar
         dirty={cfg.dirty}

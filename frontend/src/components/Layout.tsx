@@ -7,7 +7,7 @@ import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar } from "@/components/ui/avatar";
 import { useResource } from "@/hooks/useResource";
-import { Api, updateCommand, type VersionInfo } from "@/lib/api";
+import { Api, asBool, updateCommand, type VersionInfo } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { NAV, navByPath } from "@/lib/nav";
 import { cn } from "@/lib/utils";
@@ -140,7 +140,13 @@ function AccountMenu({ v, onLogout }: { v: VersionInfo | null; onLogout: () => v
   );
 }
 
-function Topbar({ onLogout }: { onLogout: () => void }) {
+/**
+ * `isSupporter` vaut `null` tant que la licence n'a PAS été lue — et ce n'est pas un détail :
+ * le chip d'édition ne s'affiche qu'une fois la réponse arrivée, parce qu'annoncer une
+ * édition avant de l'avoir lue serait un pari, pas une information. Un simple booléen
+ * aurait écrasé « inconnu » sur « Community ».
+ */
+function Topbar({ onLogout, isSupporter }: { onLogout: () => void; isSupporter: boolean | null }) {
   const t = useT();
   const { pathname } = useLocation();
   const item = navByPath(pathname);
@@ -149,9 +155,6 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
   const g = health.data?.glpi;
   const version = useResource(useCallback(() => Api.version(), []));
   const v = version.data;
-  const license = useResource(useCallback(() => Api.getLicense(), []));
-  // Édition = Supporter uniquement si une feature est réellement active (cohérent Store).
-  const isSupporter = (license.data?.features ?? []).some((f) => f.active);
   // Re-vérifie périodiquement (page ouverte) → l'indicateur de MAJ se met à jour seul,
   // sans recharger ni redémarrer. Le backend met le résultat en cache (TTL configurable).
   const reloadVersion = version.reload;
@@ -199,7 +202,7 @@ function Topbar({ onLogout }: { onLogout: () => void }) {
             En Community le chip est donc NEUTRE ; il ne redevient violet qu'une fois la
             licence active. Affiché seulement quand la licence est connue : annoncer une
             édition avant de l'avoir lue serait un pari, pas une information. */}
-        {license.data ? (
+        {isSupporter !== null ? (
           <NavLink
             to="/store"
             title={
@@ -266,11 +269,20 @@ export function Layout() {
   // API GLPI réellement configurée (affichée en pied de sidebar).
   const cfg = useResource(useCallback(() => Api.getConfig(), []));
   const isV2 = cfg.data?.glpi_api_version === "v2";
+  const pollingActif = asBool(cfg.data?.polling_enabled);
 
   async function logout() {
     await Api.logout().catch(() => undefined);
     navigate("/login");
   }
+
+  // Licence lue UNE FOIS pour tout le châssis : la topbar (chip d'édition) et les widgets
+  // flottants (bouton « café », masqué pour un client payant) la demandaient chacun de leur
+  // côté — deux `/api/license` identiques sur chaque écran de la console.
+  const license = useResource(useCallback(() => Api.getLicense(), []));
+  // Édition = Supporter uniquement si une feature est réellement active (cohérent Store).
+  // `null` = pas encore lue, cf. la docstring de `Topbar`.
+  const isSupporter = license.data ? license.data.features.some((f) => f.active) : null;
 
   return (
     // Fond « backdrop » + padding : la console flotte dans un châssis centré.
@@ -372,23 +384,37 @@ export function Layout() {
                     : t("API GLPI : apirest", "GLPI API: apirest")}
                 </div>
               ) : null}
-              <div className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
-                {t("Moteur en marche", "Engine running")}
-              </div>
+              {/* MESURÉ, plus affirmé. Cette pastille était verte en dur : avec le polling
+                  coupé, la barre annonçait « Moteur en marche » à cinq centimètres de l'écran
+                  Ingestion qui affichait « Désactivé » — deux affirmations contraires sur le
+                  même écran. La donnée était pourtant déjà là : `Layout` lit `/api/config`
+                  pour la ligne du dessus. Tant qu'elle n'est pas lue, on n'affiche rien. */}
+              {cfg.data ? (
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 shrink-0 rounded-full",
+                      pollingActif ? "bg-success" : "bg-muted-foreground/50",
+                    )}
+                  />
+                  {pollingActif
+                    ? t("Moteur en marche", "Engine running")
+                    : t("Polling arrêté", "Polling stopped")}
+                </div>
+              ) : null}
             </div>
           </aside>
 
           {/* Zone principale : topbar + contenu défilant. */}
           <div className="app-content flex min-w-0 flex-1 flex-col">
-            <Topbar onLogout={logout} />
+            <Topbar onLogout={logout} isSupporter={isSupporter} />
             <main className="flex-1 overflow-y-auto p-5 sm:p-6">
               <Outlet />
             </main>
           </div>
         </div>
       </div>
-      <FloatingActions />
+      <FloatingActions isSupporter={isSupporter === true} />
     </div>
   );
 }

@@ -329,6 +329,16 @@ export function Store() {
                   value={key}
                   placeholder={t("Coller la nouvelle clé…", "Paste the new key…")}
                   className="min-h-24 font-mono text-body"
+                  // `spellCheck` vaut `true` PAR DÉFAUT sur un <textarea>. La vérification
+                  // orthographique améliorée de Chrome envoie alors le contenu du champ aux
+                  // serveurs Google : la clé de licence sortait du poste. Cette branche a posé
+                  // ces attributs sur les cinq champs de secret GLPI/LLM ; celui-ci a été oublié
+                  // parce qu'il n'est pas un <input type="password">. Ici `autoComplete="off"`
+                  // est valide — l'exception Chrome ne vise que les champs de mot de passe.
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
                   onChange={(e) => setKey(e.target.value)}
                 />
                 <div className="flex flex-wrap items-center gap-2">
@@ -385,6 +395,16 @@ export function Store() {
               value={key}
               placeholder={t("Coller le jeton de licence…", "Paste the license token…")}
               className="min-h-24 font-mono text-body"
+              // `spellCheck` vaut `true` PAR DÉFAUT sur un <textarea>. La vérification
+              // orthographique améliorée de Chrome envoie alors le contenu du champ aux
+              // serveurs Google : la clé de licence sortait du poste. Cette branche a posé
+              // ces attributs sur les cinq champs de secret GLPI/LLM ; celui-ci a été oublié
+              // parce qu'il n'est pas un <input type="password">. Ici `autoComplete="off"`
+              // est valide — l'exception Chrome ne vise que les champs de mot de passe.
+              spellCheck={false}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
               onChange={(e) => setKey(e.target.value)}
             />
             <div className="flex flex-wrap items-center gap-2">

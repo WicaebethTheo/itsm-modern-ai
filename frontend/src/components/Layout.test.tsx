@@ -196,7 +196,10 @@ describe("Layout — menu de compte", () => {
     await openMenu();
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
-    expect(await trigger.call(null).catch(() => null)).toBeNull(); // le déclencheur est ouvert
+    // `queryByRole`, PAS le `findByRole` de `trigger()` : détourné en assertion négative,
+    // celui-ci ne pouvait que sonder pendant tout son délai d'attente avant de rejeter —
+    // 1,1 s brûlée par un test dont les voisins tournent en 90 ms. Sémantique identique.
+    expect(screen.queryByRole("button", { expanded: false })).toBeNull(); // il est ouvert
     const panel = popover();
     // Les deux bascules sont bien DANS le panneau, avec leur rôle natif.
     expect(within(panel).getByRole("button", { name: "Passer en anglais" })).toBeInTheDocument();

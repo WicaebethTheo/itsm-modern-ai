@@ -1,8 +1,7 @@
 import { Coffee } from "lucide-react";
-import { useCallback } from "react";
-import { useResource } from "@/hooks/useResource";
-import { Api, AUTHOR_NAME, BUYMEACOFFEE_URL, GITHUB_URL } from "@/lib/api";
+import { AUTHOR_NAME, BUYMEACOFFEE_URL, GITHUB_URL } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 function GithubIcon() {
   return (
@@ -12,19 +11,43 @@ function GithubIcon() {
   );
 }
 
-/** Widgets flottants bas-droite : lien GitHub (toujours) + « café » (Community seulement,
- *  masqué pour un Supporter = client payant). La version vit dans la barre du haut. */
-export function FloatingActions() {
+/**
+ * Widgets flottants bas-droite : lien GitHub (toujours) + « café » (Community seulement,
+ * masqué pour un Supporter = client payant). La version vit dans la barre du haut.
+ *
+ * `isSupporter` vient du Layout et n'est PLUS relu ici : ce composant et le chip d'édition
+ * de la topbar sont montés côte à côte dans le même Layout et demandaient chacun
+ * `/api/license`, soit deux appels identiques sur CHAQUE écran de la console.
+ */
+export function FloatingActions({ isSupporter }: { isSupporter: boolean }) {
   const t = useT();
-  const lic = useResource(useCallback(() => Api.getLicense(), []));
-  const isSupporter = (lic.data?.features ?? []).some((f) => f.active);
 
   return (
     // Les décalages DOIVENT rester supérieurs au padding du backdrop (`p-3 sm:p-5` dans
     // Layout.tsx, soit 12 px puis 20 px) : en dessous, le widget se pose à cheval sur la
     // bordure du châssis — moitié dedans, moitié dehors. 24 px puis 36 px le placent
     // franchement À L'INTÉRIEUR du panneau, avec une marge visuelle dans les deux cas.
-    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 sm:bottom-9 sm:right-9">
+    //
+    // …ET RIEN DU TOUT sur un écran qui porte une barre d'enregistrement (`data-savebar`,
+    // posé par `pages/engine/shared.tsx`).
+    //
+    // Mesuré au `elementFromPoint`, sur un écran de réglages assez long pour que la barre
+    // colle vraiment en bas : à 1366×768 comme à 1280×720, la MOITIÉ BASSE du bouton
+    // « Enregistrer » recevait ce lien. Un exploitant qui vise le bas du bouton — geste
+    // naturel, il est en bas de l'écran — n'enregistrait pas son réglage et se retrouvait
+    // sur une page de don.
+    //
+    // Remonter le widget ne règle rien, c'est mesuré aussi : sur un écran COURT la barre
+    // n'est plus collée mais dans le flux, et le widget remonté vient couvrir le HAUT du
+    // même bouton. La position n'est donc pas le problème — la cohabitation l'est. Une
+    // sollicitation de don qui recouvre une commande cesse d'être une sollicitation ; sur
+    // ces écrans-là, elle s'efface. Elle reste présente partout ailleurs dans la console.
+    <div
+      className={cn(
+        "fixed bottom-6 right-6 z-50 flex items-center gap-2 sm:bottom-9 sm:right-9",
+        "[body:has([data-savebar])_&]:hidden",
+      )}
+    >
       <a
         href={GITHUB_URL}
         target="_blank"

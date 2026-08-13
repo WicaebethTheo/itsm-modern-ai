@@ -174,10 +174,18 @@ def dpo_report(request: Request, cfg: RuntimeConfigService = Depends(get_config_
             status = "Masqué"
         elif c.scope == "roadmap":
             status = "À venir (non implémenté)"
-        elif c.scope == "supporter":
+        elif c.scope == "supporter" and not advanced:
+            # `and not advanced` : `scope` est STATIQUE, il dit de quelle édition relève un
+            # motif — jamais pourquoi il est inactif ici. Sans ce croisement, une instance
+            # sous licence VALIDE dont l'administrateur a délibérément décoché le masquage
+            # IBAN produisait un rapport disant « VERROUILLÉ (Supporter) » : le document
+            # remis à la DPO imputait à un défaut de licence une décision d'exploitation, et
+            # l'avertissement « transmis EN CLAIR » ci-dessous ne s'affichait pas non plus
+            # (il est conditionné à `advanced`). La DPO lisait donc « verrouillé » sans
+            # apprendre que la donnée sort en clair.
             status = "VERROUILLÉ (Supporter)"
         else:
-            status = "Désactivé"
+            status = "Désactivé (choix de l'administrateur) — transmis EN CLAIR"
         lines.append(f"| {c.label_fr} | `{c.example}` | {status} |")
     lines += [
         "",

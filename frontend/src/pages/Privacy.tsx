@@ -24,6 +24,9 @@ import {
   type PrivacyView,
 } from "@/lib/api";
 import { tr, useLang, useLocale, useT } from "@/lib/i18n";
+// Le bandeau d'échec de LECTURE, mutualisé avec les écrans du moteur : un formulaire qui
+// n'a rien lu n'est pas vide, il est rempli de ses propres défauts.
+import { ErreurDeLecture } from "@/pages/engine/shared";
 
 // Texte d'exemple du testeur : traduit, sinon un utilisateur anglophone teste une
 // phrase française (et n'y reconnaît pas ses propres motifs).
@@ -102,18 +105,26 @@ function ReglageMasquage({ supporter, onSaved }: { supporter: boolean; onSaved: 
   );
   const { draft, patch } = cfg;
 
-  // IBAN et secrets ne comptent comme masqués que si la licence Supporter les autorise :
-  // cocher la case sans la licence ne masque rien, et le compteur ne doit pas le prétendre.
-  const masques = [
-    draft.email,
-    draft.phone,
-    supporter && draft.iban,
-    supporter && draft.secret,
+  // Le compteur porte sur ce qui est ENREGISTRÉ (`cfg.saved`), jamais sur le brouillon.
+  //
+  // Deux raisons, et la seconde est la vraie. D'abord, IBAN et secrets ne comptent comme
+  // masqués que si la licence Supporter les autorise : cocher la case sans la licence ne
+  // masque rien. Ensuite et surtout : calculé sur le brouillon, le compteur passait à « 2/4 »
+  // à la seconde où l'on cochait une case, et Y RESTAIT si l'enregistrement échouait — trois
+  // lignes au-dessus d'un tableau qui continuait, à raison, d'annoncer « Envoyé en clair ».
+  // Une fois le toast d'erreur évanoui, l'écran affirmait un masquage inexistant. Ce tag est
+  // un ÉTAT ; l'intention, elle, est portée par « Modifications non enregistrées » plus bas.
+  const enregistres = [
+    cfg.saved.email,
+    cfg.saved.phone,
+    supporter && cfg.saved.iban,
+    supporter && cfg.saved.secret,
   ].filter(Boolean).length;
 
   async function enregistrer() {
-    await cfg.save();
-    onSaved();
+    // `save()` rend `false` quand le POST a échoué : sans ça, la page se rafraîchissait
+    // comme après un succès, ce qui accrédite l'idée que l'enregistrement a eu lieu.
+    if (await cfg.save()) onSaved();
   }
 
   return (
@@ -129,10 +140,17 @@ function ReglageMasquage({ supporter, onSaved }: { supporter: boolean; onSaved: 
           "Replaces sensitive data with [EMAIL]/[IBAN]… BEFORE sending to the LLM",
         )}
         right={
-          <Tag tone={masques === 4 ? "green" : masques === 0 ? "red" : "amber"}>{masques}/4</Tag>
+          <Tag tone={enregistres === 4 ? "green" : enregistres === 0 ? "red" : "amber"}>
+            {enregistres}/4
+          </Tag>
         }
       />
       <CardContent className="flex flex-col gap-4">
+        {/* Sans ce bandeau, une lecture de `/api/config` en échec laissait la carte afficher
+            ses défauts sûrs — quatre bascules cochées, « 4/4 » en VERT — sur la page même où
+            l'on vient promettre à une DPO qu'on ne dit que ce qu'on a mesuré. Le tableau du
+            dessus, lui, disait la vérité : deux affirmations opposées sur un seul écran. */}
+        <ErreurDeLecture error={cfg.error} />
         <Banner kind="error">
           {supporter
             ? t(
@@ -391,6 +409,14 @@ export function Privacy() {
               // Le tableau ci-dessus vient d'être démenti par l'enregistrement : le relire
               // est le minimum, sinon il affirme « Masqué » sur un motif qu'on vient de couper.
               privacy.reload();
+              // Et le RÉSULTAT DU TESTEUR aussi. Il a été calculé avec l'ancienne
+              // configuration, sous un titre qui dit « Envoyé au LLM » et un sous-titre qui
+              // promet « ce qui partira RÉELLEMENT ». Le laisser à l'écran après avoir coupé
+              // un motif, c'est afficher `[EMAIL]` au-dessus d'un tableau qui vient de dire
+              // que l'e-mail part en clair — le même écran affirmant l'inverse de lui-même,
+              // sur le seul sujet de la page. On le rend muet plutôt que menteur.
+              setResult(null);
+              setTested("");
             }}
           />
 

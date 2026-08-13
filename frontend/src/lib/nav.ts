@@ -44,10 +44,10 @@ import {
   Plug,
   ScrollText,
   ShieldCheck,
-  ShieldHalf,
   Sparkles,
   Terminal,
   Timer,
+  ToggleRight,
   UserCog,
   UserRound,
   Users,
@@ -86,7 +86,11 @@ export const NAV: NavSection[] = [
     en: "Engine",
     items: [
       { to: "/engine/guardrails", fr: "Garde-fous", en: "Guardrails", icon: ShieldCheck },
-      { to: "/engine/modes", fr: "Modes d'exécution", en: "Execution modes", icon: ShieldHalf },
+      // PAS un second bouclier : `ShieldCheck` et `ShieldHalf` partagent EXACTEMENT le même
+      // tracé extérieur dans lucide (`key: "oel41y"`), seul un ornement intérieur de quelques
+      // pixels les sépare — indiscernables à 16 px, et ces deux entrées sont voisines. Un
+      // interrupteur dit d'ailleurs mieux la question posée ici : quelle autonomie accorde-t-on.
+      { to: "/engine/modes", fr: "Modes d'exécution", en: "Execution modes", icon: ToggleRight },
       { to: "/engine/ingestion", fr: "Ingestion", en: "Ingestion", icon: Timer },
       {
         to: "/engine/prompt",

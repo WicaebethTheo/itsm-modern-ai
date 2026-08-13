@@ -18,6 +18,7 @@ import { Api, type ConfigUpdate, type ConfigView } from "@/lib/api";
 import { tr, useLocale, useT } from "@/lib/i18n";
 import { reasonLabel, reasonTone } from "@/lib/labels";
 import { cn } from "@/lib/utils";
+import { ErreurDeLecture } from "@/pages/engine/shared";
 
 /** Décisions affichées dans l'aperçu du journal (la page complète est dans Journal). */
 const PREVIEW_ROWS = 8;
@@ -82,8 +83,10 @@ function ReglagesDeLaVue({ onSaved }: { onSaved: () => void }) {
   const { draft, patch } = cfg;
 
   async function enregistrer() {
-    await cfg.save();
-    onSaved();
+    // Uniquement en cas de SUCCÈS : `onSaved` déclenche un `/api/operational-metrics`, qui
+    // interroge GLPI. Le jouer après un échec, c'est taper GLPI pour rien tout en donnant
+    // le signal visuel « la page vient de se rafraîchir », qui accrédite l'enregistrement.
+    if (await cfg.save()) onSaved();
   }
 
   return (
@@ -96,18 +99,25 @@ function ReglagesDeLaVue({ onSaved }: { onSaved: () => void }) {
           </span>
         }
         subtitle={t(
-          "Profondeur d'analyse et seuil d'anomalie — sans effet sur le triage.",
-          "Analysis depth and anomaly threshold — no effect on triage.",
+          "Profondeur d'analyse et seuil d'anomalie de la carte « Opérationnel (GLPI) » — sans effet sur le triage.",
+          "Analysis depth and anomaly threshold for the “Operational (GLPI)” card — no effect on triage.",
         )}
       />
       <CardContent className="flex flex-col gap-4">
+        <ErreurDeLecture error={cfg.error} />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field
             htmlFor="cfg-window-days"
             label={t("Fenêtre (jours)", "Window (days)")}
+            // « les métriques ci-dessus » était faux, et vérifiable : cette clé n'est lue que
+            // par `/api/operational-metrics` (`routes/insights.py`). Les cinq compteurs sont
+            // des CUMULS depuis la mise en service et la tendance est fixée à 14 jours côté
+            // serveur — la page le dit elle-même en tête. Un admin qui passait la fenêtre à
+            // 90 voyait donc ses KPI inchangés : soit il concluait que le réglage est cassé,
+            // soit — bien pire — que ses compteurs couvraient désormais 90 jours.
             hint={t(
-              "Profondeur d'historique analysée par les métriques ci-dessus.",
-              "History depth analysed by the metrics above.",
+              "Profondeur d'historique des métriques « Opérationnel (GLPI) » ci-dessus : SLA, réaffectation, anomalies. Sans effet sur les compteurs cumulés, sur la tendance 14 jours, ni sur le triage.",
+              "History depth for the “Operational (GLPI)” metrics above: SLA, reassignment, anomalies. No effect on the cumulative counters, on the 14-day trend, or on triage.",
             )}
           >
             <Input
@@ -694,9 +704,10 @@ export function Dashboard() {
           d'anomalie pilotent « Opérationnel (GLPI) » juste au-dessus. */}
       <ReglagesDeLaVue
         onSaved={() => {
-          // Les métriques sont calculées SERVEUR avec ces bornes : sans relecture, la page
-          // afficherait encore la fenêtre précédente en annonçant la nouvelle.
-          metrics.reload();
+          // SEUL `operational-metrics` dépend de ces deux bornes (`routes/insights.py`) :
+          // il est calculé SERVEUR, donc sans relecture la carte garderait la fenêtre
+          // précédente en annonçant la nouvelle. `/api/metrics` n'en dépend pas — le relire
+          // aurait entretenu l'idée que ces réglages pilotent les compteurs du haut.
           ops.reload();
         }}
       />

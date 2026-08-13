@@ -9,6 +9,10 @@
    sont livrés, mais chacun porte son `unicode-range` : un navigateur en français ou en
    anglais ne télécharge que le latin, soit 29 Ko. */
 @import "@fontsource-variable/geist";
+/* Idem pour la mono : `--font-mono` déclarait « Geist Mono Variable » sans que le paquet
+   soit installé — la MÊME police fantôme, restée en place quand la sans a été corrigée.
+   Elle sert aux identifiants de tickets, au prompt système et aux extraits de code. */
+@import "@fontsource-variable/geist-mono";
 @import "tailwindcss";
 
 /* Variante sombre activée par la classe `.dark` sur <html>. */

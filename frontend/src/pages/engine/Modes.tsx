@@ -157,7 +157,10 @@ export function Modes() {
             </Field>
           </div>
           {seuilInutile && (
-            <Banner kind="warning">
+            // `role="status"` : l'avertissement APPARAIT en reaction a une saisie. Sans lui,
+            // un lecteur d'ecran ne dit rien. C'est la convention du depot (Dashboard, Scope,
+            // Journal, Status l'appliquent) ; seuls les ecrans du moteur l'avaient perdue.
+            <Banner kind="warning" role="status">
               {t(
                 `Le seuil semi-auto (${draft.seuilSemi}) est inférieur au seuil de confiance en vigueur (${seuilConfiance}) : il n'a aucun effet, le seuil de confiance tranche avant lui.`,
                 `The semi-auto threshold (${draft.seuilSemi}) is below the enforced confidence threshold (${seuilConfiance}): it has no effect, the confidence threshold already decides first.`,
@@ -171,7 +174,9 @@ export function Modes() {
             </Banner>
           )}
           {ecrit && (
-            <Banner kind={draft.mode === "full_auto" ? "error" : "warning"}>
+            // `role="alert"` : c'est le message le plus lourd du produit — il nomme le
+            // passage en ECRITURE REELLE dans GLPI. Il apparaissait sans etre annonce.
+            <Banner kind={draft.mode === "full_auto" ? "error" : "warning"} role="alert">
               {draft.mode === "full_auto"
                 ? t(
                     "⚠ full_auto par défaut : toute entité sans mode explicite modifiera les tickets GLPI (catégorie, priorité, assignation) et répondra au demandeur, sans second seuil.",

@@ -125,6 +125,35 @@ def test_dpo_report_downloads(client):
     assert "Rapport DPO" in r.text and "Adresses e-mail" in r.text
 
 
+def test_le_rapport_dpo_dit_VERROUILLE_seulement_quand_la_licence_manque(client):
+    """Sans licence, un motif Supporter est bien verrouillé — et le rapport le dit."""
+    texte = client.get("/api/privacy/report.md").text
+    ligne = next(x for x in texte.splitlines() if x.startswith("| IBAN"))
+    assert "VERROUILLÉ (Supporter)" in ligne
+
+
+def test_le_rapport_dpo_n_impute_pas_a_la_licence_un_choix_de_l_administrateur(supporter_client):
+    """Le document remis à la DPO doit nommer la BONNE cause.
+
+    `scope` est statique : il dit de quelle édition relève un motif, jamais pourquoi il est
+    inactif ICI. Sans croisement avec la licence réellement active, une instance sous licence
+    VALIDE dont l'administrateur a délibérément décoché le masquage IBAN produisait un
+    rapport affichant « VERROUILLÉ (Supporter) » — un défaut de licence imputé à une décision
+    d'exploitation. Et l'avertissement « transmis EN CLAIR » du bas de page ne s'affichait pas
+    davantage : il est conditionné à l'édition. La DPO lisait donc « verrouillé » sans jamais
+    apprendre que la donnée sort en clair.
+    """
+    assert supporter_client.post("/api/config", json={"mask_iban": False}).status_code == 200
+
+    texte = supporter_client.get("/api/privacy/report.md").text
+    ligne = next(x for x in texte.splitlines() if x.startswith("| IBAN"))
+    assert "VERROUILLÉ" not in ligne, "la licence est valide : ce n'est pas elle qui bloque"
+    assert "choix de l'administrateur" in ligne
+    # Et la conséquence est nommée sur la ligne elle-même, puisque le bandeau d'édition
+    # Community — le seul autre endroit qui la disait — ne s'affiche pas ici.
+    assert "EN CLAIR" in ligne
+
+
 def test_cost_view(client):
     body = client.get("/api/cost").json()
     assert "cost_cap_eur_per_day" in body

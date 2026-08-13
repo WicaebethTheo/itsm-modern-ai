@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
 import subprocess
 import uuid
 from collections.abc import Iterator
@@ -137,6 +138,30 @@ def test_sauvegarde_verifiee_et_horodatee(base, tmp_path):
     assert "COPY public.decisions" in donnees
     # Une ligne de COPY = « <id>\t<sujet> » : les trois sujets insérés sont bien là.
     assert [s for s in ("\tt0\n", "\tt1\n", "\tt2\n") if s in donnees] == ["\tt0\n", "\tt1\n", "\tt2\n"]
+
+
+def test_l_archive_n_est_lisible_que_par_son_proprietaire(base, tmp_path):
+    """Une sauvegarde, c'est la base RGPD ENTIÈRE dans un fichier.
+
+    Contenu des tickets, journal des appels LLM — donc les prompts et les réponses, PII non
+    masquées comprises en édition Community (IBAN, secrets, IP, NIR) — et les secrets
+    chiffrés. Sans mode explicite, `mkdir` et `pg_dump --file` créent avec l'umask du
+    process : 0755 pour le dossier, 0644 pour le dump. Sur le volume bind-monté d'un hôte
+    mutualisé, tout utilisateur local lisait donc l'intégralité des données personnelles.
+
+    Le contrat existait déjà pour la `master.key` (0600, `backup.py`) et pour le `.env`
+    (`chmod 600`, `install.sh`) : c'est le fichier qui porte les données qui l'avait perdu.
+    """
+    cle = tmp_path / "master.key"
+    cle.write_text("clef-de-test", encoding="utf-8")
+    _remplit(base)
+
+    dossier = run(tmp_path / "out", database_url=base, master_key_file=cle)
+
+    assert stat.S_IMODE(dossier.stat().st_mode) == 0o700, "le dossier de sauvegarde est traversable"
+    for nom in ("itsm.dump", "master.key"):
+        mode = stat.S_IMODE((dossier / nom).stat().st_mode)
+        assert mode == 0o600, f"{nom} lisible au-delà de son propriétaire ({oct(mode)})"
 
 
 def test_une_archive_sans_donnees_est_refusee(base, tmp_path):

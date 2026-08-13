@@ -248,10 +248,20 @@ def run(destination: Path, *, database_url: str, master_key_file: Path | None) -
 
     horodatage = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     dossier = destination / horodatage
-    dossier.mkdir(parents=True, exist_ok=False)
+    # 0700, et l'archive en 0600 juste après.
+    #
+    # Cette archive contient la base ENTIÈRE : contenu des tickets, journal des appels LLM
+    # (donc les prompts et les réponses, PII non masquées comprises en édition Community —
+    # IBAN, secrets, IP, NIR), et les secrets chiffrés. Sans mode explicite, `mkdir` et
+    # `pg_dump --file` créent avec l'umask du process : 0755 pour le dossier, 0644 pour le
+    # dump. La `master.key` déposée à côté est, elle, en 0600 depuis toujours — l'asymétrie
+    # montre que la question s'était posée et n'avait été traitée que pour un des deux
+    # fichiers, alors que c'est l'autre qui porte les données personnelles.
+    dossier.mkdir(parents=True, exist_ok=False, mode=0o700)
     try:
         archive = dossier / NOM_ARCHIVE
         dump(args_connexion, env, archive)
+        archive.chmod(0o600)
         tables, lignes = verifie(archive, attendu, env)
         taille = archive.stat().st_size / 1048576.0
         print(f"✓ {archive}  ({taille:.2f} Mio, {tables} tables, {lignes} lignes, archive relue intégralement)")

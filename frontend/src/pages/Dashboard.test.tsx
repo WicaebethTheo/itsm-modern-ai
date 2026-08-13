@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -353,32 +353,73 @@ describe("Dashboard — réglages de la vue", () => {
     expect(screen.getByText(/sans effet sur le triage/)).toBeInTheDocument();
   });
 
-  it("n'enregistre QUE ses deux clés d'affichage", async () => {
+  /**
+   * Remplit un champ numérique et rend la VALEUR effectivement posée.
+   *
+   * `userEvent.clear()` est inopérant sur un `<input type="number">` sous jsdom (la
+   * sélection n'y est pas implémentée) : `type("30")` s'AJOUTAIT donc au « 14 » déjà chargé.
+   * Ce test envoyait `dashboard_window_days: 1430` — hors des bornes de l'API (`le=365`,
+   * `config.py`), donc un 422 en production — et restait vert parce qu'il n'assérait que le
+   * jeu de clés. Pire, c'était une course : avant l'arrivée du GET, la même séquence envoyait
+   * bien 30. Un test non déterministe sur la valeur qu'il envoie, sans qu'aucune assertion
+   * ne puisse le voir. `fireEvent.change` pose la valeur, sans dépendre de la sélection.
+   */
+  function saisirNombre(champ: HTMLElement, valeur: string) {
+    fireEvent.change(champ, { target: { value: valeur } });
+    return (champ as HTMLInputElement).value;
+  }
+
+  it("n'enregistre QUE ses deux clés d'affichage, et la VALEUR saisie", async () => {
     renderPage();
-    const fenetre = await screen.findByLabelText(/Fenêtre \(jours\)/);
-    await userEvent.clear(fenetre);
-    await userEvent.type(fenetre, "30");
+    await screen.findByDisplayValue("14"); // la config serveur est arrivée
+    const fenetre = screen.getByLabelText(/Fenêtre \(jours\)/);
+    expect(saisirNombre(fenetre, "30")).toBe("30");
     await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
 
     await waitFor(() => expect(Api.updateConfig).toHaveBeenCalledTimes(1));
-    expect(Object.keys(vi.mocked(Api.updateConfig).mock.calls[0][0]).sort()).toEqual([
-      "anomaly_new_age_hours",
-      "dashboard_window_days",
-    ]);
+    // La VALEUR autant que les clés : sans elle, le test survivait à l'envoi d'un 1430.
+    expect(vi.mocked(Api.updateConfig).mock.calls[0][0]).toEqual({
+      dashboard_window_days: 30,
+      anomaly_new_age_hours: Number(demo.config.anomaly_new_age_hours),
+    });
   });
 
-  it("relit les métriques après enregistrement — elles sont calculées SERVEUR", async () => {
-    // Sans relecture, la page afficherait encore la fenêtre précédente tout en annonçant
-    // la nouvelle : exactement le genre d'affirmation non mesurée qu'on traque partout.
+  it("relit « Opérationnel (GLPI) », et LUI SEUL : /api/metrics ne dépend pas de ces bornes", async () => {
+    // `dashboard_window_days` n'est lu que par `/api/operational-metrics`
+    // (`routes/insights.py`). Relire `/api/metrics` — des compteurs CUMULÉS et une tendance
+    // fixée à 14 jours côté serveur — entretenait l'idée que ces réglages pilotent tout le
+    // haut de la page. C'est précisément ce que le libellé du champ laissait croire.
     renderPage();
-    const fenetre = await screen.findByLabelText(/Fenêtre \(jours\)/);
+    await screen.findByDisplayValue("14");
     expect(Api.metrics).toHaveBeenCalledTimes(1);
+    expect(Api.operationalMetrics).toHaveBeenCalledTimes(1);
 
-    await userEvent.clear(fenetre);
-    await userEvent.type(fenetre, "30");
+    saisirNombre(screen.getByLabelText(/Fenêtre \(jours\)/), "30");
     await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
 
-    await waitFor(() => expect(Api.metrics).toHaveBeenCalledTimes(2));
-    expect(Api.operationalMetrics).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(Api.operationalMetrics).toHaveBeenCalledTimes(2));
+    expect(Api.metrics).toHaveBeenCalledTimes(1);
+  });
+
+  it("un enregistrement REFUSÉ ne rafraîchit rien — le refus ne doit pas ressembler à un succès", async () => {
+    // `save()` avalait l'échec et rendait `void` : la page relisait comme après un succès,
+    // ce qui donne le signal visuel « ça vient de se rafraîchir » sur un réglage non écrit —
+    // et tape GLPI (`/api/operational-metrics`) à chaque clic raté.
+    vi.mocked(Api.updateConfig).mockRejectedValue(new Error("503 Service Unavailable"));
+    renderPage();
+    await screen.findByDisplayValue("14");
+    saisirNombre(screen.getByLabelText(/Fenêtre \(jours\)/), "30");
+    await userEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() => expect(Api.updateConfig).toHaveBeenCalledTimes(1));
+    expect(Api.operationalMetrics).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/503 Service Unavailable/)).toBeInTheDocument();
+  });
+
+  it("une lecture de configuration en échec le DIT, au lieu d'afficher ses défauts", async () => {
+    vi.mocked(Api.getConfig).mockRejectedValue(new Error("502 Bad Gateway"));
+    renderPage();
+    expect(await screen.findByText(/Impossible de charger la configuration/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enregistrer" })).toBeDisabled();
   });
 });
