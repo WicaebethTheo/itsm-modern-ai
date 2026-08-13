@@ -23,6 +23,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 
 from ...admin_setup import AdminSetupError, set_admin_password
 from ...services.runtime_config import RuntimeConfigService
@@ -161,6 +162,22 @@ def setup(
         code = status.HTTP_409_CONFLICT if exc.code == "already_configured" else 422
         raise HTTPException(
             status_code=code, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
+    except IntegrityError as exc:
+        # MÊME CONFLIT, vu de l'autre côté. `set_admin_password` teste l'existence du hash
+        # PUIS l'écrit, sans transaction couvrant les deux : deux `POST /api/auth/setup`
+        # concurrents passent tous les deux le test, et le perdant heurte la clé primaire de
+        # `runtime_config`. La barrière tient donc — il n'y a jamais deux comptes, et aucun
+        # écrasement silencieux — mais l'appelant recevait un 500 opaque là où le contrat de
+        # l'API promet un 409 `already_configured`. C'est le même refus, il doit se lire
+        # pareil. Le front s'appuie dessus (`Setup.tsx` renvoie vers la connexion sur 409).
+        limiter.record_failure(key)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "already_configured",
+                "message": "Un compte administrateur est déjà configuré sur ce moteur.",
+            },
         ) from exc
 
     limiter.reset(key)

@@ -4,7 +4,7 @@
 
 | Suite | Compte | Commande |
 |---|---:|---|
-| **pytest** (unit + integration via `respx`) | **684** | `make test` |
+| **pytest** (unit + integration via `respx`) | **689** | `make test` |
 | **Vitest + Testing Library** (composants + pages) | **460** (36 fichiers) | `make ui-test` |
 | **Playwright** (E2E, API mockée) | **10 parcours** (6 fichiers) | `make ui-e2e` |
 | **ruff** (Python) | 0 violation | `make lint` |

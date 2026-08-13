@@ -125,13 +125,23 @@ def test_expired_license_was_valid_before_expiry():
 
 
 def test_tampered_payload_fails_signature():
-    # On modifie un caractère de la charge utile → signature invalide.
+    """Un jeton altéré doit tomber SUR LA SIGNATURE, et le test doit l'exiger.
+
+    Il acceptait trois motifs de rejet (`signature invalide`, `charge utile illisible`,
+    `jeton illisible`). Mesuré : supprimer purement et simplement l'appel à
+    `Ed25519PublicKey.verify()` le laissait vert — abîmer la charge utile casse aussi son
+    base64, donc le jeton était rejeté « pour la mauvaise raison ». Le test qui PORTE le nom
+    de l'invariant ne le vérifiait pas.
+
+    On altère donc la SIGNATURE, qui reste un base64 valide : plus rien ne peut expliquer le
+    rejet, sinon la vérification cryptographique elle-même.
+    """
     parts = VALID.split(".")
-    parts[2] = parts[2][:-2] + ("AA" if not parts[2].endswith("AA") else "BB")
-    tampered = ".".join(parts)
-    st = verify_license(tampered, today=TODAY)
+    signature = parts[3]
+    parts[3] = signature[:-2] + ("AA" if not signature.endswith("AA") else "BB")
+    st = verify_license(".".join(parts), today=TODAY)
     assert not st.valid
-    assert st.error in {"signature invalide", "charge utile illisible", "jeton illisible"}
+    assert st.error == "signature invalide"
 
 
 def test_garbage_token_is_rejected():

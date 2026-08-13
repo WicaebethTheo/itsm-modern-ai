@@ -227,6 +227,14 @@ describe("Layout — menu de compte", () => {
     const opener = await trigger();
     const user = userEvent.setup();
     await user.click(opener);
+    // ON DÉPLACE LE FOCUS AVANT. Sans ça, le clic le laissait déjà sur le déclencheur :
+    // l'assertion finale était vraie AVANT même la touche Échap, et supprimer
+    // `trigger.current?.focus()` du composant laissait le test vert.
+    within(popover())
+      .getByRole("link", { name: /Compte & sécurité/ })
+      .focus();
+    expect(document.activeElement).not.toBe(opener);
+
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("group", { name: "Compte" })).not.toBeInTheDocument();
     expect(document.activeElement).toBe(opener);
@@ -280,12 +288,16 @@ describe("Layout — sidebar", () => {
   it("chaque entrée porte une icône", () => {
     renderLayout();
     const liens = within(sidebar()).getAllByRole("link");
-    expect(liens).toHaveLength(NAV.flatMap((s) => s.items).length);
+    // Nombre FIGÉ, pas calculé sur `NAV` : l'attendu était tiré de la source même qu'il
+    // teste. Mesuré — supprimer l'entrée « Techniciens » du registre laissait les 451 tests
+    // au vert, alors qu'une page du produit devenait inatteignable depuis la console.
+    expect(liens).toHaveLength(18);
     for (const lien of liens) {
-      // `aria-hidden` : l'icône DOUBLE le libellé, elle ne s'annonce pas deux fois.
+      // (L'assertion `aria-hidden="true"` a été retirée : `lucide-react` le pose lui-même
+      //  par défaut sur une icône sans enfant ni prop d'accessibilité — on vérifiait le
+      //  comportement de la bibliothèque, pas le nôtre.)
       const icone = lien.querySelector("svg");
       expect(icone, `« ${lien.textContent} » sans icône`).not.toBeNull();
-      expect(icone).toHaveAttribute("aria-hidden", "true");
     }
   });
 
@@ -294,6 +306,7 @@ describe("Layout — sidebar", () => {
     for (const section of NAV) {
       const liste = within(sidebar()).getByRole("list", { name: section.fr });
       expect(within(liste).getAllByRole("listitem")).toHaveLength(section.items.length);
+      expect(within(liste).getAllByRole("link").length).toBeGreaterThan(0);
     }
   });
 

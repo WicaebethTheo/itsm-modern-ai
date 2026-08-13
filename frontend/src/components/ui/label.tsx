@@ -87,14 +87,37 @@ export function Field({
     );
   }
   const cible = idExistant ?? htmlFor ?? (element ? auto : undefined);
+  // Le `hint` est RELIÉ au contrôle (`aria-describedby`), il n'est plus un simple frère.
+  //
+  // Mesuré sur les onze contrôles des écrans du moteur : `aria-describedby` valait `null`
+  // sur onze. Or ces hints portent ici la sémantique de SÛRETÉ — « en dessous, AUCUNE
+  // écriture », « 0 = pas de plafond, dépense non bornée », « appliqué IMMÉDIATEMENT ». Un
+  // utilisateur de lecteur d'écran qui tabule dans le champ entendait « Seuil de confiance,
+  // champ numérique » et rien d'autre : il réglait une borne de sécurité à l'aveugle.
+  const hintId = hint && cible ? `${cible}-hint` : undefined;
+  // On ne clone QUE s'il y a quelque chose à ajouter, et on n'écrase JAMAIS un
+  // `aria-describedby` explicite : plusieurs champs en posent un vers leur propre message
+  // d'erreur (`Setup.tsx`, `Account.tsx`), qui est plus précis que le hint générique.
+  const decritDeja = element ? "aria-describedby" in element.props : false;
+  const poserId = Boolean(element && !idExistant && cible);
+  const poserHint = Boolean(element && hintId && !decritDeja);
   const contenu =
-    element && !idExistant && cible ? React.cloneElement(element, { id: cible }) : children;
+    element && (poserId || poserHint)
+      ? React.cloneElement(element as React.ReactElement<Record<string, unknown>>, {
+          ...(poserId ? { id: cible } : {}),
+          ...(poserHint ? { "aria-describedby": hintId } : {}),
+        })
+      : children;
 
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={cible}>{label}</Label>
       {contenu}
-      {hint && <p className="text-body leading-snug text-muted-foreground">{hint}</p>}
+      {hint && (
+        <p id={hintId} className="text-body leading-snug text-muted-foreground">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }

@@ -10,7 +10,7 @@ l'environnement au runtime (exigence produit).
 
 from __future__ import annotations
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from ..config.credentials import (  # value objects réutilisés par glpi_credentials()
     GlpiCredentials,
@@ -137,14 +137,33 @@ class RuntimeConfigService:
         # `api/deps.config_service_from_request` ; reste "system" pour le scheduler/CLI.
         # Paramètre nommé avec défaut : aucun appelant existant n'est cassé.
         self._actor = actor or AUDIT_ACTOR_SYSTEM
+        # Cache de lecture, cf. `_rows`. `None` = pas encore chargé / invalidé.
+        self._cache: dict[str, RuntimeConfig] | None = None
 
     @property
     def settings(self) -> Settings:
         return self._settings
 
     # ── lecture ───────────────────────────────────────────────────────────────
+    def _rows(self) -> dict[str, RuntimeConfig]:
+        """Toutes les clés, lues EN UNE FOIS, pour la durée de vie de ce service.
+
+        `session.get()` par clé semble gratuit — c'est une lecture d'`identity map`. Elle
+        ne l'est pas : chaque `commit()` expire la map, et `GET /api/config` lit 62 clés
+        d'affilée. Mesuré : 62 SELECT et 17,6 ms par appel, contre 0,37 ms pour un SELECT
+        global. La console demandait cette route deux fois par écran, et visiter les quatre
+        écrans du moteur revenait à 310 requêtes SQL pour une configuration qui n'a pas bougé.
+
+        La durée de vie du cache est celle du service, c'est-à-dire d'UNE requête HTTP
+        (dépendance FastAPI) ou d'un cycle de poll : il ne peut pas rancir. Toute écriture
+        l'invalide — y compris l'audit, qui relit la valeur d'avant juste avant d'écrire.
+        """
+        if self._cache is None:
+            self._cache = {r.key: r for r in self._session.exec(select(RuntimeConfig)).all()}
+        return self._cache
+
     def _row(self, key: str) -> RuntimeConfig | None:
-        return self._session.get(RuntimeConfig, key)
+        return self._rows().get(key)
 
     def get_secret(self, key: str) -> str | None:
         """Valeur en clair d'un secret (base uniquement). None si non configuré."""
@@ -293,6 +312,9 @@ class RuntimeConfigService:
             row.is_secret = is_secret
         self._session.add(row)
         self._session.commit()
+        # Le commit expire les objets de la session : garder le cache tel quel ferait
+        # relire chaque attribut ligne par ligne, soit exactement ce qu'on vient d'éviter.
+        self._cache = None
 
     # ── journal d'audit ─────────────────────────────────────────────────────────
     def record_action(

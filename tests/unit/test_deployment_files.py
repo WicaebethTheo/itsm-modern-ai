@@ -8,6 +8,7 @@ fournisseur tiers, aucune sortie de secours). On verrouille donc ici les invaria
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -28,6 +29,11 @@ def _texte(nom: str) -> str:
 
 def _service(compose: str, service: str = "itsm") -> dict:
     return yaml.safe_load(_texte(compose))["services"][service]
+
+
+# Stub minimal pour EXÉCUTER une fonction d'`install.sh` en bac à sable. `die` doit sortir
+# en erreur : c'est lui qui distingue « la barrière a tenu » de « la barrière a cédé ».
+STUB_SHELL = 'say() { :; }\nwarn() { :; }\ndie() { echo "$*" >&2; exit 1; }\n'
 
 
 def _fonctions_shell(script: str, *noms: str) -> str:
@@ -366,6 +372,12 @@ def test_installer_offers_a_rollback_path():
     installer = _texte("install.sh")
     assert "--rollback" in installer
     assert "--list-backups" in installer
+    # Le DISPATCH, pas seulement l'option. Mesuré : supprimer cette ligne laissait le test
+    # vert — les chaînes survivent dans l'aide et les messages — et `--rollback` devenait un
+    # drapeau mort : on promet un retour arrière qui ne s'exécute jamais.
+    assert re.search(r"if \$ROLLBACK; then\s+do_rollback ", installer), (
+        "`--rollback` est analysé mais n'appelle plus `do_rollback`"
+    )
     # Une mise à jour ratée ne doit JAMAIS laisser l'instance à l'arrêt (le
     # `up -d --force-recreate` peut échouer après avoir détruit le conteneur).
     assert "trap restore_service_on_failure EXIT" in installer
@@ -395,7 +407,25 @@ def test_le_rollback_restaure_reellement_la_base():
     restauration doit être faite par le script — après confirmation, car elle écrase."""
     corps = _corps_du_rollback()
     assert "pg_restore" in corps
-    assert "--exit-on-error" in corps, "une restauration à moitié faite est pire que refusée"
+    # CHAQUE commande de restauration doit être gardée, et la garde doit ARRÊTER.
+    #
+    # La seule présence de `--exit-on-error` ne dit pas que son échec interrompt quoi que ce
+    # soit : mesuré, remplacer les `|| die` par des `|| warn` laissait le test vert. Une
+    # recherche globale ne suffit pas non plus — le corps contient deux restaurations (dump
+    # `custom` et SQL brut hérité) et un seul `|| die` survivant satisfaisait la regex pour
+    # les deux. On vérifie donc chaque commande, dans les lignes qui la prolongent.
+    arrets = 0
+    lignes = corps.splitlines()
+    for i, ligne in enumerate(lignes):
+        if "--exit-on-error" not in ligne and "ON_ERROR_STOP=1" not in ligne:
+            continue
+        arrets += 1
+        suite = "\n".join(lignes[i : i + 3])
+        assert "|| die " in suite, (
+            f"restauration non gardée : une restauration à moitié faite est pire que "
+            f"refusée, son échec doit interrompre — {ligne.strip()[:70]}"
+        )
+    assert arrets >= 2, "les deux formats d'archive (custom et SQL brut) doivent être gardés"
     assert "ÉCRASÉE" in corps, "l'écrasement doit être confirmé explicitement"
     assert "pre-rollback-" in corps, "l'état d'avant doit rester récupérable"
 
@@ -433,9 +463,70 @@ def test_le_rollback_ne_se_confirme_pas_tout_seul():
     assert "\n  ask " not in corps, "aucune décision destructive ne passe par `ask`"
 
     fonction = _texte("install.sh").split("\nconfirmer_ecrasement() {", 1)[1].split("\n}", 1)[0]
-    assert "$ASSUME_YES" not in fonction, "`--yes` ne doit pas armer une destruction"
     assert 'die ' in fonction, "hors TTY, on s'arrête au lieu d'inventer une réponse"
     assert '"$r" = "$attendu"' in fonction, "il faut TAPER la réponse, pas valider par Entrée"
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        pytest.param({"ASSUME_YES": "true"}, id="drapeau---yes"),
+        pytest.param({"ITSM_ROLLBACK_CONFIRME": "une-autre-sauvegarde"}, id="mauvais-horodatage"),
+        pytest.param({}, id="aucun-terminal"),
+    ],
+)
+def test_la_confirmation_d_ecrasement_EXECUTEE_ne_cede_jamais(env):
+    """On EXÉCUTE la barrière, on ne cherche plus un littéral dedans.
+
+    L'assertion précédente était `"$ASSUME_YES" not in fonction`. Mesuré : ajouter
+    `[ "${ASSUME_YES:-false}" = true ] && return 0` en tête de la fonction — c'est-à-dire
+    faire EXACTEMENT ce que le test interdisait — la laissait VERTE, la forme `${...:-false}`
+    ne contenant pas la chaîne cherchée. C'est la barrière d'un `pg_restore` destructif.
+
+    Trois façons de ne pas confirmer, et aucune ne doit passer : le drapeau `--yes` global,
+    une variable d'échappement qui désigne une AUTRE sauvegarde, et l'absence de terminal.
+    """
+    fonctions = _fonctions_shell("install.sh", "confirmer_ecrasement")
+    stub = STUB_SHELL + 'c_yel=""; c_off=""\n'
+    lance = subprocess.run(
+        ["bash", "-c", stub + fonctions + '\nconfirmer_ecrasement 20260101-000000 "Ecraser ?"'],
+        capture_output=True,
+        text=True,
+        check=False,
+        stdin=subprocess.DEVNULL,
+        env={**os.environ, **env},
+    )
+    assert lance.returncode != 0, (
+        "la confirmation a cédé sans qu'on tape l'horodatage — un pg_restore destructif "
+        "serait parti"
+    )
+
+
+def test_l_echec_du_dump_EXECUTE_interrompt_vraiment_la_mise_a_jour(tmp_path):
+    """`die ` figurait DEUX fois dans `backup_data` : le test ne distinguait pas les branches.
+
+    Mesuré : remplacer par un `warn` le `die` de la branche « pg_dump a échoué » laissait le
+    test vert, l'autre `die` (« base injoignable ») suffisant à le satisfaire. La mise à jour
+    aurait donc continué sans sauvegarde exploitable, en n'avertissant qu'après coup — c'est
+    précisément ce que le nom de ce test promet d'empêcher.
+    """
+    fonctions = _fonctions_shell("install.sh", "backup_data")
+    stub = STUB_SHELL + (
+        "check_add() { :; }\nrecord_backup_metadata() { :; }\n"
+        "pg_ready() { return 0; }\n"
+        "pg_dump_verifie() { return 1; }\n"  # le dump ECHOUE
+    )
+    (tmp_path / "data").mkdir()
+    lance = subprocess.run(
+        ["bash", "-c", stub + fonctions + "\nbackup_data"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+        stdin=subprocess.DEVNULL,
+    )
+    assert lance.returncode != 0, "un pg_dump raté doit INTERROMPRE la mise à jour"
+    assert "ÉCHOUÉE" in (lance.stdout + lance.stderr)
 
 
 def test_le_rollback_refuse_quand_l_etat_courant_n_est_pas_sauvegardable():
@@ -581,6 +672,27 @@ def test_le_smoke_test_de_publication_exerce_la_creation_du_compte():
     assert "setup_required" in workflow
     # L'ancien verrou, nommément banni : il ne doit pas revenir par copier-coller.
     assert "compte admin amorcé" not in workflow
+
+    # … ET L'ÉTAPE DOIT POUVOIR ÉCHOUER. Mesuré : poser `if: false` dessus laissait ce test
+    # vert — les quatre chaînes restent dans le fichier — et la publication repartait sans
+    # qu'aucun parcours ne soit joué. C'est mot pour mot le reproche que la docstring
+    # ci-dessus adresse au `grep` qu'elle remplace. On parse donc le YAML.
+    etapes = [
+        etape
+        for job in yaml.safe_load(workflow)["jobs"].values()
+        for etape in job.get("steps", [])
+        if "Smoke test" in str(etape.get("name", ""))
+    ]
+    assert etapes, "l'étape de smoke test a disparu du workflow de publication"
+    for etape in etapes:
+        assert "if" not in etape, "une étape conditionnée peut être sautée sans rien dire"
+        assert etape.get("continue-on-error") is not True, "son échec doit bloquer"
+        # `|| true` interdit sur les lignes qui VÉRIFIENT (les `curl` du parcours). Il
+        # reste légitime dans le nettoyage (`docker rm -f … || true` sur un conteneur qui
+        # n'existe pas) : une assertion sur tout le bloc confondait les deux.
+        for ligne in etape.get("run", "").splitlines():
+            if "curl" in ligne:
+                assert "|| true" not in ligne, f"un `|| true` avale l'échec : {ligne.strip()[:60]}"
 
 
 def test_l_installeur_renvoie_vers_l_ecran_de_creation_du_compte():

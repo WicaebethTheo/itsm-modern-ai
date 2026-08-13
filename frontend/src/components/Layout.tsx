@@ -306,6 +306,15 @@ export function Layout() {
         </div>
         <div className="app-shell-glow" aria-hidden="true" />
         <div className="app-shell flex h-full w-full overflow-hidden rounded-xl border border-border bg-background text-foreground">
+          {/* Lien d'évitement (WCAG 2.4.1). Mesuré : 21 tabulations avant d'atteindre le
+              premier champ du contenu, et la barre se retabule INTÉGRALEMENT à chaque
+              changement de page. Visible au focus seulement — il ne coûte rien à la souris. */}
+          <a
+            href="#contenu"
+            className="sr-only left-4 top-4 z-50 rounded-md border border-border bg-card px-3 py-2 text-body text-foreground shadow-lg focus:not-sr-only focus:absolute"
+          >
+            {t("Aller au contenu", "Skip to content")}
+          </a>
           {/* Sidebar fixe (224px), bordure droite fine. */}
           <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border bg-sidebar p-3 text-ui">
             <div className="mb-2 flex items-center gap-2 px-2 py-2">
@@ -408,7 +417,15 @@ export function Layout() {
           {/* Zone principale : topbar + contenu défilant. */}
           <div className="app-content flex min-w-0 flex-1 flex-col">
             <Topbar onLogout={logout} isSupporter={isSupporter} />
-            <main className="flex-1 overflow-y-auto p-5 sm:p-6">
+            {/* `tabIndex={-1}` : sans lui, la cible d'un lien d'évitement ne PREND pas le
+                focus — le lecteur d'écran continue d'annoncer la barre. `scroll-pb-20` :
+                la barre d'enregistrement colle ~60 px au bas de ce conteneur, un champ
+                atteint au clavier pouvait se caler exactement dessous. */}
+            <main
+              id="contenu"
+              tabIndex={-1}
+              className="flex-1 scroll-pb-20 overflow-y-auto p-5 sm:p-6"
+            >
               <Outlet />
             </main>
           </div>

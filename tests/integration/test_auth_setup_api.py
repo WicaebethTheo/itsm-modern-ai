@@ -458,3 +458,31 @@ def test_aucun_avertissement_au_demarrage_si_le_compte_existe(db_url, tmp_path, 
             assert not any("REVENDICABLE" in m for m in recorder.messages)
     finally:
         logging.getLogger("itsm.security").removeHandler(recorder)
+
+
+def test_deux_creations_concurrentes_rendent_409_et_non_un_500_opaque(vierge, monkeypatch):
+    """Le même refus doit se lire pareil des deux côtés de la course.
+
+    `set_admin_password` teste l'existence du hash PUIS l'écrit, sans transaction couvrant
+    les deux. Deux `POST /api/auth/setup` simultanés passent donc tous les deux le test, et
+    le perdant heurte la clé primaire de `runtime_config`. La barrière tient — il n'y a
+    jamais deux comptes, et aucun écrasement silencieux — mais l'appelant recevait un 500
+    opaque là où le contrat de l'API promet `409 already_configured`, et où le front
+    (`Setup.tsx`) s'appuie sur ce 409 pour renvoyer vers la connexion.
+
+    On simule le perdant : la vérification d'existence dit « libre », l'écriture heurte
+    l'unicité — exactement l'état d'une course perdue.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from itsm_modern_ai.api.routes import auth as route_auth
+
+    def perd_la_course(*_a, **_k):
+        raise IntegrityError("INSERT …", {}, Exception("duplicate key"))
+
+    monkeypatch.setattr(route_auth, "set_admin_password", perd_la_course)
+    r = vierge.post(
+        "/api/auth/setup", json={"email": "admin@exemple.fr", "password": "s3cretaire!"}
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "already_configured"

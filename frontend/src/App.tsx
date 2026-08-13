@@ -65,6 +65,12 @@ export default function App() {
             <Route path="debug" element={<Debug />} />
             {/* Hors sidebar : accessible depuis le menu de compte de la topbar. */}
             <Route path="account" element={<Account />} />
+            {/* Chemin inconnu : sans cette route, la garde est SANS enfant correspondant,
+                donc ni `RequireAuth` ni `Layout` ne montent — l'utilisateur reste devant une
+                page ENTIÈREMENT blanche, sans barre ni topbar, sans autre issue que de
+                réécrire l'URL. Un signet périmé suffit, et le découpage du moteur vient de
+                multiplier les URL susceptibles d'être mal recopiées. */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
       </ToastProvider>

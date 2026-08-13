@@ -115,7 +115,9 @@ export function useConfigDraft<D>(
         toast.success(succes);
         return true;
       } catch (e: unknown) {
-        toast.error(`${tr("Erreur", "Error")} : ${(e as Error).message}`);
+        // Le séparateur est DANS la traduction : l'espace insécable avant « : » est une
+        // règle française, l'anglais écrit « Error: ».
+        toast.error(`${tr("Erreur : ", "Error: ")}${(e as Error).message}`);
         return false;
       } finally {
         setSaving(false);

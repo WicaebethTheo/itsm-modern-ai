@@ -140,11 +140,23 @@ export const OFF_SIDEBAR: NavItem[] = [
 
 const ALL = [...NAV.flatMap((s) => s.items), ...OFF_SIDEBAR];
 
-/** Retrouve l'entrée de nav correspondant à un pathname (pour le titre de la topbar). */
+/**
+ * Retrouve l'entrée de nav correspondant à un pathname (pour le titre de la topbar).
+ *
+ * La correspondance est faite PAR SEGMENT. `startsWith` nu résolvait `/scoped` sur
+ * « Règles métier » (`/scope`) et `/storex` sur « Supporter » : inoffensif tant qu'aucune
+ * route de ce nom n'existe, mais c'est le genre de piège qui se referme au premier ajout.
+ *
+ * Le repli sur un ENFANT sert à `/engine`, qui n'est plus une page mais une section : la
+ * redirection est instantanée, mais pendant cette image la topbar affichait « ITSM Modern
+ * AI » — un titre faux, que lit un lecteur d'écran, sur le chemin même que la doc et les
+ * signets citent.
+ */
 export function navByPath(pathname: string): NavItem | undefined {
   if (pathname === "/" || pathname === "") return ALL.find((i) => i.to === "/");
-  // Plus long préfixe d'abord pour éviter que "/" matche tout.
-  return ALL.filter((i) => i.to !== "/")
-    .sort((a, b) => b.to.length - a.to.length)
-    .find((i) => pathname.startsWith(i.to));
+  const candidats = ALL.filter((i) => i.to !== "/").sort((a, b) => b.to.length - a.to.length);
+  return (
+    candidats.find((i) => pathname === i.to || pathname.startsWith(`${i.to}/`)) ??
+    candidats.find((i) => i.to.startsWith(`${pathname}/`))
+  );
 }

@@ -100,6 +100,14 @@ permet de vérifier en réunion, **sans lire le code**, ce qui est réellement m
   codé en dur — il reflète la licence active. Une catégorie Community simplement décochée
   par l'admin tombe elle aussi en *Envoyé en clair* : c'est le cas que l'ancien libellé
   « Inactif » rendait invisible alors qu'il est le plus grave.
+- **Réglage du masquage, sur cette page.** Les quatre bascules (e-mails, téléphones, IBAN,
+  secrets) vivaient dans l'écran « Moteur » : cette page **expliquait** à la DPO ce qui sort
+  en clair sans pouvoir y changer quoi que ce soit, et le seul écran capable d'éteindre un
+  motif portait le nom le moins susceptible d'attirer une DPO. Le tableau ci-dessus dit ce
+  qui sort ; la carte juste en dessous en décide, et il est relu après chaque
+  enregistrement. Le compteur « N/4 » porte sur ce qui est **enregistré**, jamais sur une
+  saisie en cours. Sans licence Supporter, IBAN et secrets ne sont pas cochables : les
+  activer ne masquerait rien, et le compteur ne le prétend pas.
 - **Avertissement honnête** affiché sans licence : les catégories verrouillées transitent et
   sont journalisées **en clair** (à valider explicitement avant toute donnée réelle).
 - **État réel de la purge** : les durées de rétention ne sont jamais affichées seules. Si la
@@ -112,6 +120,11 @@ permet de vérifier en réunion, **sans lire le code**, ce qui est réellement m
 - **Rappel des durées de rétention** et **lien vers le journal `llm_calls`**.
 - **Export d'un rapport DPO** (`GET /api/privacy/report.md`) : un Markdown daté listant
   l'édition, les catégories masquées et les fenêtres de rétention — pièce jointe pour le dossier.
+  Le statut d'une catégorie y **nomme la bonne cause** : *VERROUILLÉ (Supporter)* désigne
+  uniquement un défaut de licence, et un motif désactivé par l'administrateur sous licence
+  valide s'écrit *Désactivé (choix de l'administrateur) — transmis EN CLAIR*. Le rapport
+  imputait auparavant les deux cas à la licence, et l'avertissement d'édition Community qui
+  aurait pu rattraper la mention ne s'affiche, lui, qu'en l'absence de licence.
 
 > Une page **« Coûts & quotas »** (`/cost`) complète l'observabilité : dépense LLM des
 > dernières 24 h vs plafond journalier, nombre d'appels et tarifs configurés.
