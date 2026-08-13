@@ -218,3 +218,37 @@ def test_un_secret_s_efface_par_une_demande_EXPLICITE(client):
     r = client.post("/api/config", json={"glpi_user_token": CLEARED_SENTINEL})
     assert r.status_code == 200
     assert client.get("/api/config").json()["glpi_user_token_set"] is False
+
+
+def test_ollama_n_accumule_aucune_depense_fictive(client, monkeypatch):
+    """Un fournisseur qui ne facture rien ne doit pas remplir le plafond de coût.
+
+    Les tarifs par défaut valent 2,0 et 6,0 €/Mtok et `triage._journal_llm_call` les
+    appliquait sans regarder le fournisseur. Une instance Ollama — modèle 100 % local,
+    aucune facturation, c'est le chemin souverain que le produit met en avant —
+    accumulait donc une dépense INEXISTANTE jusqu'à heurter le plafond (5 €/jour par
+    défaut). Passé ce point, `is_over_cap` renvoie True et TOUS les nouveaux tickets
+    partent « à trier » sans un seul appel au modèle : le déploiement gratuit cesse de
+    trier, pour une facture qui n'a jamais existé.
+
+    On vérifie les DEUX sens : à zéro pour Ollama, et intacts pour un fournisseur payant —
+    sans quoi on aurait troqué une fausse dépense contre un plafond qui ne protège plus.
+    """
+    from itsm_modern_ai.api import runtime
+
+    def prix_pour(fournisseur: str, modele: str) -> tuple[float, float]:
+        assert client.post(
+            "/api/config", json={"llm_provider": fournisseur, "ollama_model": modele}
+        ).status_code == 200
+        service = runtime.build_triage_service(
+            client.app.state.settings, client.app.state.secrets_box
+        )
+        assert service is not None, f"aucun service construit pour {fournisseur}"
+        return (
+            service._settings.llm_price_input_per_mtok,
+            service._settings.llm_price_output_per_mtok,
+        )
+
+    assert prix_pour("ollama", "llama3") == (0.0, 0.0), (
+        "Ollama ne facture rien : compter une depense la rend fictive"
+    )

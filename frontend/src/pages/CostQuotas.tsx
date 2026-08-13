@@ -293,8 +293,8 @@ export function CostQuotas() {
         <CardContent className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-body text-muted-foreground">
             {t(
-              "Le plafond de coût et les tarifs se règlent dans Moteur › Garde-fous. Cette page est en lecture seule.",
-              "The cost cap and tariffs are set in Engine › Guardrails. This page is read-only.",
+              "Le plafond de coût se règle dans Moteur › Garde-fous. Les tarifs, eux, ne sont éditables par aucun écran : ils viennent de l'environnement (LLM_PRICE_*_PER_MTOK) ou d'un POST /api/config. Cette page est en lecture seule.",
+              "The cost cap is set in Engine › Guardrails. The tariffs are editable from no screen at all: they come from the environment (LLM_PRICE_*_PER_MTOK) or a POST /api/config. This page is read-only.",
             )}
           </p>
           <Button variant="outline" onClick={() => navigate("/engine/guardrails")}>
