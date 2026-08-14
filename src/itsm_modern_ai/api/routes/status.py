@@ -115,15 +115,20 @@ def status(request: Request, session: Session = Depends(get_session)) -> Status:
     body.llm_calls_total = journal.count_llm_calls(session)
     body.cost_eur_last_24h = round(cost_cap.spent_last_24h(session), 4)
     body.cost_cap_eur_per_day = cfg.get_float("cost_cap_eur_per_day", settings.cost_cap_eur_per_day)
-    body.last_poll = _last_poll(cfg)
+    body.last_poll = read_last_poll(cfg)
     return body
 
 
-def _last_poll(cfg: RuntimeConfigService) -> LastPoll:
+def read_last_poll(cfg: RuntimeConfigService) -> LastPoll:
     """Relit l'état du dernier cycle persisté par le poller.
 
     Renvoie TOUJOURS un objet : `has_run=False` est l'état explicite « aucun cycle n'a
     jamais tourné », lisible tel quel par l'UI (cf. docstring de `LastPoll`).
+
+    Nommée sans underscore parce que le déclenchement manuel (`routes/polling.py`) rend
+    exactement ce bloc : deux lectures séparées de `poll_last_*` divergeraient tôt ou tard
+    sur un détail (borne du message, valeur de `has_run`), et l'UI ne saurait plus laquelle
+    des deux croire pour un seul et même cycle.
     """
     run_at = cfg.get("poll_last_run_at")
     if not run_at:

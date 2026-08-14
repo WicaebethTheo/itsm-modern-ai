@@ -16,6 +16,42 @@
 | `/metrics` | `GET` | Métriques Prometheus d'infrastructure (hors `/api`). Session administrateur requise, ou `METRICS_TOKEN`, voir ci-dessous. |
 | `/api/metrics` | `GET` | KPIs métier agrégés sur 14 jours (à ne pas confondre avec `/metrics`). Session requise. |
 | `/api/operational-metrics` | `GET` | Dashboard inversé (équipe, fenêtre glissante 7 j). Session requise. |
+| `/api/polling/run` | `POST` | Exécute un cycle de polling immédiatement, sans attendre le prochain battement. Voir ci-dessous. |
+| `/api/llm/test` | `POST` | Teste le fournisseur IA configuré par un appel réel. Voir ci-dessous. |
+
+### `POST /api/polling/run` — un cycle maintenant
+
+Le cycle déclenché est celui du scheduler : mêmes gardes (plafond de coût, masquage,
+whitelist, seuil de confiance, repli « à trier »), même persistance des compteurs. La
+réponse porte `outcome`, `ran`, `duration_ms` et un bloc `cycle` identique à `last_poll`
+de `/api/status`.
+
+`outcome` vaut `ran`, ou l'une des trois raisons pour lesquelles rien n'a été lancé :
+
+| `outcome` | Ce que ça veut dire |
+|---|---|
+| `polling_disabled` | Le polling est en pause. **Cette route ne contourne pas la pause** : c'est l'arrêt d'urgence du produit, réactivez l'ingestion pour lancer un cycle. |
+| `glpi_not_configured` | Aucune connexion GLPI enregistrée : il n'y a rien à lire. |
+| `already_running` | Un cycle (planifié ou manuel) est déjà en cours ; rien n'est relancé par-dessus. |
+
+### `POST /api/llm/test` — le fournisseur répond-il *utilement* ?
+
+Soumet un ticket de test synthétique au modèle avec le prompt système du produit, puis
+valide la réponse comme le fait le moteur. C'est un appel réel : facturé, compté dans le
+plafond de coût et écrit au Journal (`ticket_id=0`, comme la Sandbox).
+
+La route répond `200` dans tous les cas de diagnostic ; le verdict est dans `stage` :
+
+| `stage` | Ce que ça veut dire | Remède |
+|---|---|---|
+| `ok` | Le modèle a rendu une Décision conforme au schéma. | — |
+| `not_configured` | Aucune clé enregistrée pour ce fournisseur. | Renseigner la clé. |
+| `unreachable` | Aucun appel n'a abouti. | URL de base, clé, accès réseau du conteneur. |
+| `invalid_output` | Le fournisseur répond, mais pas une Décision exploitable. En production, ces tickets partiraient tous « à trier » sans qu'aucune panne ne soit visible. | Changer de modèle. |
+| `cost_cap_reached` | Plafond quotidien atteint : aucun appel facturable n'est passé. | Relever le plafond ou attendre la fenêtre glissante. |
+
+`GET /health?probe=true` reste une sonde légère (`GET /models`, aucun token consommé) :
+elle dit qu'une URL répond, pas que le modèle sait produire une Décision.
 
 > `/metrics` (Prometheus) est un endpoint d'infrastructure, distinct de `/api/metrics`
 > (KPI métier). Format exposition Prometheus : `itsm_http_requests_total` (compteur) et

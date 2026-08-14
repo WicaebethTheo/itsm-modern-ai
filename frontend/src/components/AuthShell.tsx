@@ -54,8 +54,15 @@ export function AuthShell({
             </p>
           </aside>
 
-          {/* Colonne de droite : barre de contrôles fixe + contenu défilant. */}
-          <div className="app-content flex min-h-0 flex-col">
+          {/* Colonne de droite : barre de contrôles fixe + contenu défilant.
+              `min-w-0` n'est pas décoratif : un élément de grille garde par défaut la
+              largeur MINIMALE de son contenu, et refuse donc de descendre en dessous. Un
+              seul enfant incompressible — la commande de récupération du mot de passe, une
+              ligne de shell qui ne se coupe pas — suffisait alors à pousser toute la colonne
+              hors du panneau (mesuré : 76 px de débord), coupant les champs et le bouton à
+              droite. Son `overflow-x-auto` ne pouvait rien y faire : il gère le débord DANS
+              le bloc, pas la largeur imposée au parent. `Layout` porte déjà ce garde-fou. */}
+          <div className="app-content flex min-h-0 min-w-0 flex-col">
             <div className="flex shrink-0 items-center justify-end gap-2 px-5 pt-4 sm:px-8">
               <LangToggle />
               <ThemeToggle compact />

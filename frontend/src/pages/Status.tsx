@@ -1,10 +1,18 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Banner } from "@/components/Banner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dot, type DotTone } from "@/components/ui/dot";
 import { useResource } from "@/hooks/useResource";
-import { Api, type PollCycle, type PollCycleState, readPollCycle } from "@/lib/api";
+import {
+  Api,
+  type LlmTestResult,
+  type PollCycle,
+  type PollCycleState,
+  type PollRunResult,
+  readPollCycle,
+} from "@/lib/api";
 import { useLocale, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -220,6 +228,123 @@ export function cycleHint(c: PollCycle, t: T): string | null {
   return null;
 }
 
+/**
+ * État de la tuile « Fournisseur IA » d'après le dernier test RÉEL.
+ *
+ * Tant qu'aucun test n'a tourné, la tuile ne dit que ce qui est vrai : une clé est en base.
+ * Après le test, elle distingue les deux pannes que l'ancienne sonde (`GET /models`)
+ * confondait — le fournisseur muet, et le fournisseur bavard dont la sortie est inutilisable.
+ * La seconde est la plus traître : rien n'a l'air cassé et tous les tickets partent « à trier ».
+ */
+export function llmTileState(
+  configured: boolean,
+  test: LlmTestResult | null,
+  t: T,
+): { state: string; meta: string; tone: DotTone } {
+  if (!configured) {
+    return {
+      state: t("Non configuré", "Not configured"),
+      meta: t("aucune clé enregistrée", "no key stored"),
+      tone: "muted",
+    };
+  }
+  if (test === null) {
+    return {
+      state: t("Configuré", "Configured"),
+      meta: t("clé enregistrée — validité NON vérifiée", "key stored — validity NOT verified"),
+      tone: "amber",
+    };
+  }
+  switch (test.stage) {
+    case "ok":
+      return {
+        state: t("Opérationnel", "Operational"),
+        meta: t(
+          "le modèle a rendu une Décision exploitable",
+          "the model returned a usable Decision",
+        ),
+        tone: "green",
+      };
+    case "invalid_output":
+      return {
+        state: t("Sortie inexploitable", "Unusable output"),
+        meta: t(
+          "le modèle répond, mais pas une Décision valide : tout partirait « à trier »",
+          "the model answers, but not a valid Decision: everything would fall back to « to triage »",
+        ),
+        tone: "amber",
+      };
+    case "cost_cap_reached":
+      return {
+        state: t("Non testé", "Not tested"),
+        meta: t(
+          "plafond de coût atteint : aucun appel facturable n'est passé",
+          "cost ceiling reached: no billable call was made",
+        ),
+        tone: "amber",
+      };
+    case "not_configured":
+      return {
+        state: t("Non configuré", "Not configured"),
+        meta: t("aucune clé enregistrée", "no key stored"),
+        tone: "muted",
+      };
+    default:
+      return {
+        state: t("Injoignable", "Unreachable"),
+        meta: t("aucun appel n'a abouti", "no call went through"),
+        tone: "red",
+      };
+  }
+}
+
+/**
+ * Ce qu'un cycle déclenché à la main vient de produire — ou pourquoi il n'a rien produit.
+ * Les trois refus sont des états de configuration, pas des pannes : ils se lisent en
+ * avertissement, avec le geste qui les lève.
+ */
+export function pollRunMessage(
+  r: PollRunResult,
+  t: T,
+): { kind: "success" | "warning" | "info"; text: string } {
+  switch (r.outcome) {
+    case "ran":
+      return {
+        kind: "success",
+        // Durée en millisecondes : pas de séparateur décimal, donc rien à localiser — et
+        // c'est la grandeur utile (un cycle qui traîne se voit à 40 000 ms comme à 40 s).
+        text: t(
+          `Cycle terminé en ${r.duration_ms} ms — ${formatCounts(r.cycle, t)}.`,
+          `Cycle finished in ${r.duration_ms} ms — ${formatCounts(r.cycle, t)}.`,
+        ),
+      };
+    case "polling_disabled":
+      return {
+        kind: "warning",
+        text: t(
+          "Le polling est en pause : aucun cycle n'a été lancé. La pause est l'arrêt d'urgence du moteur — elle n'est pas contournée par ce bouton.",
+          "Polling is paused: no cycle was started. The pause is the engine's emergency stop — this button does not bypass it.",
+        ),
+      };
+    case "glpi_not_configured":
+      return {
+        kind: "warning",
+        text: t(
+          "Aucune connexion GLPI enregistrée : il n'y a rien à lire.",
+          "No GLPI connection stored: there is nothing to read.",
+        ),
+      };
+    default:
+      return {
+        kind: "info",
+        text: t(
+          "Un cycle était déjà en cours : rien n'a été relancé par-dessus.",
+          "A cycle was already running: nothing was started on top of it.",
+        ),
+      };
+  }
+}
+
 type VerdictKind = "unknown" | "ok" | "warn" | "bad";
 
 interface Verdict {
@@ -421,6 +546,32 @@ export function computeVerdict(args: {
   };
 }
 
+/** Message d'un cycle manuel. La pause renvoie vers l'écran qui la lève, pas ailleurs. */
+function PollRunBanner({ run, t }: { run: PollRunResult; t: T }) {
+  const m = pollRunMessage(run, t);
+  return (
+    <Banner kind={m.kind} role="status">
+      {m.text}
+      {run.outcome === "polling_disabled" && (
+        <>
+          {" "}
+          <Link to="/engine/ingestion" className="underline underline-offset-2">
+            {t("Réactiver l'ingestion", "Re-enable ingestion")}
+          </Link>
+        </>
+      )}
+      {run.outcome === "glpi_not_configured" && (
+        <>
+          {" "}
+          <Link to="/glpi" className="underline underline-offset-2">
+            {t("Configurer GLPI", "Configure GLPI")}
+          </Link>
+        </>
+      )}
+    </Banner>
+  );
+}
+
 function VerdictCard({ verdict, t }: { verdict: Verdict; t: T }) {
   return (
     <Card className={cn("p-4", verdictStyle[verdict.kind])}>
@@ -608,24 +759,50 @@ export function Status() {
     reloadCfg();
   }, [reloadStatus, reloadHealth, reloadCfg]);
 
-  // Sonde LLM : action EXPLICITE (appel sortant facturé, réservé aux sessions admin).
+  // Test LLM : action EXPLICITE (appel sortant facturé, réservé aux sessions admin).
+  // Ce n'est plus `/health?probe=true` : cette sonde-là ne faisait qu'un `GET /models`, et
+  // la tuile en concluait « clé validée par un appel réel » — une affirmation que rien ne
+  // soutenait. `POST /api/llm/test` soumet un vrai ticket et valide la Décision rendue.
   const [probing, setProbing] = useState(false);
-  const [probeResult, setProbeResult] = useState<boolean | null>(null);
+  const [llmTest, setLlmTest] = useState<LlmTestResult | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
 
   const testLlm = useCallback(async () => {
     setProbing(true);
     setProbeError(null);
     try {
-      const probed = await Api.health(true);
-      setProbeResult(probed.llm.reachable === true);
+      setLlmTest(await Api.testLlm());
     } catch (e) {
-      setProbeResult(null);
+      setLlmTest(null);
       setProbeError((e as Error).message);
     } finally {
       setProbing(false);
     }
   }, []);
+
+  // Cycle de polling déclenché à la main : le moteur poll à intervalle fixe, et entre deux
+  // battements un exploitant qui vient de configurer GLPI ou le fournisseur n'a rien à
+  // regarder. Le cycle lancé ici est CELUI du scheduler, gardes comprises.
+  const [pollingNow, setPollingNow] = useState(false);
+  const [pollRun, setPollRun] = useState<PollRunResult | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
+
+  const runPollNow = useCallback(async () => {
+    setPollingNow(true);
+    setPollError(null);
+    setPollRun(null);
+    try {
+      const res = await Api.runPoll();
+      setPollRun(res);
+      // Les compteurs de la page viennent de /api/status : sans ce rechargement, la carte
+      // « dernier cycle » afficherait encore le cycle PRÉCÉDENT sous le message de succès.
+      reloadStatus();
+    } catch (e) {
+      setPollError((e as Error).message);
+    } finally {
+      setPollingNow(false);
+    }
+  }, [reloadStatus]);
 
   // Trois états distincts par source, et surtout : « pas encore de donnée » n'est PAS
   // « service à l'arrêt ». Tant que `data` est nul sans erreur, on ne dit rien.
@@ -686,7 +863,6 @@ export function Status() {
     tone: "muted",
   });
 
-  const llmProbed = probeResult !== null;
   const glpiApiLabel = isV2
     ? t("API V2 (high-level OAuth2)", "V2 API (high-level OAuth2)")
     : t("API legacy (apirest.php)", "Legacy API (apirest.php)");
@@ -729,29 +905,9 @@ export function Status() {
       ? unknownTile(t("Fournisseur IA", "AI provider"))
       : {
           name: t("Fournisseur IA", "AI provider"),
-          // « Configuré » = une clé est en base, PAS qu'elle fonctionne. Tant que la sonde
-          // n'a pas été lancée, la tuile le dit au lieu d'afficher du vert.
-          state: !h?.llm.configured
-            ? t("Non configuré", "Not configured")
-            : llmProbed
-              ? probeResult
-                ? t("Joignable", "Reachable")
-                : t("Injoignable", "Unreachable")
-              : t("Configuré", "Configured"),
-          meta: !h?.llm.configured
-            ? t("aucune clé enregistrée", "no key stored")
-            : llmProbed
-              ? probeResult
-                ? t("clé validée par un appel réel", "key validated by a real call")
-                : t("la clé est refusée par le fournisseur", "the provider rejected the key")
-              : t("clé enregistrée — validité NON vérifiée", "key stored — validity NOT verified"),
-          tone: !h?.llm.configured
-            ? "muted"
-            : llmProbed
-              ? probeResult
-                ? "green"
-                : "red"
-              : "amber",
+          // « Configuré » = une clé est en base, PAS qu'elle fonctionne. Tant que le test
+          // n'a pas tourné, la tuile le dit au lieu d'afficher du vert.
+          ...llmTileState(h?.llm.configured === true, llmTest, t),
           loading: healthLoading,
           live: true,
           children: h?.llm.configured ? (
@@ -763,10 +919,21 @@ export function Status() {
               </Button>
               <p className="mt-1 text-caption text-muted-foreground">
                 {t(
-                  "appel réel au fournisseur (facturé) — lancé uniquement à la demande",
-                  "real call to the provider (billed) — only on demand",
+                  "ticket fictif soumis au modèle — appel réel, facturé et journalisé",
+                  "fake ticket submitted to the model — real call, billed and journaled",
                 )}
               </p>
+              {llmTest?.latency_ms != null && (
+                <p className="mt-1 text-caption text-muted-foreground">
+                  {llmTest.model ? `${llmTest.model} · ` : ""}
+                  {llmTest.latency_ms} ms
+                </p>
+              )}
+              {llmTest?.error && (
+                <p className="mt-1 break-words text-caption text-muted-foreground">
+                  {llmTest.error}
+                </p>
+              )}
               {probeError && (
                 <div className="mt-2">
                   <Banner kind="error" role="alert">
@@ -880,9 +1047,18 @@ export function Status() {
           </p>
         </div>
         <div className="max-w-[17rem] text-right">
-          <Button variant="outline" size="sm" onClick={reloadAll}>
-            {t("Tout réactualiser", "Refresh everything")}
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            {/* Le cycle déclenché ici est CELUI du scheduler : mêmes gardes, même pipeline.
+                Il n'y a donc aucun chemin d'écriture GLPI supplémentaire à surveiller. */}
+            <Button size="sm" onClick={runPollNow} disabled={pollingNow}>
+              {pollingNow
+                ? t("Cycle en cours…", "Cycle running…")
+                : t("Lancer un cycle", "Run a cycle")}
+            </Button>
+            <Button variant="outline" size="sm" onClick={reloadAll}>
+              {t("Tout réactualiser", "Refresh everything")}
+            </Button>
+          </div>
           <p className="mt-1 text-caption text-muted-foreground">
             {t(
               "le dernier cycle est actualisé automatiquement chaque minute ; GLPI n'est interrogé qu'à la demande",
@@ -890,6 +1066,17 @@ export function Status() {
             )}
           </p>
         </div>
+      </div>
+
+      {/* Issue du cycle manuel. Le conteneur préexiste pour que le message soit ANNONCÉ
+          (une région live créée en même temps que son contenu ne l'est pas). */}
+      <div aria-live="polite" className="empty:hidden">
+        {pollError && (
+          <Banner kind="error" role="alert">
+            {t("Cycle impossible :", "Cycle failed:")} {pollError}
+          </Banner>
+        )}
+        {pollRun && <PollRunBanner run={pollRun} t={t} />}
       </div>
 
       {/* status/health en échec : on l'affiche au lieu de « — » partout sans explication. */}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets as _secrets
 import time
@@ -39,16 +40,52 @@ def _poll_enabled(app: FastAPI) -> bool:
         )
 
 
-async def _run_poll_cycle(app: FastAPI) -> None:
-    """Job planifié : (re)construit connecteur + triage depuis la config et poll une fois."""
+# Issues possibles d'un déclenchement de cycle. Le job planifié les ignore (il se
+# contente de tracer) ; le déclenchement MANUEL (`POST /api/polling/run`) les rend à
+# l'admin, parce que « rien ne s'est passé » a trois causes qu'il ne peut pas deviner.
+POLL_RAN = "ran"
+POLL_DISABLED = "polling_disabled"
+POLL_NO_GLPI = "glpi_not_configured"
+POLL_BUSY = "already_running"
+
+
+def poll_lock(app: FastAPI) -> asyncio.Lock:
+    """Verrou d'exclusion entre le cycle planifié et le cycle déclenché à la main.
+
+    `max_instances=1` (APScheduler) empêche deux cycles PLANIFIÉS de se chevaucher, mais
+    ne connaît rien du déclenchement manuel : sans ce verrou, un clic pendant un cycle en
+    cours ferait tourner deux pollers sur la même file. L'idempotence les protégerait des
+    doublons d'écriture GLPI, mais chacun paierait tout de même ses appels LLM.
+
+    Créé à la demande : l'application est aussi instanciée sans `lifespan` (tests, outils).
+    """
+    lock = getattr(app.state, "poll_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        app.state.poll_lock = lock
+    return lock
+
+
+async def _run_poll_cycle(app: FastAPI) -> str:
+    """Un cycle, au plus un à la fois. Renvoie laquelle des issues `POLL_*` s'est produite."""
+    lock = poll_lock(app)
+    if lock.locked():
+        logger.info("poll: un cycle est déjà en cours — déclenchement ignoré")
+        return POLL_BUSY
+    async with lock:
+        return await _poll_cycle_body(app)
+
+
+async def _poll_cycle_body(app: FastAPI) -> str:
+    """(Re)construit connecteur + triage depuis la config runtime et poll une fois."""
     settings: Settings = app.state.settings
     if not _poll_enabled(app):
         logger.info("poll: désactivé (polling_enabled=false) — cycle ignoré")
-        return
+        return POLL_DISABLED
     connector = build_connector(settings, app.state.secrets_box)
     if connector is None:
         logger.info("poll: GLPI non configuré (URL/token à pousser via /api/config) — cycle ignoré")
-        return
+        return POLL_NO_GLPI
     # Le moteur (Epic 3) n'est branché que si le LLM est configuré (clé poussée via l'UI).
     triage = build_triage_service(settings, app.state.secrets_box, connector)
     handler = triage.handle if triage is not None else None
@@ -76,6 +113,7 @@ async def _run_poll_cycle(app: FastAPI) -> None:
         referentials_loader=_effective_refs,
     )
     await poller.poll_once()
+    return POLL_RAN
 
 
 async def _run_purge_cycle(app: FastAPI) -> None:
@@ -195,6 +233,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .routes import health as health_routes
     from .routes import insights as insights_routes
     from .routes import license as license_routes
+    from .routes import llm as llm_routes
+    from .routes import polling as polling_routes
     from .routes import privacy as privacy_routes
     from .routes import referentials as referentials_routes
     from .routes import sandbox as sandbox_routes
@@ -291,6 +331,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Public : health (FR-27), status, auth.
     app.include_router(health_routes.router)
     app.include_router(status_routes.router)
+    app.include_router(polling_routes.router)
+    app.include_router(llm_routes.router)
     app.include_router(auth_routes.router)
     # Protégés par l'auth locale (FR-24) : config (secrets), sandbox, journal, export.
     app.include_router(config_routes.router, dependencies=[Depends(require_auth)])

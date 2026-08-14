@@ -213,7 +213,7 @@ export const api = {
 };
 
 // ── Types (miroir des modèles backend) ───────────────────────────────────────
-export const APP_VERSION = "0.9.84";
+export const APP_VERSION = "0.9.85";
 
 // Liens projet / auteur (widget flottant + indicateur de version).
 export const AUTHOR_NAME = "Théo M.";
@@ -463,6 +463,51 @@ export function readPollCycle(status: EngineStatus | null | undefined): PollCycl
   const enriched = status.polling_interval_seconds != null || status.llm_calls_total != null;
   if (enriched && status.version === APP_VERSION) return { kind: "never" };
   return { kind: "unavailable" };
+}
+
+/**
+ * Issue d'un cycle déclenché à la main (`POST /api/polling/run`).
+ *
+ * `outcome` porte les trois raisons pour lesquelles il ne s'est RIEN passé — polling en
+ * pause, GLPI non configuré, cycle déjà en cours. Aucune n'est lisible dans les compteurs,
+ * qui n'auraient tout simplement pas bougé.
+ */
+export interface PollRunResult {
+  outcome: "ran" | "polling_disabled" | "glpi_not_configured" | "already_running";
+  ran: boolean;
+  duration_ms: number;
+  cycle: PollCycle;
+}
+
+/**
+ * Verdict du test du fournisseur IA (`POST /api/llm/test`) — un VRAI appel, avec le prompt
+ * système du produit et la même validation que le triage.
+ *
+ * `stage` distingue les deux pannes que la sonde `/health?probe=true` ne voyait pas :
+ * `unreachable` (le fournisseur ne répond pas / refuse la clé) et `invalid_output` (il
+ * répond, mais pas une Décision exploitable — le moteur enverrait tout « à trier »).
+ */
+export type LlmTestStage =
+  | "ok"
+  | "not_configured"
+  | "unreachable"
+  | "invalid_output"
+  | "cost_cap_reached"
+  | "error";
+
+export interface LlmTestResult {
+  ok: boolean;
+  stage: LlmTestStage;
+  provider: string;
+  model: string;
+  latency_ms: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  cost_eur: number | null;
+  category: number | null;
+  priority: number | null;
+  confidence: number | null;
+  error: string | null;
 }
 
 export interface DayPoint {
@@ -963,6 +1008,39 @@ export const Api = {
     }
   },
   status: () => (DEMO ? ok(demo.status) : api.get<EngineStatus>("/api/status")),
+
+  /** Déclenche UN cycle de polling maintenant, sans attendre le prochain battement. */
+  runPoll: () =>
+    DEMO
+      ? ok({
+          outcome: "ran",
+          ran: true,
+          duration_ms: 1240,
+          cycle: demo.status.last_poll as PollCycle,
+        } satisfies PollRunResult)
+      : api.post<PollRunResult>("/api/polling/run"),
+
+  /**
+   * Test de bout en bout du fournisseur IA : appel réel, prompt du produit, validation de
+   * la Décision. À ne pas confondre avec `health(true)`, qui ne fait qu'un GET /models.
+   */
+  testLlm: () =>
+    DEMO
+      ? ok({
+          ok: true,
+          stage: "ok",
+          provider: "mistral",
+          model: "mistral-large-latest",
+          latency_ms: 940,
+          prompt_tokens: 268,
+          completion_tokens: 96,
+          cost_eur: 0.0011,
+          category: 1,
+          priority: 3,
+          confidence: 0.82,
+          error: null,
+        } satisfies LlmTestResult)
+      : api.post<LlmTestResult>("/api/llm/test"),
   metrics: () => (DEMO ? ok(demo.metrics) : api.get<Metrics>("/api/metrics")),
   operationalMetrics: () =>
     DEMO ? ok(demo.operational) : api.get<OperationalView>("/api/operational-metrics"),
