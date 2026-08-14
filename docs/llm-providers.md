@@ -11,6 +11,23 @@
 
 Sélection sans code (UI → page **Fournisseur IA**). Le défaut souverain reste Mistral EU.
 
+## Vérifier qu'un fournisseur fonctionne vraiment
+
+Le bouton **Tester le fournisseur** (page Fournisseur IA, ou `POST /api/llm/test`) soumet
+un ticket de test au modèle avec le prompt système du produit, puis valide la réponse comme
+le fait le moteur. Il porte donc sur ce qui compte : non pas « l'URL répond-elle ? », mais
+« ce modèle sait-il produire une Décision exploitable ? ».
+
+C'est la distinction qui manquait. Un modèle trop petit, ou une passerelle qui enrobe la
+réponse, laisse la clé valide et l'URL joignable — et pourtant chaque ticket part « à
+trier », sans erreur nulle part. Le test nomme ce cas (`invalid_output`) et le sépare de
+« le fournisseur n'a pas répondu » (`unreachable`), qui n'appelle pas le même geste :
+changer de modèle d'un côté, vérifier URL/clé/réseau de l'autre.
+
+Le test est un appel réel : facturé, compté dans le plafond de coût, écrit au Journal. Il
+porte sur la configuration **enregistrée**, pas sur le formulaire en cours de saisie.
+Détail des verdicts : [`docs/api.md`](api.md#post-apillmtest--le-fournisseur-répond-il-utilement-).
+
 ## Architecture du connecteur
 
 Deux chemins de code couvrent les 4 fournisseurs :

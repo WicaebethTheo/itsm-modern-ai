@@ -216,6 +216,19 @@ flowchart LR
 > tant que vous n'avez pas relu assez de décisions pour faire confiance. Pour un essai
 > sans aucune écriture GLPI, utilisez le **Bac à sable** (`/api/sandbox`).
 
+#### Ne pas attendre pour savoir si ça marche
+
+Deux boutons évitent de configurer à l'aveugle puis d'attendre le prochain cycle :
+
+- **Tester le fournisseur** (page Fournisseur IA) soumet un ticket de test au modèle et
+  vérifie que la Décision renvoyée est exploitable. Il distingue « le fournisseur ne
+  répond pas » de « il répond, mais pas une Décision valide » — ce second cas laisse le
+  moteur tourner sans erreur apparente en envoyant tous les tickets « à trier », et il se
+  corrige en changeant de modèle, pas de clé.
+- **Lancer un cycle** (page Statut) exécute immédiatement un cycle de polling, celui du
+  scheduler, gardes comprises. Il ne contourne pas la pause du polling : celle-ci reste
+  l'arrêt d'urgence du moteur.
+
 ### Mise en production
 - Toujours derrière un reverse proxy + TLS (le moteur n'est pas exposé en direct).
 - Changer le mot de passe de la base avant le tout premier démarrage (`POSTGRES_PASSWORD` et `ITSM_DATABASE_URL`, mêmes valeurs). Ensuite, il faudrait un `ALTER USER`.

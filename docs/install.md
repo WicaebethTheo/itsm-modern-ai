@@ -368,8 +368,10 @@ incohérente), avec un message qui nomme la cause.
 > ouvre une session GLPI à chaque appel (toutes les 30 s, cela fait environ 2 880
 > sessions par jour dans les journaux du client), et un GLPI momentanément injoignable
 > marquait `unhealthy` un moteur parfaitement sain (redémarrages en boucle sous Swarm,
-> Kubernetes ou autoheal). `?probe=true` ajoute un appel facturé au fournisseur LLM et
-> exige désormais une session administrateur : à réserver au diagnostic humain.
+> Kubernetes ou autoheal). `?probe=true` ajoute une sonde du fournisseur LLM (`GET /models`,
+> aucun token consommé) et exige une session administrateur : à réserver au diagnostic humain.
+> Elle dit qu'une URL répond, pas que le modèle sait produire une Décision — pour ça,
+> c'est `POST /api/llm/test`, ou le bouton **Tester le fournisseur** de la page Fournisseur IA.
 
 **Diagnostic GLPI dédié** (recommandé à l'install : valide auth, référentiels, lecture
 des tickets, et optionnellement l'écriture d'un Suivi privé). Identifiants via

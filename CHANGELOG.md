@@ -1,3 +1,58 @@
+## 2026-08-14 — 0.9.85 — Declencher un cycle, et savoir si l'IA repond vraiment
+
+Trois ajouts, tous nes du meme moment : celui ou l'on vient de tout configurer et
+ou l'on n'a aucun moyen de savoir si ca marche.
+
+### Lancer un cycle de polling a la main
+
+La page Statut porte un bouton « Lancer un cycle ». Le cycle declenche est CELUI
+du scheduler — memes gardes (plafond de cout, masquage, whitelist, seuil, repli
+« a trier »), meme persistance des compteurs. Il n'y a donc aucun second chemin
+d'ecriture GLPI a surveiller.
+
+Il ne contourne pas la pause du polling. Cette pause est l'arret d'urgence du
+produit : c'est le geste recommande quand le masquage avance retombe (licence
+expiree) ou qu'un fournisseur derape. Un bouton qui passerait outre renverrait au
+modele les donnees que l'exploitant venait precisement d'arreter d'envoyer. La
+route repond alors `polling_disabled`, et l'interface propose de reactiver
+l'ingestion.
+
+Deux autres refus sont nommes plutot que tus : `glpi_not_configured` (rien a lire)
+et `already_running` (un cycle est deja en cours — deux pollers sur la meme file
+paieraient chacun leurs appels LLM). Nouvelle route : `POST /api/polling/run`.
+
+### Tester le fournisseur IA pour de vrai
+
+Le bouton « Tester la connexion » existait, mais il ne faisait qu'un `GET /models`
+et la tuile en concluait « cle validee par un appel reel » : une affirmation que
+rien ne soutenait. Une sonde de ce genre ne voit ni un modele qui n'existe pas
+chez le fournisseur, ni un modele qui repond autre chose qu'une Decision.
+
+Le test soumet desormais un ticket fictif avec le prompt systeme du produit et
+valide la reponse comme le fait le moteur. Il separe deux pannes dont le remede
+n'a rien a voir :
+
+- `unreachable` — rien n'est parti : URL, cle ou reseau ;
+- `invalid_output` — le fournisseur repond, la cle est bonne, et pourtant la
+  sortie n'est pas une Decision. En production, ces tickets partiraient TOUS
+  « a trier » sans qu'aucune panne ne soit visible. Le remede est un autre modele.
+
+Le test est un appel reel : facture, compte dans le plafond de cout et ecrit au
+Journal (`ticket_id=0`, comme le Bac a sable) — un essai facture qui n'apparait
+nulle part est une depense fantome. Un modele local (Ollama) reste a 0 €. Nouvelle
+route : `POST /api/llm/test`, disponible aussi depuis la page Fournisseur IA, ou
+elle n'est proposee qu'une fois le formulaire enregistre : le moteur teste ce
+qu'il a en base, pas ce qui est en cours de saisie.
+
+### Correction — l'ecran de connexion debordait
+
+Deplie, le bloc « Mot de passe oublie ? » imposait la largeur de la commande de
+recuperation a toute la colonne de droite, qui sortait alors du panneau : champs,
+bouton et titre coupes a droite. Mesure : 76 px de debord. La cause n'etait pas
+dans le bloc mais dans le chassis des ecrans hors session, auquel manquait le
+`min-w-0` que la console porte deja. Un test Playwright mesure desormais le
+debord reel plutot que la presence d'une classe.
+
 ## 2026-08-13 — 0.9.84 — « À trier » dit desormais pourquoi
 
 Le KPI « À trier » du tableau de bord annonçait un nombre sans indiquer quoi en

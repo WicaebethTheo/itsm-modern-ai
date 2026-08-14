@@ -82,11 +82,13 @@ export const demo: {
   // La démo montre une console déjà installée : elle a donc un compte, comme une vraie.
   me: { email: "admin@demo.local", display_name: "Alex Martin" },
   info: {
-    version: "0.9.84",
+    version: "0.9.85",
     title: "ITSM Modern AI — moteur de triage (headless)",
     endpoints: [
       { path: "/health", methods: ["GET"] },
       { path: "/api/status", methods: ["GET"] },
+      { path: "/api/polling/run", methods: ["POST"] },
+      { path: "/api/llm/test", methods: ["POST"] },
       { path: "/api/metrics", methods: ["GET"] },
       { path: "/api/operational-metrics", methods: ["GET"] },
       { path: "/api/config", methods: ["GET", "POST"] },
@@ -132,7 +134,7 @@ export const demo: {
   },
   status: {
     ok: true,
-    version: "0.9.84", // même valeur que APP_VERSION — règle de release
+    version: "0.9.85", // même valeur que APP_VERSION — règle de release
     polling_enabled: true,
     polling_interval_seconds: 60,
     whitelist_loaded: true,
@@ -337,7 +339,7 @@ export const demo: {
     last_run_by: "scheduler",
   },
   version: {
-    current: "0.9.84",
+    current: "0.9.85",
     latest: null,
     update_available: false,
     check_enabled: false,
