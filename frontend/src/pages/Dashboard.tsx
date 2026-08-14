@@ -208,6 +208,9 @@ export function Dashboard() {
   // Motifs de refus : `by_reason` porte aussi `accepted`, qui n'est pas un motif de refus.
   const reasons = Object.entries(m?.by_reason ?? {}).filter(([r, n]) => r !== "accepted" && n > 0);
   const reasonTotal = reasons.reduce((s, [, n]) => s + n, 0);
+  // `by_reason` arrive déjà trié par volume décroissant (`journal.decision_stats`, avec
+  // `reason` en second critère pour un ordre STABLE) : la tête est le motif majoritaire.
+  const dominant = reasonTotal > 0 ? reasons[0] : null;
 
   const metricsLoading = metrics.loading && !m;
   const opLoading = ops.loading && !opView;
@@ -300,6 +303,25 @@ export function Dashboard() {
           loading={metricsLoading}
         >
           <Sparkline values={aTrier} />
+          {/* Le motif DOMINANT ici, et pas seulement dans la carte du bas. « À trier : 42 »
+                ne dit pas quoi faire : selon que ces 42 sont hors périmètre (élargir la
+                sélection), sous le seuil (le baisser ou enrichir les fiches) ou un plafond
+                atteint (payer plus, ou réduire le volume), l'action n'a rien à voir. La
+                ventilation complète existait déjà, mais après la tendance — donc hors du
+                champ de lecture de qui découvre le nombre. */}
+          {dominant && (
+            <a
+              href="#motifs-a-trier"
+              className="mt-2 block truncate text-caption text-muted-foreground hover:text-foreground"
+              title={t(
+                "Voir la ventilation complète des motifs",
+                "See the full breakdown of reasons",
+              )}
+            >
+              {t("surtout", "mostly")} {reasonLabel(dominant[0], t).toLocaleLowerCase()} ·{" "}
+              {Math.round((dominant[1] / reasonTotal) * 100)}%
+            </a>
+          )}
         </KpiCard>
         <KpiCard
           label={t("Coût LLM (24 h)", "LLM cost (24h)")}
@@ -394,7 +416,7 @@ export function Dashboard() {
 
       {/* Pourquoi les tickets partent « à trier » — `by_reason` est la seule donnée
           actionnable servie par /api/metrics, et elle était jetée. */}
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden" id="motifs-a-trier">
         <PanelHead
           title={t("Pourquoi ces tickets sont « à trier »", "Why these tickets are “to triage”")}
           subtitle={

@@ -10,7 +10,7 @@ On-premise, souverain, open-core.
 *Automated GLPI ticket triage with an LLM kept behind deterministic guardrails.*
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.9.83-blueviolet)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.9.84-blueviolet)](pyproject.toml)
 [![GHCR image](https://img.shields.io/badge/GHCR-image_publique-2496ED?logo=github&logoColor=white)](https://github.com/WicaebethTheo/itsm-modern-ai/pkgs/container/itsm-modern-ai)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](pyproject.toml)
 
