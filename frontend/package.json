@@ -13,7 +13,8 @@
     "test:e2e": "playwright test",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
