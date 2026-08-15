@@ -37,8 +37,13 @@ import { useT } from "@/lib/i18n";
  * que celui dont `/login` se sert pour envoyer ici : voir `needsSetup` ci-dessous.
  */
 
-/** Format d'email : volontairement PERMISSIF (le moteur reste l'autorité, cf. 422). */
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** Format d'email : volontairement PERMISSIF (le moteur reste l'autorité, cf. 422).
+ *  Le point est exclu des classes du domaine et les étiquettes sont répétées : sans cela,
+ *  une saisie invalide fait essayer au moteur chaque découpage possible autour du `\.`,
+ *  coût quadratique payé ici par le navigateur, à chaque frappe. Motif IDENTIQUE à celui
+ *  du backend (`api/security._EMAIL_RE`) — deux règles divergentes rendraient le 422
+ *  incompréhensible pour qui vient de voir le formulaire accepter son adresse. */
+const EMAIL_RE = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
 /**
  * « L'installation est-elle encore à faire ? » — LE prédicat, partagé avec `/login`.
