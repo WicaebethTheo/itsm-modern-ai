@@ -1,3 +1,42 @@
+## 2026-08-15 — 0.9.86 — Le motif de l'adresse administrateur, et un README qui montre le produit
+
+### Validation d'email : un motif lineaire
+
+`api/security._EMAIL_RE` s'ecrivait `[^\s@]+@[^\s@]+\.[^\s@]+`. Le point y
+appartenait aux DEUX cotes du separateur : sur une saisie qui ne correspond pas,
+le moteur devait essayer chaque decoupage possible, soit un cout quadratique en
+la longueur de la saisie (CodeQL `py/polynomial-redos`). Mesure : 2,5 s pour une
+entree de 40 000 caracteres, 2 ms apres correction.
+
+La borne de 254 caracteres plafonnait deja les degats — l'appel reel n'etait pas
+exploitable. Mais une borne rend un defaut non rentable, elle ne rend pas le
+motif sain, et rien ne garantit que le prochain appelant la posera aussi. Le
+point est desormais exclu des classes du domaine et les etiquettes sont repetees
+explicitement : chaque caractere n'a plus qu'une lecture possible.
+
+Le formulaire d'installation (`frontend/src/pages/Setup.tsx`) porte le meme motif
+— deux regles divergentes feraient accepter a l'ecran une adresse que le moteur
+rejette ensuite par un 422.
+
+Consequence visible : `a@b..c`, `a@b.` et `a@.c` sont refuses. Aucune des trois
+n'est une adresse, aucune ne pouvait servir d'identifiant de connexion.
+
+### README
+
+337 lignes sans une seule image, dont une table de neuf variables et un compose
+de trente lignes que la documentation en ligne porte deja. Desormais 135 lignes,
+ouvertes sur une capture du tableau de bord, avec le journal des decisions, la
+console DPO et la page Statut.
+
+Les captures sortent du mode demo (`/demo`), dont les donnees sont entierement
+simulees : aucune ne peut exposer un ticket, un technicien ou une cle d'un
+deploiement reel. `frontend/scripts/screenshots.mjs` les regenere.
+
+Ce qui n'a PAS bouge, parce que le supprimer serait une perte et non un
+deplacement : l'avertissement sur la fenetre de revendication tant qu'aucun
+compte administrateur n'existe, l'interdiction de `docker compose down -v`, et
+l'aveu que sans licence les IBAN et les secrets partent en clair au LLM.
+
 ## 2026-08-14 — 0.9.85 — Declencher un cycle, et savoir si l'IA repond vraiment
 
 Trois ajouts, tous nes du meme moment : celui ou l'on vient de tout configurer et

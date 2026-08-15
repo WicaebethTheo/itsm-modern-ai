@@ -64,7 +64,20 @@ DISPLAY_NAME_MAX_CHARS = 200
 # (RFC 5322 accepte des formes que personne n'écrit) et n'apporte rien ici : cette adresse
 # n'est pas un canal d'envoi, c'est un IDENTIFIANT de connexion. On refuse seulement ce qui
 # ne peut pas en être un.
-_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+#
+# Le point est EXCLU des classes du domaine, et les étiquettes sont répétées explicitement.
+# La forme naïve `[^\s@]+\.[^\s@]+` laissait le point appartenir aux deux côtés du `\.` :
+# sur une adresse qui ne matche pas, le moteur devait essayer chaque découpage possible,
+# soit un coût quadratique en la longueur de la saisie (CodeQL `py/polynomial-redos`).
+# Ici les classes sont disjointes du séparateur, donc chaque caractère n'a qu'une lecture
+# possible : le coût redevient linéaire, sans retour arrière.
+#
+# La borne de longueur ci-dessus plafonnait déjà les dégâts à 254 caractères — mais elle
+# n'est pas une réponse : elle rend l'attaque non rentable, elle ne rend pas le motif sain.
+#
+# Effet de bord assumé : `a@b..c` et `a@b.` sont désormais refusés. Aucune des deux n'est
+# une adresse, et aucune ne pouvait servir d'identifiant de connexion utilisable.
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$")
 
 # Clé du champ de session portant la GÉNÉRATION de la session (cf.
 # `RuntimeConfigService.session_version`). Nom court : il transite dans le cookie signé.

@@ -122,6 +122,24 @@ describe("Setup — première installation", () => {
     expect(screen.getByLabelText("Adresse email")).not.toHaveAttribute("aria-invalid");
   });
 
+  it.each(["admin@exemple..fr", "admin@exemple.", "admin@.fr"])(
+    "refuse %s, comme le moteur",
+    async (email) => {
+      // Le formulaire et `api/security._EMAIL_RE` portent le MÊME motif. S'ils divergent,
+      // l'écran accepte une adresse que le moteur rejettera par un 422 — l'installateur
+      // voit alors une erreur sur un champ que le formulaire venait de valider.
+      renderSetup();
+      const user = await fill({
+        email,
+        password: "correct-cheval-pile",
+        confirm: "correct-cheval-pile",
+      });
+      await user.click(submitButton());
+      expect(await screen.findByText("Adresse email invalide.")).toBeInTheDocument();
+      expect(Api.setup).not.toHaveBeenCalled();
+    },
+  );
+
   it("lève l'erreur de confirmation dès qu'on corrige VRAIMENT la frappe", async () => {
     // La correction doit en être une : effacer le `f` fautif et taper le `e` attendu. Une
     // frappe qui laisse les deux champs divergents (l'ancienne version de ce test ajoutait
