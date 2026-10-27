@@ -20,7 +20,7 @@ FROM python:3.14-slim
 
 # uv pour la gestion des deps (cohérent avec le dev). Version PINNÉE (repro : le tag
 # `latest` contredisait le « build reproductible » plus bas).
-COPY --from=ghcr.io/astral-sh/uv:0.12.3 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.24 /uv /uvx /bin/
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -58,9 +58,19 @@ WORKDIR /app
 # restaurer. La majeure est PINNÉE (et non le méta-paquet `postgresql-client`, qui suit la
 # version par défaut de la distro) : le jour où Debian passera à 18, le build ÉCHOUERA
 # bruyamment — ce qu'on veut — au lieu d'embarquer silencieusement un client incompatible.
+#
+# Sécurité (2026-10-25) :
+# - `apt-get upgrade` : la base n'est corrigée que lorsque Docker Hub republie le tag ;
+#   la mise à niveau ici rattrape les correctifs Debian (-security) publiés entre-temps.
+# - `pip` est RETIRÉ de l'image livrée : il ne sert à rien au runtime (deps installées
+#   par uv dans /app/.venv, qui n'a pas de pip) et il embarque des copies vendorisées de
+#   urllib3/msgpack/setuptools signalées par Trivy (CVE-2026-97687/97689, GHSA-6v7p-g79w-8964,
+#   CVE-2025-47273) sans version corrigée de pip publiée.
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends gosu postgresql-client-17 \
     && rm -rf /var/lib/apt/lists/* \
+    && python -m pip uninstall -y pip \
     && groupadd -r app --gid=10001 \
     && useradd -r -g app --uid=10001 --home-dir=/app --shell=/usr/sbin/nologin app \
     && mkdir -p /app/data \

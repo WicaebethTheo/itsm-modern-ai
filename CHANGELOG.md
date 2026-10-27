@@ -1,3 +1,50 @@
+## 2026-10-27 — 0.9.87 — Correctifs de securite des dependances (certifi, mako, outillage du frontend)
+
+Version de maintenance, sans changement de comportement. Elle remonte les
+dependances signalees par Trivy (`trivy fs` du depot et `trivy image` de l'image
+livree) et durcit la construction de l'image. Elle embarque aussi les
+changements de 0.9.86, qui n'avait pas fait l'objet d'une release.
+
+### Image livree et dependances Python (`uv.lock`)
+
+| paquet | avant → apres | identifiant | severite |
+|---|---|---|---|
+| certifi | 2026.7.22 → 2026.10.23 | GHSA-6q48-6c7w-9gw2 (racines emSign aux cles intermediaires compromises) | CRITICAL |
+| mako (transitive d'alembic) | 1.4.1 → 1.4.3 | CVE-2026-102991 (traversee de chemin via une URI a lettre de lecteur) | MEDIUM |
+
+Dans le `Dockerfile` :
+- `uv` passe de 0.12.3 a 0.12.24 (version toujours epinglee) ;
+- `apt-get upgrade` dans la couche apt : la base `python:3.14-slim` n'etait
+  corrigee que lorsque Docker Hub republiait le tag, l'image rattrape desormais
+  les correctifs Debian publies entre-temps ;
+- `pip` est retire de l'image : il ne sert pas au runtime (les dependances sont
+  installees par uv dans `/app/.venv`, sans pip) et ses copies vendorisees de
+  urllib3, msgpack et setuptools (CVE-2026-97687, CVE-2026-97689,
+  GHSA-6v7p-g79w-8964, CVE-2025-47273) n'ont pas de version corrigee de pip.
+
+Resultat sur l'image amd64 construite depuis cette version : plus aucune CVE
+corrigeable. Ce qui reste vient de paquets Debian 13 sans correctif publie
+(util-linux, perl, systemd, ncurses...), repris au prochain build quand Debian
+les publiera.
+
+### Outillage du frontend (dependances de developpement uniquement)
+
+Aucune de ces dependances n'est dans l'image servie, qui ne contient que le
+bundle. Elles tournaient en revanche sur les postes de dev et en CI (serveur
+`vite`, vitest).
+
+| paquet | avant → apres | identifiants | severite |
+|---|---|---|---|
+| vite (et launch-editor) | 8.2.1 → 8.3.5 | CVE-2026-112942 a CVE-2026-112947 | 1 HIGH, 4 MEDIUM, 1 LOW |
+| undici (via jsdom 30.0.1 → 30.1.3) | 8.10.0 → 8.12.3 | CVE-2026-109869, CVE-2026-19534, CVE-2026-84961, CVE-2026-85152, CVE-2026-109841, CVE-2026-109924, CVE-2026-18149, CVE-2026-84890, CVE-2026-84933, CVE-2026-85014, CVE-2026-85024, CVE-2026-18540, CVE-2026-84947, CVE-2026-85008 | 4 HIGH, 7 MEDIUM, 3 LOW |
+| source-map-js | 1.2.1 → 1.2.2 | CVE-2026-93749 | HIGH |
+| vitest, @vitest/mocker, @vitest/coverage-v8 | 4.1.10 → 4.1.12 | CVE-2026-84373, CVE-2026-112949 | MEDIUM |
+
+Les planchers de `frontend/package.json` suivent : `vite ^8.3.5`,
+`vitest ^4.1.12`, `@vitest/coverage-v8 ^4.1.12`, `jsdom ^30.1.3`. Les
+dependances d'execution (react, react-dom, react-router-dom...) sont inchangees.
+`npm audit` renvoie 0 vulnerabilite, dependances de dev comprises.
+
 ## 2026-08-15 — 0.9.86 — Le motif de l'adresse administrateur, et un README qui montre le produit
 
 ### Validation d'email : un motif lineaire
